@@ -14,9 +14,10 @@ from datetime import datetime, timezone
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_support as git
+import group_context
 import review_session
 
-SCHEMA = "ReleaseReviewContext/v1"
+SCHEMA = "ReleaseReviewContext/v2"
 
 
 def worktree_fingerprint(repo: Path) -> str:
@@ -54,52 +55,56 @@ def build_manifest(args: argparse.Namespace) -> dict:
     session = None
     succeeded = False
     try:
+        raw_workspace = Path(args.workspace).expanduser().absolute()
+        if raw_workspace.exists() and group_context.is_link(raw_workspace):
+            raise git.ReviewContextError("工作區根目錄不能是連結。")
         workspace = git.normalize_path(args.workspace)
         workspace_file = git.normalize_path(args.workspace_file) if args.workspace_file else None
         if workspace_file and not workspace_file.is_file():
             raise git.ReviewContextError(f"找不到 workspace：{workspace_file}")
-        repo, _ = git.choose_repository(workspace, workspace_file, args.project)
+        repositories, discovery_gaps = group_context.discover(workspace, workspace_file)
+        repo = group_context.choose(repositories, workspace, args.project)
+        catalog, catalog_gaps = group_context.catalog(repositories, repo, args.workspace_context_json)
+        # Validate both namespaces before any remote operation. Tags/revisions never fetch.
+        base_ref = group_context.branch_ref(repo, args.base)
+        head_ref = group_context.branch_ref(repo, args.head)
         session = review_session.create_session(args.context_dir)
         before = worktree_fingerprint(repo)
-        fetches = git.fetch_inputs(repo, [args.base, args.head], not args.no_fetch)
-        base, base_ref = git.resolve_commit_ref(repo, args.base)
-        head, head_ref = git.resolve_commit_ref(repo, args.head)
+        fetches = git.fetch_inputs(repo, [args.base, args.head], True)
+        base, head = git.verified_commit(repo, base_ref), git.verified_commit(repo, head_ref)
         for label, sha, raw in (("基礎版本", base, args.base), ("比較版本", head, args.head)):
             if not sha:
                 raise git.ReviewContextError(f"找不到{label}：{raw}；不會改用其他同名版本。")
-        if args.mode == "merge" and git.is_shallow_repository(repo):
+        if git.is_shallow_repository(repo):
             raise git.ReviewContextError("合併前審查需要完整歷史；請先取得完整歷史。")
         code, output, error = git.run_git_capture(repo, ["merge-base", "--all", base, head])
         if code not in (0, 1):
             raise git.ReviewContextError(f"無法取得共同起點：{error}")
         ancestors = output.splitlines()
-        if args.mode == "merge" and len(ancestors) != 1:
+        if len(ancestors) != 1:
             raise git.ReviewContextError("合併前審查需要唯一共同起點；不會自動改用直接比較。")
         merge_base = ancestors[0] if len(ancestors) == 1 else None
-        diff_base = merge_base if args.mode == "merge" else base
+        diff_base = merge_base
         changes = git.collect_changes(repo, diff_base, head)
         (session / "diff.patch").write_bytes(git.run_git(
             repo, ["diff", *git.DIFF_FLAGS, "--binary", "--find-renames",
                    "--find-copies", diff_base, head, "--"], binary=True))
-        gaps = []
-        preview = None
-        release_changes = changes
-        if args.mode == "merge":
-            # New objects are written only inside the owned temporary session.
-            preview, preview_env = git.create_merge_preview(repo, base, head, merge_base, session)
-            preview.pop("env", None)
-            preview.pop("manifest_info", None)
-            preview["object_directory"] = "objects"
-            (session / "merge-output.txt").write_text(preview["detail"], encoding="utf-8")
-            if preview["status"] != "clean":
-                gaps.append("無法取得乾淨的合併預覽：" + preview["status"])
-                release_changes = []
-            else:
-                release_changes = git.collect_changes(repo, base, preview["tree_sha"], env=preview_env)
-                (session / "release.patch").write_bytes(git.run_git(
-                    repo, ["diff", *git.DIFF_FLAGS, "--binary", "--find-renames",
-                           "--find-copies", base, preview["tree_sha"], "--"],
-                    binary=True, env=preview_env))
+        gaps = discovery_gaps + catalog_gaps
+        # New objects are written only inside the owned temporary session.
+        preview, preview_env = git.create_merge_preview(repo, base, head, merge_base, session)
+        preview.pop("env", None)
+        preview.pop("manifest_info", None)
+        preview["object_directory"] = "objects"
+        (session / "merge-output.txt").write_text(preview["detail"], encoding="utf-8")
+        if preview["status"] != "clean":
+            gaps.append("無法取得乾淨的合併預覽：" + preview["status"])
+            release_changes = []
+        else:
+            release_changes = git.collect_changes(repo, base, preview["tree_sha"], env=preview_env)
+            (session / "release.patch").write_bytes(git.run_git(
+                repo, ["diff", *git.DIFF_FLAGS, "--binary", "--find-renames",
+                       "--find-copies", base, preview["tree_sha"], "--"],
+                binary=True, env=preview_env))
         all_changes = changes + release_changes + (preview or {}).get("changed_files", [])
         for item in all_changes:
             if "160000" in (item.get("old_mode"), item.get("new_mode")):
@@ -114,7 +119,9 @@ def build_manifest(args: argparse.Namespace) -> dict:
             "base_input": args.base, "head_input": args.head,
             "base_resolved_ref": base_ref, "head_resolved_ref": head_ref,
             "base_sha": base, "head_sha": head, "merge_base": merge_base,
-            "diff_base": diff_base, "mode": args.mode,
+            "diff_base": diff_base, "mode": "merge",
+            "scope": "group" if len(repositories) > 1 or not git.has_git_marker(workspace) else "repository",
+            "entry_repo": "entry", "repositories": catalog,
             "review_scope": "committed", "working_tree_unchanged": unchanged,
             "fetches": fetches, "changed_files": changes,
             "release_changes": release_changes, "merge_preview": preview,
@@ -136,14 +143,12 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", default=os.getcwd())
     parser.add_argument("--workspace-file")
-    parser.add_argument("--project")
+    parser.add_argument("--project", required=True)
     parser.add_argument("--base", required=True)
     parser.add_argument("--head", required=True)
-    parser.add_argument("--mode", choices=("merge", "direct"), default="merge")
-    parser.add_argument("--no-fetch", action="store_true")
+    parser.add_argument("--workspace-context-json", type=json.loads, default={})
     parser.add_argument("--context-dir")
     parser.add_argument("--git-timeout", type=float, default=180.0)
-    parser.add_argument("--format", choices=("json",), default="json")
     parser.add_argument("--pretty", action="store_true")
     return parser.parse_args(argv)
 

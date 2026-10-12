@@ -88,7 +88,7 @@ def fixture(root):
 
 def capture(repo, mode="merge", base="main", head="feature"):
     args = context_helper.parse_args(["--workspace", str(repo), "--project", str(repo),
-                                     "--base", base, "--head", head, "--mode", mode])
+                                     "--base", base, "--head", head])
     manifest = context_helper.build_manifest(args)
     return Path(manifest["context_dir"]), manifest
 
@@ -97,7 +97,7 @@ def citation(manifest, source, path, start=None, end=None, ref=None):
     refs = {"base": manifest["base_sha"], "head": manifest["head_sha"],
             "merge-base": manifest["merge_base"],
             "merge-preview": (manifest.get("merge_preview") or {}).get("tree_sha")}
-    result = {"source": source, "ref": ref or refs[source], "path": path}
+    result = {"repo": "entry", "source": source, "ref": ref or refs[source], "path": path}
     if start is not None:
         result.update({"line_start": start, "line_end": end if end is not None else start})
     return result
@@ -110,8 +110,13 @@ def draft_for(manifest):
         coverage.append({"path": path, "status": "reviewed",
                          "evidence": [citation(manifest, source, path, ref=ref)
                                       for source, ref in sorted(pairs)]})
-    return {"schema": "ReleaseReviewDraft/v1", "summary": "測試固定版本的三項上板檢查。",
+    final = "merge-preview" if (manifest.get("merge_preview") or {}).get("status") == "clean" else "head"
+    dependency_evidence = [citation(manifest, final, "src/service.py")] if manifest["changed_files"] else []
+    return {"schema": "ReleaseReviewDraft/v2", "summary": "測試固定版本的上板檢查。",
             "coverage": coverage, "code_risks": [], "config_changes": [], "db_changes": [],
+            "external_changes": [], "supporting_coverage": [], "functional_chain": [], "chain_gaps": [],
+            "dependency_coverage": [{"kind": kind, "status": "reviewed", "reason": "已檢視固定變更與依賴使用。",
+                                      "evidence": dependency_evidence} for kind in ("config", "db", "ftp", "sftp", "redis", "kafka", "other")],
             "next_steps": ["開發核對程式風險；維運核對上板準備。"],
             "tests_executed": [], "tests_not_executed": ["本次未執行專案測試、部署或 DB 查詢。"],
             "limitations": []}

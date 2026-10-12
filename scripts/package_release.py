@@ -16,7 +16,9 @@ def build_release(skill: Path, destination: Path) -> Path:
         raise ValueError("VERSION 必須為 X.Y.Z。")
     required = ("SKILL.md", "agents/openai.yaml", "references/review-rules.md",
                 "scripts/git_review_context.py", "scripts/git_support.py",
-                "scripts/evidence.py", "scripts/release_report.py", "scripts/review_session.py")
+                "scripts/evidence.py", "scripts/release_report.py", "scripts/review_session.py",
+                "scripts/group_context.py", "scripts/chain_review.py", "scripts/resource_rules.py",
+                "references/group-review.md", "references/resource-checks.md")
     for relative in required:
         if not (skill / relative).is_file():
             raise ValueError(f"套件缺少必要檔案：{relative}")

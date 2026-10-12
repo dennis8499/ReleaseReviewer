@@ -335,7 +335,8 @@ def workspace_roots(workspace: Path, workspace_file: Path | None) -> list[Path]:
         candidate = Path(str(value))
         if not candidate.is_absolute():
             candidate = workspace_file.parent / candidate
-        roots.append(normalize_path(candidate))
+        # Preserve lexical roots so the Group reader can reject links before resolving.
+        roots.append(candidate.absolute())
     return roots or [workspace_file.parent]
 
 
@@ -500,7 +501,7 @@ def fetch_inputs(repo: Path, refs: Iterable[str], enabled: bool) -> list[dict[st
         if not enabled:
             raise ReviewContextError(
                 f"遠端 ref「{target.input_ref}」需要連線確認，不能搭配 --no-fetch。",
-                hint="請移除 --no-fetch；若要離線審查，請改用本機分支、tag 或 commit。",
+                hint="若要離線審查，請改用明確本機分支。",
             )
         if (target.remote, target.branch) in seen:
             continue

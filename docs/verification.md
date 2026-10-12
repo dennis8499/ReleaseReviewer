@@ -1,5 +1,7 @@
 # 驗證紀錄
 
+目前 0.2.0 的驗證見 [v2 驗證紀錄](verification-v2.md)。以下保留 0.1.0 發行時的歷史紀錄。
+
 日期：2026-10-10（Asia/Taipei）
 
 版本：release-reviewer 0.1.0。驗證環境為 Windows、Python 3.14.7、Git 2.55.0.windows.5。

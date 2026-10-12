@@ -26,7 +26,7 @@ class PackageTests(RepoTest):
             zipped.extractall(self.root / "standalone")
         scripts = self.root / "standalone/release-reviewer/scripts"
         result = python(scripts / "git_review_context.py", "--workspace", self.repo,
-                        "--base", "main", "--head", "feature", "--pretty")
+                        "--project", self.repo, "--base", "main", "--head", "feature", "--pretty")
         self.assertEqual(result.returncode, 0, result.stderr)
         manifest = json.loads(result.stdout)
         context = Path(manifest["context_dir"])

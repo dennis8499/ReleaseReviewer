@@ -58,7 +58,7 @@ class ContextTests(RepoTest):
 
     def test_invalid_ref_stops_and_removes_owned_context(self):
         context = self.root / "failed-session"
-        args = context_helper.parse_args(["--workspace", str(self.repo), "--base", "main",
+        args = context_helper.parse_args(["--workspace", str(self.repo), "--project", str(self.repo), "--base", "main",
                                          "--head", "does-not-exist", "--context-dir", str(context)])
         with self.assertRaisesRegex(Exception, "找不到比較版本"):
             context_helper.build_manifest(args)
@@ -69,9 +69,8 @@ class ContextTests(RepoTest):
         write(second, "x", "x\n")
         git(second, "add", ".")
         git(second, "commit", "-m", "second")
-        args = context_helper.parse_args(["--workspace", str(self.root), "--base", "main", "--head", "feature"])
-        with self.assertRaises(Exception):
-            context_helper.build_manifest(args)
+        with self.assertRaises(SystemExit):
+            context_helper.parse_args(["--workspace", str(self.root), "--base", "main", "--head", "feature"])
 
     def test_explicit_remote_fetch_and_stale_remote_failure(self):
         remote = self.root / "remote.git"
@@ -103,18 +102,23 @@ class ContextTests(RepoTest):
         with self.assertRaisesRegex(ValueError, "乾淨"):
             evidence.read_blob(manifest, context, "merge-preview", "src/service.py")
 
-    def test_unrelated_history_direct_mode_is_supported(self):
+    def test_direct_mode_and_unrelated_history_are_rejected(self):
         git(self.repo, "checkout", "--orphan", "unrelated")
         git(self.repo, "rm", "-rf", ".")
         write(self.repo, "unrelated.py", "VALUE = 1\n")
         git(self.repo, "add", ".")
         git(self.repo, "commit", "-m", "unrelated root")
-        context, manifest = self.capture(mode="direct", head="unrelated")
-        self.assertIsNone(manifest["merge_base"])
-        self.assertIsNone(manifest["merge_preview"])
-        self.assertIn("unrelated.py", evidence.list_files(manifest, context, "head"))
+        for legacy_option in (("--mode", "direct"), ("--format", "json"), ("--include-json",)):
+            with self.subTest(option=legacy_option), self.assertRaises(SystemExit):
+                context_helper.parse_args(["--project", str(self.repo), "--base", "main", "--head", "unrelated", *legacy_option])
         with self.assertRaisesRegex(Exception, "唯一共同起點"):
             self.capture(head="unrelated")
+
+    def test_tags_and_commit_revisions_are_not_branch_inputs(self):
+        git(self.repo, "tag", "v1.0")
+        for ref in ("v1.0", "refs/tags/v1.0", git(self.repo, "rev-parse", "HEAD"), "HEAD", "main~1"):
+            with self.subTest(ref=ref), self.assertRaises(Exception):
+                self.capture(head=ref)
 
     def test_same_versions_have_no_changed_paths(self):
         context, manifest = self.capture(base="main", head="main")

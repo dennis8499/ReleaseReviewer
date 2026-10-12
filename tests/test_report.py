@@ -16,12 +16,11 @@ class ReportTests(RepoTest):
         draft["db_changes"] = [db_item(context, manifest)]
         return context, manifest, draft
 
-    def test_three_sections_consistent_json_markdown_and_cleanup(self):
+    def test_report_checklist_metadata_and_cleanup(self):
         context, manifest, draft = self.valid_draft()
-        md, js = release_report.publish_report(context, save_draft(context, draft),
-                                               self.root / "reports", include_json=True)
-        result = json.loads(js.read_text(encoding="utf-8"))
-        self.assertEqual(result["schema"], "ReleaseReviewReport/v1")
+        result = release_report.validate_result(draft, manifest, context)
+        md, checklist = release_report.publish_report(context, save_draft(context, draft), self.root / "reports")
+        self.assertEqual(result["schema"], "ReleaseReviewReport/v2")
         self.assertEqual([len(result[k]) for k in ("code_risks", "config_changes", "db_changes")], [1, 1, 1])
         self.assertNotIn("CoreDb.dbo.Orders", [d["name"] for d in result["db_changes"]])
         self.assertTrue(result["review_complete"])
@@ -29,16 +28,20 @@ class ReportTests(RepoTest):
         document = md.read_text(encoding="utf-8")
         marker = re.search(r"<!-- release-review-report:([A-Za-z0-9+/=]+) -->", document).group(1)
         metadata = json.loads(base64.b64decode(marker))
-        self.assertEqual(metadata["body_sha256"], hashlib.sha256(result["report_body"].encode()).hexdigest())
-        self.assertEqual(document.split("\n<!-- release-review-report:")[0], result["report_body"])
+        body = document.split("\n<!-- release-review-report:")[0]
+        self.assertEqual(metadata["body_sha256"], hashlib.sha256(body.encode()).hexdigest())
+        self.assertEqual(metadata["checklist_file"], checklist.name)
         self.assertEqual(metadata["head_sha"], manifest["head_sha"])
+        self.assertIn(manifest["head_sha"], checklist.read_text(encoding="utf-8"))
+        checklist.write_text(checklist.read_text(encoding="utf-8").replace("| 狀態 | 待確認 |", "| 狀態 | 已確認 |", 1), encoding="utf-8")
+        self.assertEqual(document, md.read_text(encoding="utf-8"))
 
     def test_default_markdown_only(self):
         context, manifest = self.capture()
-        md, js = release_report.publish_report(context, save_draft(context, draft_for(manifest)),
+        md, checklist = release_report.publish_report(context, save_draft(context, draft_for(manifest)),
                                                self.root / "reports")
         self.assertTrue(md.is_file())
-        self.assertIsNone(js)
+        self.assertTrue(checklist.is_file())
         self.assertEqual(list(md.parent.glob("*.json")), [])
 
     def test_missing_coverage_rejected_and_session_cleaned(self):
@@ -51,7 +54,7 @@ class ReportTests(RepoTest):
 
     def test_wrong_citation_sha_and_line_rejected(self):
         context, manifest, draft = self.valid_draft()
-        for bad in ({"ref": "0" * 40}, {"line_end": 10000}, {"line_start": True}):
+        for bad in ({"ref": "0" * 40}, {"line_end": 10000}, {"line_start": True}, {"repo": ""}, {"repo": "unknown-repo"}):
             changed = copy.deepcopy(draft)
             changed["code_risks"][0]["evidence"][0].update(bad)
             with self.assertRaises(ValueError):
@@ -139,13 +142,31 @@ class ReportTests(RepoTest):
     def test_secret_values_redacted_from_both_outputs(self):
         context, manifest, draft = self.valid_draft()
         draft["summary"] = "Password=ExampleSecret; token=ExampleToken; https://user:ExamplePass@host/path"
-        md, js = release_report.publish_report(context, save_draft(context, draft),
-                                               self.root / "reports", include_json=True)
-        for path in (md, js):
+        draft["config_changes"][0]["name"] = "token=ExampleToken"
+        md, checklist = release_report.publish_report(context, save_draft(context, draft), self.root / "reports")
+        for path in (md, checklist):
             output = path.read_text(encoding="utf-8")
             for secret in ("ExampleSecret", "ExampleToken", "ExamplePass"):
                 self.assertNotIn(secret, output)
             self.assertIn("已遮蔽", output)
+
+    def test_no_json_cli_or_prefilled_checklist_completion(self):
+        context, manifest, draft = self.valid_draft()
+        draft["checklist"] = [{"status": "已確認"}]
+        with self.assertRaisesRegex(ValueError, "不能預填"):
+            release_report.validate_result(draft, manifest, context)
+        result = python(SCRIPTS / "release_report.py", "--context-dir", context, "--result", save_draft(context, draft), "--include-json")
+        self.assertNotEqual(0, result.returncode)
+
+    def test_resource_category_omission_is_rejected_and_unreviewed_is_incomplete(self):
+        context, manifest = self.capture()
+        draft = draft_for(manifest)
+        draft["dependency_coverage"].pop()
+        with self.assertRaisesRegex(ValueError, "缺少設定"):
+            release_report.validate_result(draft, manifest, context)
+        draft = draft_for(manifest)
+        draft["dependency_coverage"][0].update(status="not-reviewed", reason="動態載入無法解析")
+        self.assertFalse(release_report.validate_result(draft, manifest, context)["review_complete"])
 
     def test_output_failure_still_cleans_session_and_preserves_other_files(self):
         context, manifest = self.capture()

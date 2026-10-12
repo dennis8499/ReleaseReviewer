@@ -1,4 +1,4 @@
 interface:
   display_name: "Release Reviewer｜上板檢查"
-  short_description: "審查上板程式風險，並核對新增設定與 DB 使用資訊及固定版本證據"
-  default_prompt: "使用 $release-reviewer，依指定 Repo、基礎分支與比較分支檢查上板程式風險、新增設定及 DB 使用資訊。"
+  short_description: "審查上板風險與 Group 功能鏈，核對新增設定、DB 及外部資源，產生人工 Checklist"
+  default_prompt: "使用 $release-reviewer，依指定 Repo、基礎分支與比較分支檢查上板風險、相關功能鏈與新增依賴，產生報告及人工 Checklist。"

@@ -15,6 +15,8 @@ import sys
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import evidence as ev
+import chain_review
+import resource_rules
 import review_session
 
 PRIORITIES = ("P0", "P1", "P2", "P3")
@@ -23,6 +25,8 @@ CONFIG_STATUSES = {"defined": "已有定義", "missing-definition": "未找到�
                    "external": "需確認外部注入", "unknown": "待確認"}
 DB_KINDS = {"connection": "連線", "database": "資料庫", "table": "資料表",
             "column": "欄位", "view": "View", "procedure": "預存程序"}
+EXTERNAL_KINDS = {"ftp", "sftp", "redis", "kafka", "other"}
+INTRODUCTIONS = {"first-use", "resource-definition", "target-change", "access-change"}
 LABELS = {"P0": "立即處理", "P1": "上板前優先修正", "P2": "排程修正", "P3": "後續改善"}
 
 
@@ -43,17 +47,19 @@ def validate_citations(items, manifest, context):
     for item in items:
         ev.require(isinstance(item, dict), "證據必須是物件。")
         source = item.get("source")
+        repo = item.get("repo")
+        ev.require(isinstance(repo, str) and bool(repo.strip()), "v2 證據必須含非空白 Repo 身分。")
         ref = item.get("ref")
         path = item.get("path")
         ev.require(isinstance(ref, str) and ev.SHA.fullmatch(ref), "證據必須含完整 SHA。")
-        content = ev.read_blob(manifest, context, source, path, ref)
+        content = ev.read_blob(manifest, context, source, path, ref, repo)
         start, end = item.get("line_start"), item.get("line_end")
         if start is not None or end is not None:
             ev.require(type(start) is int and type(end) is int and 1 <= start <= end,
                        "證據行號必須為有效的正整數區間。")
             ev.require(b"\0" not in content, "二進位證據不能引用文字行號。")
             ev.require(end <= len(content.splitlines()), f"證據行號超出固定檔案：{path}")
-        cleaned.append({"source": source, "ref": ref, "path": path,
+        cleaned.append({"repo": repo, "source": source, "ref": ref, "path": path,
                         **({"line_start": start, "line_end": end} if start is not None else {})})
     return cleaned
 
@@ -62,14 +68,12 @@ def expected_coverage(manifest):
     expected = {}
     preview = manifest.get("merge_preview") or {}
     head_pair = ("head", manifest["head_sha"])
-    left_pair = ("merge-base" if manifest["mode"] == "merge" else "base", manifest["diff_base"])
+    left_pair = ("merge-base", manifest["diff_base"])
     scopes = [(manifest["changed_files"], left_pair, head_pair)]
     if preview.get("status") == "clean":
         merged = ("merge-preview", preview["tree_sha"])
         scopes += [(preview["changed_files"], head_pair, merged),
                    (manifest["release_changes"], ("base", manifest["base_sha"]), merged)]
-    elif manifest["mode"] == "direct":
-        scopes += [(manifest["release_changes"], ("base", manifest["base_sha"]), head_pair)]
     # Conflict trees cannot be treated as a final executable version.
     for changes, before, after in scopes:
         for change in changes:
@@ -92,10 +96,11 @@ def final_version(manifest):
 
 
 def validate_result(draft, manifest, context):
-    ev.require(isinstance(draft, dict) and draft.get("schema") == "ReleaseReviewDraft/v1",
-               "結果須使用 ReleaseReviewDraft/v1。")
-    result = {"schema": "ReleaseReviewReport/v1", "summary": text(draft.get("summary"), "summary")}
-    for field in ("coverage", "code_risks", "config_changes", "db_changes"):
+    ev.require(isinstance(draft, dict) and draft.get("schema") == "ReleaseReviewDraft/v2",
+               "結果須使用 ReleaseReviewDraft/v2。")
+    ev.require(not draft.get("checklist"), "初始 Checklist 由 helper 產生，不能預填已確認。")
+    result = {"schema": "ReleaseReviewReport/v2", "summary": text(draft.get("summary"), "summary")}
+    for field in ("coverage", "code_risks", "config_changes", "db_changes", "external_changes", "dependency_coverage"):
         ev.require(isinstance(draft.get(field), list), f"{field} 必須是陣列。")
     for field in ("next_steps", "tests_executed", "tests_not_executed", "limitations"):
         result[field] = strings(draft.get(field), field)
@@ -113,7 +118,7 @@ def validate_result(draft, manifest, context):
         status = item.get("status")
         ev.require(status in {"reviewed", "metadata-only", "not-reviewed"}, "覆蓋狀態無效。")
         citations = validate_citations(item.get("evidence", []), manifest, context)
-        ev.require(all(e["path"] == path for e in citations), "覆蓋證據必須指向該路徑。")
+        ev.require(all(e["repo"] == "entry" and e["path"] == path for e in citations), "覆蓋證據必須指向入口 Repo 該路徑。")
         entry = {"path": path, "status": status, "evidence": citations}
         if status == "reviewed":
             ev.require(path not in metadata_paths, "二進位或 submodule 路徑須保留內容檢查限制。")
@@ -141,15 +146,16 @@ def validate_result(draft, manifest, context):
         ev.require(risk["scenario_source"] != "reproduced" or bool(result["tests_executed"]),
                    "標示已重現時須記錄實際執行的檢查。")
         risk["evidence"] = validate_citations(item.get("evidence", []), manifest, context)
-        ev.require(any(e["path"] in reviewed for e in risk["evidence"]),
+        ev.require(any(e["repo"] == "entry" and e["path"] in reviewed for e in risk["evidence"]),
                    "程式風險至少須引用一個已審查的變更路徑。")
-        ev.require(any((e["source"], e["ref"]) == final_pair for e in risk["evidence"]),
+        ev.require(any(e["repo"] == "entry" and (e["source"], e["ref"]) == final_pair for e in risk["evidence"]),
                    "程式風險須附最終受審版本的行為證據。")
         risks.append(risk)
     result["code_risks"] = risks
     searches = {}
     for field, prefix, kinds in (("config_changes", "C", CONFIG_KINDS),
-                                 ("db_changes", "D", set(DB_KINDS))):
+                                 ("db_changes", "D", set(DB_KINDS)),
+                                 ("external_changes", "E", EXTERNAL_KINDS)):
         changes = []
         identities = set()
         for number, item in enumerate(draft[field], 1):
@@ -158,9 +164,11 @@ def validate_result(draft, manifest, context):
             change = {k: text(item.get(k), k) for k in
                       ("id", "kind", "name", "description", "baseline_reason", "recommendation")}
             ev.require(change["kind"] in kinds, f"{field} 類型無效。")
+            change["introduction"] = item.get("introduction", "first-use")
+            ev.require(change["introduction"] in INTRODUCTIONS, "新增依賴判定類型無效。")
             change["evidence"] = validate_citations(item.get("evidence", []), manifest, context)
-            ev.require(any((e["source"], e["ref"]) == final_pair for e in change["evidence"]),
-                       "新增使用須引用最終受審版本中的程式使用位置。")
+            ev.require(any(e["repo"] == "entry" and (e["source"], e["ref"]) == final_pair for e in change["evidence"]),
+                       "新增依賴須引用最終受審版本中的使用、目標或部署定義位置。")
             identifiers = item.get("baseline_searches")
             ev.require(isinstance(identifiers, list) and bool(identifiers),
                        "新增使用須附基礎版本整個 Repo 的搜尋紀錄。")
@@ -175,28 +183,53 @@ def validate_result(draft, manifest, context):
                 change["definition_evidence"] = validate_citations(
                     item.get("definition_evidence", []), manifest, context)
                 if status == "defined":
-                    ev.require(any((e["source"], e["ref"]) == final_pair
+                    ev.require(any(e["repo"] == "entry" and (e["source"], e["ref"]) == final_pair
                                    for e in change["definition_evidence"]),
                                "已有定義須附最終版本中的設定定義證據。")
                 identity = (change["kind"], change["name"])
             else:
                 change["connection"] = text(item.get("connection"), "connection")
                 change["resolution"] = item.get("resolution")
-                ev.require(change["resolution"] in {"identified", "unknown"}, "DB 辨識狀態無效。")
+                ev.require(change["resolution"] in {"identified", "unknown"}, "資源辨識狀態無效。")
                 identity = (change["connection"], change["kind"], change["name"])
             ev.require(identity not in identities, "同一新增使用項目不應重複列出。")
             identities.add(identity)
             changes.append(change)
         result[field] = changes
     result["baseline_searches"] = [{"id": identifier, "query": record["query"],
+                                   "repo": record["repo"], "ref": record["ref"],
                                    "ignore_case": record["ignore_case"],
                                    "match_count": len(record["matches"])}
                                   for identifier, record in searches.items()]
+    result.update(chain_review.validate(draft, manifest, context, validate_citations))
+    unrelated = {c["repo"] for c in result["supporting_coverage"] if c["status"] == "unrelated"}
+    ev.require(not any(e["repo"] in unrelated for risk in risks for e in risk["evidence"]), "風險不能引用已判定無關的 Repo。")
+    categories, resource_complete = {}, True
+    for item in draft["dependency_coverage"]:
+        ev.require(isinstance(item, dict), "依賴覆蓋項目須為物件。")
+        kind = item.get("kind")
+        ev.require(kind in {"config", "db", *EXTERNAL_KINDS} and kind not in categories, "依賴覆蓋類型重複或無效。")
+        status = item.get("status")
+        ev.require(status in {"reviewed", "not-reviewed"}, "依賴覆蓋狀態無效。")
+        citations = validate_citations(item.get("evidence", []), manifest, context)
+        if status == "reviewed" and expected:
+            ev.require(any(e["repo"] == "entry" and (e["source"], e["ref"]) == final_pair for e in citations),
+                       "依賴覆蓋須有最終受審版本證據。")
+        categories[kind] = {"kind": kind, "status": status, "reason": text(item.get("reason"), "依賴覆蓋說明"), "evidence": citations}
+        resource_complete = resource_complete and status == "reviewed"
+    ev.require(set(categories) == {"config", "db", *EXTERNAL_KINDS}, "缺少設定、DB 或外部資源類型覆蓋。")
+    result["dependency_coverage"] = list(categories.values())
+    result["checklist"] = resource_rules.build_checklist(result)
+    for field in ("config_changes", "db_changes", "external_changes"):
+        for dependency in result[field]:
+            dependency["checklist_ids"] = [c["id"] for c in result["checklist"] if c["dependency_id"] == dependency["id"]]
+    result["environment_status"] = "待人工核對" if result["checklist"] else "未驗證實際環境"
     # Complete means the documented static scope is covered, never that production is ready.
     unresolved = any(c["definition_status"] == "unknown" for c in result["config_changes"])
     unresolved |= any(d["resolution"] == "unknown" for d in result["db_changes"])
+    unresolved |= any(d["resolution"] == "unknown" for d in result["external_changes"])
     complete = manifest["context_complete"] and all(v["status"] == "reviewed" for v in covered.values())
-    complete = complete and not unresolved
+    complete = complete and not unresolved and result["chain_complete"] and resource_complete
     result["review_complete"] = complete
     result["status"] = "靜態檢查完成" if complete else "檢查未完成"
     if complete and not expected:
@@ -205,6 +238,7 @@ def validate_result(draft, manifest, context):
                           ("project", "repo", "base_input", "head_input", "base_sha", "head_sha",
                            "merge_base", "diff_base", "mode", "generated_at", "working_tree_unchanged")}
     result["identity"].update({"final_source": final_pair[0], "final_ref": final_pair[1]})
+    result["identity"].update({"scope": manifest["scope"], "entry_repo": "entry", "repositories": manifest["repositories"]})
     result["context_gaps"] = manifest["context_gaps"]
     return result
 
@@ -231,7 +265,7 @@ def cell(value):
 def citations(items):
     lines = []
     for item in items:
-        location = item["path"]
+        location = item["repo"] + "/" + item["path"]
         if "line_start" in item:
             location += f":{item['line_start']}-{item['line_end']}"
         lines.append(f"- {location}；來源 {item['source']}；版本 {item['ref']}")
@@ -243,8 +277,18 @@ def render_markdown(result):
              f"- 程式風險：{len(result['code_risks'])} 項",
              f"- 新增設定提醒：{len(result['config_changes'])} 項",
              f"- 新增 DB 使用提醒：{len(result['db_changes'])} 項", "",
-             "本報告依固定版本做靜態檢查；設定與 DB 項目記錄新增使用及版本內證據，環境套用狀態未查證。",
-             "", "## 程式風險", ""]
+              f"- 新增外部資源提醒：{len(result['external_changes'])} 項",
+              f"- 環境核對：{result['environment_status']}；{len(result['checklist'])} 項初始待確認", "",
+              "本報告依固定版本做靜態檢查；靜態檢查完成不等於上板準備完成。實際環境未查證。",
+              "", "## 上板前優先事項", ""]
+    lines += [f"- {r['id']} {r['priority']}：{r['title']}" for r in result["code_risks"] if r["priority"] in {"P0", "P1"}]
+    lines += [f"- 檢查缺口：{g}" for g in result["context_gaps"] + result["chain_gaps"]]
+    lines += [f"- 未完成關聯審查：{c['repo']}；{c['reason']}" for c in result["supporting_coverage"] if c["status"] == "not-reviewed"]
+    lines += [f"- 未完成依賴檢查：{c['kind']}；{c['reason']}" for c in result["dependency_coverage"] if c["status"] == "not-reviewed"]
+    if result["checklist"]:
+        destination = result.get("checklist_filename", "同次審查的 Checklist Markdown")
+        lines += [f"- 人工核對清單：[{destination}]({destination})；申請工單不等於已開通，完成須保存核對證據。"]
+    lines += ["", "## 程式風險", ""]
     if not result["code_risks"]:
         lines += ["已檢查範圍未發現有證據的程式缺陷；檢查缺口見後文。", ""]
     for risk in result["code_risks"]:
@@ -267,13 +311,21 @@ def render_markdown(result):
         lines += [f"| {d['id']} | {DB_KINDS[d['kind']]} | {cell(d['name'])}{status} | {cell(d['connection'])} | {cell(d['description'])} |"]
     if not result["db_changes"]:
         lines += ["| — | — | 未辨識到新增使用項目 | — | 已知限制見後文 |"]
-    lines += ["", "## 設定與 DB 提醒明細", ""]
-    if not result["config_changes"] and not result["db_changes"]:
+    lines += ["", "## 新增外部資源提醒", "",
+              "| 編號 | 類型 | 資源 | 連線識別 | 使用說明 |", "| --- | --- | --- | --- | --- |"]
+    for dependency in result["external_changes"]:
+        lines += [f"| {dependency['id']} | {dependency['kind']} | {cell(dependency['name'])} | {cell(dependency['connection'])} | {cell(dependency['description'])} |"]
+    if not result["external_changes"]:
+        lines += ["| — | — | 未辨識到新增使用項目 | — | 已知限制見後文 |"]
+    lines += ["", "## 上板提醒明細", ""]
+    if not result["config_changes"] and not result["db_changes"] and not result["external_changes"]:
         lines += ["本次沒有新增使用提醒。", ""]
-    for c in result["config_changes"] + result["db_changes"]:
-        lines += [f"### {c['id']}｜{c['name']}", "", f"**新增判定**：{c['baseline_reason']}", "",
+    for c in result["config_changes"] + result["db_changes"] + result["external_changes"]:
+        lines += [f"<a id=\"{c['id']}\"></a>", "", f"### {c['id']}｜{c['name']}", "",
+                  f"**新增類型**：{c['introduction']}", "", f"**新增判定**：{c['baseline_reason']}", "",
                   f"**上板前提醒**：{c['recommendation']}", "", "**程式使用證據**：", "",
                   *citations(c["evidence"]), ""]
+        lines += ["**Checklist**：" + "、".join(c["checklist_ids"]), ""]
         if c.get("definition_evidence"):
             lines += ["**設定定義證據**：", "", *citations(c["definition_evidence"]), ""]
         records = {record["id"]: record for record in result["baseline_searches"]}
@@ -282,7 +334,20 @@ def render_markdown(result):
             record = records[identifier]
             lines += [f"- 搜尋 {cell(record['query'])}；符合 {record['match_count']} 處；紀錄 {identifier}"]
         lines.append("")
-    lines += ["## 下一步", ""]
+    lines += ["## Group 功能鏈", "",
+              "| Repo | 本機預設分支 | 固定版本 | 狀態 |", "| --- | --- | --- | --- |"]
+    for repo in result["identity"]["repositories"]:
+        lines += [f"| {cell(repo['id'] + ' / ' + repo['name'])} | {cell(repo.get('default_branch') or '入口指定分支')} | {repo.get('ref') or '見入口版本／未取得'} | {repo['status']} |"]
+    for coverage in result["supporting_coverage"]:
+        lines += ["", f"**{coverage['repo']}：{coverage['status']}**；{coverage['reason']}", "", *citations(coverage["evidence"])]
+    for link in result["functional_chain"]:
+        lines += ["", f"### {link['id']}｜{link['from_repo']} → {link['to_repo']}｜{link['kind']}", "",
+                  f"{link['status']}：{link['description']}", "", *citations(link["evidence"])]
+        if link.get("reason"):
+            lines += ["", link["reason"]]
+    for record in result["supporting_searches"]:
+        lines += [f"- 關聯搜尋：{record['repo']}；版本 {record['ref']}；{cell(record['query'])}；命中 {record['match_count']}；紀錄 {record['id']}"]
+    lines += ["", "## 下一步", ""]
     lines += [f"- {s}" for s in result["next_steps"]] or ["- 依本次提醒核對上板準備事項。"]
     lines += ["", "## 覆蓋、驗證與限制", "",
               "| 路徑 | 覆蓋狀態 | 未完成原因 |", "| --- | --- | --- |"]
@@ -290,6 +355,8 @@ def render_markdown(result):
         lines += [f"| {cell(c['path'])} | {c['status']} | {cell(c.get('reason', ''))} |"]
     if not result["coverage"]:
         lines += ["| — | 沒有變更路徑 | — |"]
+    lines += ["", "**依賴類型覆蓋**：", ""]
+    lines += [f"- {c['kind']}：{c['status']}；{c['reason']}" for c in result["dependency_coverage"]]
     for title, values in (("已執行檢查", result["tests_executed"]),
                           ("未執行檢查", result["tests_not_executed"]),
                           ("證據缺口", result["context_gaps"]),
@@ -308,7 +375,30 @@ def render_markdown(result):
     return "\n".join(lines)
 
 
-def publish_report(context, draft_path, report_dir=None, *, include_json=False):
+def render_checklist(result, report_filename):
+    identity = result["identity"]
+    lines = ["# 上板人工核對 Checklist", "", f"審查報告：[{report_filename}]({report_filename})", "",
+             f"Repo：{identity['repo']}", f"基礎分支／SHA：{identity['base_input']} / {identity['base_sha']}",
+             f"比較分支／SHA：{identity['head_input']} / {identity['head_sha']}",
+             f"最終受審版本：{identity['final_ref']}", "",
+             "本清單可人工更新，主報告保留產生時的靜態審查結果。版本變更時重新核對受影響項目。",
+             "狀態限待確認／已確認／未通過／不適用。已確認須填核對人、日期與開通／套用後驗證證據；",
+             "僅已申請或已送工單仍為待確認。不適用須填具體理由。必要項目未確認或未通過時，上板準備未完成。", ""]
+    for repo in identity["repositories"]:
+        if repo["role"] == "supporting":
+            lines += [f"- 關聯版本：{repo['id']} / {repo['name']}；本機預設分支 {repo.get('default_branch')}；SHA {repo.get('ref') or '未取得'}"]
+    for item in result["checklist"]:
+        lines += ["", f"## {item['id']}｜{item['dependency_id']}｜{item['resource']}", "",
+                  f"來源提醒：[{item['dependency_id']}]({report_filename}#{item['dependency_id']})",
+                  f"連線／用途識別：{item['connection']}", "", item["question"], "",
+                  "| 欄位 | 核對紀錄 |", "| --- | --- |", "| 狀態 | 待確認 |", "| 核對人 | |", "| 日期 | |",
+                  "| 工單／驗證證據 | |", "| 不適用理由 | |"]
+    if not result["checklist"]:
+        lines += ["未辨識到新增依賴，沒有自動產生的核對項；仍不代表實際環境已驗證。"]
+    return "\n".join(lines) + "\n"
+
+
+def publish_report(context, draft_path, report_dir=None):
     context = Path(context).expanduser().absolute()
     try:
         context = review_session.validate_session(context)
@@ -317,14 +407,7 @@ def publish_report(context, draft_path, report_dir=None, *, include_json=False):
         ev.require(draft_path.is_relative_to(context), "草稿必須位於本次 context 內。")
         draft = json.loads(draft_path.read_text(encoding="utf-8"))
         result = redact(validate_result(draft, manifest, context))
-        body = render_markdown(result)
         identity = result["identity"]
-        metadata = {"schema": result["schema"], **identity, "review_complete": result["review_complete"],
-                    "context_sha256": hashlib.sha256((context / "manifest.json").read_bytes()).hexdigest(),
-                    "body_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest()}
-        result.update({"report_metadata": metadata, "report_body": body})
-        marker = base64.b64encode(ev.canonical(metadata)).decode("ascii")
-        markdown = body + f"\n<!-- release-review-report:{marker} -->\n"
         destination = Path(report_dir or Path(manifest["repo"]) / "review-reports").expanduser().resolve()
         ev.require(not destination.is_relative_to(context), "報告不能寫入稍後會清理的 context。")
         destination.mkdir(parents=True, exist_ok=True)
@@ -333,19 +416,25 @@ def publish_report(context, draft_path, report_dir=None, *, include_json=False):
         for number in range(1000):
             suffix = "" if number == 0 else f"-{number:02}"
             md = destination / f"{stem}{suffix}.md"
-            js = destination / f"{stem}{suffix}.json"
-            if md.exists() or js.exists():
+            checklist = destination / f"{stem}{suffix}-checklist.md"
+            if md.exists() or checklist.exists():
                 continue
+            result["checklist_filename"] = checklist.name
+            body = render_markdown(result)
+            metadata = {"schema": result["schema"], **identity, "review_complete": result["review_complete"],
+                        "checklist_file": checklist.name,
+                        "context_sha256": hashlib.sha256((context / "manifest.json").read_bytes()).hexdigest(),
+                        "body_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest()}
+            marker = base64.b64encode(ev.canonical(metadata)).decode("ascii")
+            markdown = body + f"\n<!-- release-review-report:{marker} -->\n"
             created = []
             try:
                 with md.open("x", encoding="utf-8", newline="\n") as stream:
                     created.append(md)
                     stream.write(markdown)
-                if include_json:
-                    with js.open("x", encoding="utf-8", newline="\n") as stream:
-                        created.append(js)
-                        json.dump(result, stream, ensure_ascii=False, indent=2)
-                        stream.write("\n")
+                with checklist.open("x", encoding="utf-8", newline="\n") as stream:
+                    created.append(checklist)
+                    stream.write(render_checklist(result, md.name))
             except FileExistsError:
                 for path in created:
                     path.unlink(missing_ok=True)
@@ -354,7 +443,7 @@ def publish_report(context, draft_path, report_dir=None, *, include_json=False):
                 for path in created:
                     path.unlink(missing_ok=True)
                 raise
-            return md, js if include_json else None
+            return md, checklist
         raise ValueError("找不到可使用的新報告檔名。")
     finally:
         review_session.cleanup_if_owned(context)
@@ -365,14 +454,13 @@ def main(argv=None):
     parser.add_argument("--context-dir", required=True)
     parser.add_argument("--result", required=True)
     parser.add_argument("--report-dir")
-    parser.add_argument("--include-json", action="store_true")
     args = parser.parse_args(argv)
     try:
-        md, js = publish_report(args.context_dir, args.result, args.report_dir, include_json=args.include_json)
+        md, checklist = publish_report(args.context_dir, args.result, args.report_dir)
     except (ValueError, OSError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
         print(f"release-report: 未建立報告：{exc}", file=sys.stderr)
         return 2
-    print(json.dumps({"markdown_report": str(md), "json_report": str(js) if js else None}, ensure_ascii=False))
+    print(json.dumps({"markdown_report": str(md), "checklist_report": str(checklist)}, ensure_ascii=False))
     return 0
 
 

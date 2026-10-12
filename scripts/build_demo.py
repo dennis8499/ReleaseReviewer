@@ -34,7 +34,7 @@ def prepare_invoice(db):
 def main():
     root = Path(tempfile.mkdtemp(prefix="release-reviewer-demo-")).resolve()
     context = None
-    destination = ROOT / "docs/demo"
+    destination = ROOT / "docs/demo/v2"
     try:
         repo = init_repo(root)
         for path, value in {**BASE_FILES, "src/application.py": BASE_APP}.items():
@@ -44,6 +44,12 @@ def main():
         git(repo, "switch", "-c", "feature")
         for path, value in {**HEAD_FILES, "src/application.py": HEAD_APP}.items():
             write(repo, path, value)
+        write(repo, "src/resources.py", '''def release_dependencies(ftp, sftp, redis, kafka):
+    ftp.upload("invoices")
+    sftp.download("settlements")
+    redis.set("invoice:status", "ready", ex=300)
+    kafka.send("invoice.created", {"amount": 10})
+''')
         git(repo, "add", ".")
         git(repo, "commit", "-m", "invoice release demo")
         context, manifest = capture(repo)
@@ -70,7 +76,7 @@ def main():
         else:
             raise AssertionError("missing-config fixture was not reproduced")
         draft = draft_for(manifest)
-        draft["summary"] = "發現兩項會讓流程失敗的程式風險；另有三項新增設定及三項 DB 使用資訊需核對上板準備。"
+        draft["summary"] = "發現兩項會讓流程失敗的程式風險；另有三項設定、三項 DB 及 FTP／SFTP／Redis／Kafka 新增依賴需人工核對。"
         first = risk_item(manifest)
         first["scenario_source"] = "reproduced"
         second = {
@@ -110,6 +116,18 @@ def main():
                        "description": "新增讀取稅率欄位。",
                        "baseline_searches": [baseline_search(context, manifest, "tax_rate")]})
         draft["db_changes"] = [database, table, column]
+        for number, (kind, name, line) in enumerate((("ftp", "invoices", 2), ("sftp", "settlements", 3),
+                                                     ("redis", "invoice:status", 4), ("kafka", "invoice.created", 5)), 1):
+            draft["external_changes"].append({"id": f"E-{number:03}", "kind": kind, "name": name,
+                "connection": f"傳入的 {kind} client", "resolution": "identified", "introduction": "first-use",
+                "description": "本次首次使用的外部資源；實際主機與服務帳號由部署決定。",
+                "baseline_reason": "搜尋整個入口基礎 Repo，沒有此資源的程式使用或部署定義。",
+                "baseline_searches": [baseline_search(context, manifest, name)],
+                "recommendation": "核對連線、防火牆、帳號權限、資源建立及相容性；環境未查證。",
+                "evidence": [citation(manifest, "merge-preview", "src/resources.py", line)]})
+        for coverage in draft["dependency_coverage"]:
+            if coverage["kind"] in {"ftp", "sftp", "redis", "kafka"}:
+                coverage["evidence"] = [citation(manifest, "merge-preview", "src/resources.py", 1, 5)]
         draft["tests_executed"] = [
             "僅對本示範 fixture 重現：base 的 average(10, 0) 回傳 0；最終版本發生 ZeroDivisionError。",
             "僅對本示範 fixture 重現：billing_timeout() 發生 KeyError('billing_timeout_seconds')。"]
@@ -128,12 +146,14 @@ def main():
         assert len(expected["config_changes"]) == 3
         assert len(expected["db_changes"]) == 3
         assert not any("CoreDb" in d["name"] for d in expected["db_changes"])
-        md, js = release_report.publish_report(context, save_draft(context, draft),
-                                               destination, include_json=True)
-        md.replace(destination / "report.md")
-        js.replace(destination / "report.json")
-        print(json.dumps({"report": str(destination / "report.md"),
-                          "code_risks": 2, "config_changes": 3, "db_changes": 3}, ensure_ascii=False))
+        md, checklist = release_report.publish_report(context, save_draft(context, draft), destination)
+        (destination / "README.md").write_text(
+            "# ReleaseReviewer 0.2.0 示範\n\n" + f"[主報告]({md.name})、[人工 Checklist]({checklist.name})。\n\n" +
+            "本案例保留 base／head 原始來源，重現兩項程式失敗，並列出設定、DB、FTP、SFTP、Redis、Kafka 的核對事項。\n" +
+            "環境未連線查證；所有 Checklist 初始待確認。舊版 v1 示範保留於上一層。\n", encoding="utf-8")
+        print(json.dumps({"report": str(md), "checklist": str(checklist), "code_risks": 2,
+                          "config_changes": 3, "db_changes": 3, "external_changes": 4,
+                          "checklist_items": len(expected["checklist"])}, ensure_ascii=False))
     finally:
         if context:
             review_session.cleanup_if_owned(context)

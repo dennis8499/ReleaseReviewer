@@ -7,6 +7,17 @@ description: Check direct pre-release blockers using one explicit Repo and base/
 
 檢查本次變更是否直接阻止上版，辨識新增部署依賴，產生一份含人工 Checklist 的繁體中文 Release Report。程式語意由執行 Skill 的 agent 審查；helpers 驗證固定版本、證據與覆蓋。實際環境由人工核對，不依賴其他 Skills、GitLab API 或環境連線。
 
+## 輸出風格
+
+依照 [Claude Code Concise](https://code.claude.com/docs/en/output-styles#concise)，從開始即套用到繁體中文進度、問答及新增或更新文件：
+
+- 首句直接回答問題或陳述目前結果，省略開場、逐步旁白與收尾重述。
+- 簡單問答預設一至三句；使用者要求解釋或更多細節時完整說明，正式文件不限句數。
+- 在文件既有摘要或首個敘述段落交代重點，保留必要章節、欄位、Checklist、證據及原始紀錄。
+- 完整保留阻擋、待確認項、覆蓋缺口、限制、錯誤資訊、失敗測試輸出、安全警告與破壞性操作確認內容。
+
+Claude Code 使用者可選用內建 `Concise`（v2.1.237 以上）：在 `/config` → `Output style` 選擇 `Concise`；v2.1.269 以上亦可執行 `/output-style concise`。如需保存專案設定，可在既有 `.claude/settings.local.json` 加入 `"outputStyle": "Concise"`，保留其他設定且大小寫完全一致。這些是 Claude Code 設定指引；Codex 直接遵循上述寫作規則。
+
 ## 唯一使用者入口
 
 三項必填：**Repo、基礎分支、比較分支**。Repo 可為名稱或路徑；缺少輸入或名稱有歧義時釐清。只接受明確本機／遠端分支，拒絕 tag、commit、HEAD、revision expression、直接比較與 JSON 選項；不能默默啟動舊流程。
@@ -52,9 +63,7 @@ python "<skill-dir>/scripts/release_report.py" --context-dir "<context_dir>" --r
 
 每次只在 context 的 report_root 建立一份 release-review-<UTC時間>-<base8>-<head8>.md，Checklist 在同一文件內。重名續號，保留歷史；不接受 --report-dir，不產生獨立 Checklist 或 JSON 檔。人工核對初始全部待確認；已確認須核對人、日期及開通／套用後證據，不適用須理由，僅申請工單不算完成。
 
-使用 Claude Code 執行本 Skill 前，先啟用內建 **Concise output style**：可在 `/config` → `Output style` 選擇 `Concise`；Claude Code v2.1.269 以上亦可執行 `/output-style concise`。如需保存專案設定，可在 `.claude/settings.local.json` 設定 `"outputStyle": "Concise"`，名稱大小寫須完全一致。回覆先呈現結論，省略開場、逐步旁白與重複總結；審查範圍、必填欄位、必要證據、錯誤與限制仍須完整。上述指令與設定僅適用於 Claude Code；在 Codex 執行時遵循以下結論優先規則。
-
-採用 [Claude Code Concise](https://code.claude.com/docs/en/output-styles) 的結論優先原則：首段說產生時上版判斷與阻擋／待確認／缺口數；依序列已確認阻擋、新增項目與 Checklist、待確認與限制，完整 SHA、搜尋、功能鏈、覆蓋與執行紀錄放可展開證據區。避免重複摘要與流程敘述，保留行動所需證據。
+首段說產生時上版判斷與阻擋／待確認／缺口數；依序列已確認阻擋、新增項目與 Checklist、待確認與限制，完整 SHA、搜尋、功能鏈、覆蓋與執行紀錄放可展開證據區。
 
 判斷優先序：有直接阻擋或合併衝突 → 存在已確認阻擋；否則有證據／覆蓋缺口 → 檢查未完成；否則有待核對項 → 待核對上版條件；否則 → 已檢查範圍未發現阻擋。沒有差異另明列。靜態完整不代表環境已準備或核准上版。
 

@@ -1,47 +1,114 @@
-# Release Reviewer｜上板檢查
+# Release Reviewer｜上版檢查
 
-獨立 Codex Skill 0.2.0，對外只接受必填的 Repo、基礎分支與比較分支，固定合併前審查：
-
-1. 本次變更與合併後行為的具體程式風險。
-2. 新增使用的設定、環境變數與設定檔路徑，及版本內是否有對應定義。
-3. 新增使用的 DB 連線、資料庫、資料表、欄位、View 與預存程序。
-4. Group 中與入口變更相關的 API、事件、契約、DB 與快取功能鏈，包括未變更消費端。
-5. FTP、SFTP、Redis、Kafka 與其他新增資源；自動產生防火牆、權限、建表／欄位／Topic 與相容性人工 Checklist。
-
-新增判斷以入口基礎版本整個 Repo 為準，涵蓋首次使用、部署定義、目標變更及新增權限需求。關聯 Repo 固定各自本機預設分支的已提交版本，不 fetch、不混入 checkout／工作檔。缺少版本或鏈路保持檢查未完成。主報告與可填寫 Checklist 分開，靜態完成與實際環境準備分開。
+獨立 Codex Skill **0.3.0**。只接受 Repo、基礎分支、比較分支，固定合併前審查。檢查直接阻止上版的 P0／P1、相關功能鏈與新增部署依賴，在 VSCode 工作區根目錄產生**一份含可填寫 Checklist 的繁體中文 Release Report**。
 
 ## 安裝與使用
 
-本機打包產物為 `dist/release-reviewer-0.2.0.zip` 與對應 `.sha256` 校驗檔；公開發行後也可從 GitHub Releases 取得。
+需要 Python 3.10+、Git 及可使用本機 Skills 的 Codex。Git 須支援 merge-tree --write-tree 與 --merge-base；缺少乾淨預覽時保留缺口，不改用直接比較。
 
-需要 Python 3.10+、Git，以及可使用本機 Skills 的 Codex。Git 須支援 merge-tree --write-tree 與 --merge-base；能力不足會回報預覽缺口，不能改用直接比較略過。
-
-將 skills/release-reviewer 複製到 Codex 的 Skills 目錄，或將發行 ZIP 解壓至該目錄。CODEX_HOME 有設定時使用其 skills 子目錄，否則使用使用者的 .codex/skills。
+將 skills/release-reviewer 複製到 Codex Skills 目錄，或解壓 dist/release-reviewer-0.3.0.zip。CODEX_HOME 有設定時使用其 skills 子目錄，否則使用使用者的 .codex/skills。
 
 ~~~text
-$release-reviewer 專案名稱=OrderService 基礎分支=origin/main 比較分支=origin/feature/payment
+$release-reviewer Repo=OrderService 基礎分支=origin/main 比較分支=origin/feature/payment
 $release-reviewer Repo=C:\projects\OrderService 基礎分支=main 比較分支=feature/payment
 ~~~
 
-短分支名代表本機分支；origin/main 等遠端輸入會取得該分支最新版本。版本無法解析或遠端取得失敗時停止，不使用過期資料。預設不連 GitLab API、實際環境或 DB。
+三項均必填。短分支名代表本機分支；明確遠端分支會取得最新指定版本，失敗停止。不接受 tag、commit、HEAD、直接比較、JSON 或報告路徑選項。本機未提交修改不納入審查。
 
-不接受 tag、commit、HEAD、直接比較與 JSON 選項。Group 範圍與各 Repo 預設分支名稱由目前 VSCode 工作區／工作台內部資料提供；原生使用也可由明確 Group 目錄與本機遠端 HEAD 辨識。無法辨識時不猜 main／master。
+工作區範圍由 VSCode／工作台內部資料取得。Group 的相關上下游使用各自本機預設分支固定 SHA，不 fetch、不改用 checkout；缺少版本或鏈路保留未完成。新增使用以入口 base_sha 整個 Repo 為基準，涵蓋首次使用、部署定義、目標改變及新增權限。
 
-報告預設存於入口 Repo 的 review-reports，產生 release-review 主報告與 -checklist.md。Checklist 初始待確認；人工填核對人、日期及開通／套用後證據，不適用填理由。主報告保持原始證據，舊 v1 報告保留。報告成功或失敗後清理本次 owned 暫存證據。語意由執行 Skill 的 Codex 審查；Python helpers 驗證固定版本、搜尋、引用、鏈路結構、覆蓋及核對項，不是完整的自動語意分析器。
+透過 GitlabWorkSpace 使用時，請更新至整合 ReleaseReviewer 0.3.0 的 GitlabWorkSpace 0.24.0 VSIX／組合包；專案內另行安裝的技能也須更新至 0.3.0。舊 context／draft 須重新擷取審查，歷史報告保留。
 
-可先閱讀 [v2 示範與 Checklist](docs/demo/v2/README.md)、[歷史 v1 案例](docs/demo/README.md)及[驗證紀錄](docs/verification.md)。
+## 使用步驟
 
-## 開發驗證與打包
+1. 在 VSCode 開啟要檢查的資料夾或已儲存的 .code-workspace，並確認該環境可使用 release-reviewer 技能。
+2. 確認入口 Repo 的基礎分支及比較分支已提交。本機未提交內容會保留，不列入本次審查。
+3. 在 Codex 輸入下列三項資料；Repo 不可省略，基礎分支代表準備接收變更的版本，比較分支代表準備上版的變更版本。
+4. 等待固定版本、合併預覽、相關功能鏈與新增依賴審查完成，再開啟回覆中的唯一 Release Report 連結。
+5. 先處理報告的直接阻擋與檢查缺口，再由負責人逐項填寫同文件內的 Checklist。修正程式或分支版本改變後，重新執行審查。
 
-在此目錄執行：
+| 必填輸入 | 說明 | 範例 |
+| --- | --- | --- |
+| Repo | 明確的專案名稱或 Git Repo 路徑；重名時使用完整路徑 | OrderService |
+| 基礎分支 | 接收本次變更的本機或明確遠端分支 | main、origin/main |
+| 比較分支 | 本次準備上版的本機或明確遠端分支 | feature/payment、origin/feature/payment |
+
+### 可直接複製的範例
+
+單 Repo：在 VSCode 開啟該 Repo，再使用明確路徑及本機分支：
+
+~~~text
+$release-reviewer Repo="C:\projects\OrderService" 基礎分支=main 比較分支=feature/payment
+~~~
+
+Group：在 VSCode 開啟包含多個 Repo 的 Group，指定其中一個入口 Repo。其他 Repo 只用於查證相關上下游，不額外指定比較分支：
+
+~~~text
+$release-reviewer Repo=OrderService 基礎分支=origin/main 比較分支=origin/feature/payment
+~~~
+
+Multi-root：先儲存 .code-workspace，再使用相同三項輸入。工作區檔案與根目錄由環境提供，不需要在請求中新增輸出路徑選項。
+
+若 Git 遠端無法取得指定分支、Repo 名稱有歧義、分支不存在，或工作區根目錄無法辨識，先解決問題再重試；不會改用過期版本、同名 ref 或猜測分支。
+
+### 報告會放在哪裡
+
+| VSCode 開啟的環境 | 入口 Repo | 報告目錄 |
+| --- | --- | --- |
+| 單一 Repo 資料夾 | C:\projects\OrderService | C:\projects\OrderService |
+| Group 資料夾 C:\projects\BillingGroup | BillingGroup 內的 OrderService | C:\projects\BillingGroup |
+| 儲存在 C:\workspaces\billing.code-workspace 的工作區 | 任一宣告的 Repo | C:\workspaces |
+| 未儲存 multi-root，沒有唯一根目錄 | 任一 Repo | 先釐清／儲存工作區，不猜位置 |
+
+即使命令從入口 Repo 執行，Group 與已儲存工作區的報告仍使用上表的工作區位置。檔名例子為 `release-review-20261014T063454Z-12345678-abcdef12.md`；時間是 UTC，兩段短 SHA 對應本次基礎與比較版本。
+
+### 如何填寫 Checklist
+
+開啟報告的「新增項目與 Checklist → 人工核對紀錄」。每個新增資源有對應核對項與文件內連結；只更新 `release-checklist:start` 與 `release-checklist:end` 之間的紀錄。
+
+| 狀態 | 使用方式 |
+| --- | --- |
+| 待確認 | 初始狀態；尚未實際驗證，或只有申請工單／預定執行時間 |
+| 已確認 | 已完成開通或套用；填核對人、日期及實際驗證證據 |
+| 未通過 | 實際核對失敗；記錄原因並安排修正 |
+| 不適用 | 本次部署不需要此項；填具體理由 |
+
+例如 Kafka Topic 已建立且服務帳號已通過發送測試，才可把對應項目改為「已確認」，填負責人、日期及測試／開通證據。人工填寫保留產生時判斷，不能把原始結論自行改成部署核准。
+
+新版本重新審查會產生另一份報告，核對項重新設為待確認；歷史報告及舊的人工紀錄保留。
+
+## 單一 Release Report
+
+- 一般資料夾：直接存於目前 VSCode 工作區根目錄。
+- 已儲存工作區：存於 .code-workspace 所在目錄。
+- 未儲存 multi-root 或根目錄不明：先釐清，不推測位置。
+- 每次只產生 release-review-<UTC時間>-<base8>-<head8>.md；重名續號，保留歷史與人工紀錄。
+
+採用結論優先的 Concise 風格，依序呈現產生時判斷、已確認阻擋、新增項目與 Checklist、待確認與限制，以及可展開的固定版本證據。
+
+| 產生時判斷 | 條件 |
+| --- | --- |
+| 存在已確認阻擋 | 有直接 P0／P1 或合併衝突 |
+| 檢查未完成 | 無已確認阻擋，但證據、覆蓋或功能鏈有缺口 |
+| 待核對上版條件 | 靜態範圍完整、無阻擋，但有必要 Checklist |
+| 已檢查範圍未發現阻擋 | 靜態範圍完整、無阻擋及新增核對項 |
+
+Checklist 包含設定、DB、FTP、SFTP、Redis、Kafka 與其他資源的防火牆、權限、建立／套用及相容性核對。初始全部待確認；已確認需核對人、日期及開通／套用後證據，不適用需理由，僅有申請工單不算完成。只在 release-checklist:start／end 邊界內填寫紀錄，固定正文摘要及產生時判斷保持不變；新版本重新核對。
+
+預設靜態檢查，不連 GitLab API、DB 或實際環境；靜態完成不等於部署核准。語意由執行技能的 agent 審查，helpers 驗證固定來源、證據、覆蓋與核對結構。報告保留有引用行號的最終預覽非機密程式片段及內容摘要，暫存物件清理後仍可閱讀；設定值與認證內容省略。
+
+參考 [v3 單檔示範](docs/demo/v3/README.md)、[0.3.0 驗證](docs/verification-v3.md)；[歷史 v2](docs/demo/v2/README.md)與 v1 報告保留。
+
+## 開發與契約
 
 ~~~powershell
 python -X utf8 -B -m unittest discover -s tests -v
+python -X utf8 -B scripts/build_demo.py
 python -X utf8 -B scripts/package_release.py
 ~~~
 
-打包輸出 dist/release-reviewer-0.2.0.zip 與 SHA-256 檔，ZIP 只有可安裝的 release-reviewer 目錄，不覆寫 0.1.0 發行包。測試不需要第三方 Python 套件。Skill frontmatter 可另用 skill-creator 的 quick_validate.py 驗證。
+打包輸出 0.3.0 ZIP 與 SHA-256，ZIP 只有可安裝的 release-reviewer 目錄，不覆寫舊發行包。測試不需要第三方套件；CI 在 Linux／Windows 的 Python 3.10、3.14 執行測試與打包。
 
-GitHub Actions 在 Linux、Windows 的 Python 3.10、3.14 執行相同測試與打包檢查。
+Context、Draft、Report 統一使用 v3。Context 保存 report_root；report 的 release_assessment 由 helper 推導。publish_report(context, draft_path) 回傳一個 Path；CLI 只回傳 markdown_report。v3 移除 --report-dir、checklist_report、checklist_file 與整份正文 body_sha256，改用排除人工區塊的 static_body_sha256。舊 context／draft 須重新擷取審查，舊報告不改寫。
 
-Git primitives 與 owned-session 邏輯原擷取自本機 MergeReviewer 0.8.0（commit efabb07f054b0dfe0a3ba1f5f8cd9f5aa9438f6a），必要程式已內附；沒有對原專案的執行期依賴。GitlabWorkSpace 整合保留相同原生 Skill 封裝。
+Git 與 owned-session 程式內附，無 MergeReviewer 執行期依賴；報告成功、失敗或中止後清理本次 owned 暫存證據。

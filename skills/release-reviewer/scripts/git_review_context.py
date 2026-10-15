@@ -17,7 +17,7 @@ import git_support as git
 import group_context
 import review_session
 
-SCHEMA = "ReleaseReviewContext/v2"
+SCHEMA = "ReleaseReviewContext/v3"
 
 
 def worktree_fingerprint(repo: Path) -> str:
@@ -62,6 +62,9 @@ def build_manifest(args: argparse.Namespace) -> dict:
         workspace_file = git.normalize_path(args.workspace_file) if args.workspace_file else None
         if workspace_file and not workspace_file.is_file():
             raise git.ReviewContextError(f"找不到 workspace：{workspace_file}")
+        report_root = workspace_file.parent if workspace_file else workspace
+        if not report_root.is_dir():
+            raise git.ReviewContextError("無法辨識工作區報告根目錄；請確認目前 VSCode 工作區。")
         repositories, discovery_gaps = group_context.discover(workspace, workspace_file)
         repo = group_context.choose(repositories, workspace, args.project)
         catalog, catalog_gaps = group_context.catalog(repositories, repo, args.workspace_context_json)
@@ -116,6 +119,7 @@ def build_manifest(args: argparse.Namespace) -> dict:
             "schema": SCHEMA,
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "repo": str(repo), "project": repo.name,
+            "report_root": str(report_root),
             "base_input": args.base, "head_input": args.head,
             "base_resolved_ref": base_ref, "head_resolved_ref": head_ref,
             "base_sha": base, "head_sha": head, "merge_base": merge_base,
@@ -141,7 +145,7 @@ def build_manifest(args: argparse.Namespace) -> dict:
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--workspace", default=os.getcwd())
+    parser.add_argument("--workspace", required=True)
     parser.add_argument("--workspace-file")
     parser.add_argument("--project", required=True)
     parser.add_argument("--base", required=True)

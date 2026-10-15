@@ -1,8 +1,8 @@
-# 新增依賴與上板核對
+# 新增依賴與上版核對
 
 對照入口 base_sha 整個 Repo 與最終預覽，辨識 first-use、resource-definition、target-change、access-change。搜尋需沿設定載入、環境變數、包裝 client、ORM mapping、SQL fragment、部署 manifest／IaC、呼叫與帳號用途查證。只有定義、測試、註解或範例不等於既有正式程式使用；此次新增會套用的部署定義本身仍需提醒。
 
-既有設定鍵改指新 DB／主機、同表多用新欄位、新 Topic／Consumer Group、新 Redis DB／prefix／command、新 FTP 目錄或存取操作，皆可能引入新上板準備。等價搬檔、改名、其他檔案已使用同一資源且同一存取需求不重複提醒。不同 DB／schema、服務身分或目標不可錯誤合併。
+既有設定鍵改指新 DB／主機、同表多用新欄位、新 Topic／Consumer Group、新 Redis DB／prefix／command、新 FTP 目錄或存取操作，皆可能引入新上版準備。等價搬檔、改名、其他檔案已使用同一資源且同一存取需求不重複提醒。不同 DB／schema、服務身分或目標不可錯誤合併。
 
 | 類型 | 查證重點 | 人工核對 |
 | --- | --- | --- |
@@ -18,4 +18,4 @@
 
 每項提醒至少一個入口 base 搜尋紀錄及 baseline_reason，說明如何排除既有使用與別名；最終證據引用實際使用、目標變更或此次部署定義。config_changes 與 db_changes 沿用主規則，外部類型使用 external_changes。動態目標無法辨識時保留已知邏輯名稱及 resolution=unknown，不猜主機、DB、Topic 或 key。
 
-上板 Checklist 初始狀態一律待確認。已確認必須記錄核對人、日期、開通／套用後的驗證證據；僅有申請編號或排程仍是待確認。未通過表示目前條件不符，不適用須具體理由。這是人工記錄，helpers 不連線實際環境，也不把主報告靜態完成轉成部署核准。
+Release Report 內的 Checklist 初始狀態一律待確認。已確認必須記錄核對人、日期、開通／套用後的驗證證據；僅有申請編號或排程仍是待確認。未通過表示目前條件不符，不適用須具體理由。這是人工記錄，helpers 不連線實際環境，也不把主報告靜態完成轉成部署核准。

@@ -306,7 +306,7 @@ def workspace_roots(workspace: Path, workspace_file: Path | None) -> list[Path]:
     if workspace_file is None:
         return [workspace]
     try:
-        content = workspace_file.read_text(encoding="utf-8")
+        content = workspace_file.read_text(encoding="utf-8-sig")
         raw = json.loads(strip_trailing_commas(strip_jsonc(content)))
     except (OSError, json.JSONDecodeError) as exc:
         raise ReviewContextError(f"無法讀取 VS Code workspace: {workspace_file}: {exc}") from exc

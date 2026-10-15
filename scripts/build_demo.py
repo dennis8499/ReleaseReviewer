@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import shutil
 from pathlib import Path
 import sys
 import tempfile
@@ -34,7 +35,7 @@ def prepare_invoice(db):
 def main():
     root = Path(tempfile.mkdtemp(prefix="release-reviewer-demo-")).resolve()
     context = None
-    destination = ROOT / "docs/demo/v2"
+    destination = ROOT / "docs/demo/v3"
     try:
         repo = init_repo(root)
         for path, value in {**BASE_FILES, "src/application.py": BASE_APP}.items():
@@ -81,6 +82,7 @@ def main():
         first["scenario_source"] = "reproduced"
         second = {
             "id": "R-002", "priority": "P1", "title": "新增發票流程讀取未定義設定而失敗",
+            "blocking_reason": "本次新增的正式發票準備流程必然讀取不存在的必要鍵，流程無法完成。",
             "trigger": "發票準備流程讀取檔案內的必要逾時設定。",
             "impact": "設定檔沒有該鍵，讀取時發生例外，發票準備流程中斷。",
             "recommendation": "開發補齊必要設定，或依產品需求提供可用的預設行為。",
@@ -146,12 +148,14 @@ def main():
         assert len(expected["config_changes"]) == 3
         assert len(expected["db_changes"]) == 3
         assert not any("CoreDb" in d["name"] for d in expected["db_changes"])
-        md, checklist = release_report.publish_report(context, save_draft(context, draft), destination)
+        generated = release_report.publish_report(context, save_draft(context, draft))
+        md = destination / generated.name
+        shutil.copyfile(generated, md)
         (destination / "README.md").write_text(
-            "# ReleaseReviewer 0.2.0 示範\n\n" + f"[主報告]({md.name})、[人工 Checklist]({checklist.name})。\n\n" +
+            "# ReleaseReviewer 0.3.0 示範\n\n" + f"[Release Report（含 Checklist）]({md.name})。\n\n" +
             "本案例保留 base／head 原始來源，重現兩項程式失敗，並列出設定、DB、FTP、SFTP、Redis、Kafka 的核對事項。\n" +
-            "環境未連線查證；所有 Checklist 初始待確認。舊版 v1 示範保留於上一層。\n", encoding="utf-8")
-        print(json.dumps({"report": str(md), "checklist": str(checklist), "code_risks": 2,
+            "報告原先產生於 fixture Repo 根目錄，再複製至此供閱讀；環境未連線查證，所有 Checklist 初始待確認。舊版 v1／v2 示範保留。\n", encoding="utf-8")
+        print(json.dumps({"report": str(md), "code_risks": 2,
                           "config_changes": 3, "db_changes": 3, "external_changes": 4,
                           "checklist_items": len(expected["checklist"])}, ensure_ascii=False))
     finally:

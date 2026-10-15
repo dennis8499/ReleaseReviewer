@@ -86,9 +86,10 @@ def fixture(root):
     return repo
 
 
-def capture(repo, mode="merge", base="main", head="feature"):
-    args = context_helper.parse_args(["--workspace", str(repo), "--project", str(repo),
-                                     "--base", base, "--head", head])
+def capture(repo, mode="merge", base="main", head="feature", workspace=None, workspace_file=None):
+    args = context_helper.parse_args(["--workspace", str(workspace or repo), "--project", str(repo),
+                                     "--base", base, "--head", head] +
+                                     (["--workspace-file", str(workspace_file)] if workspace_file else []))
     manifest = context_helper.build_manifest(args)
     return Path(manifest["context_dir"]), manifest
 
@@ -112,7 +113,7 @@ def draft_for(manifest):
                                       for source, ref in sorted(pairs)]})
     final = "merge-preview" if (manifest.get("merge_preview") or {}).get("status") == "clean" else "head"
     dependency_evidence = [citation(manifest, final, "src/service.py")] if manifest["changed_files"] else []
-    return {"schema": "ReleaseReviewDraft/v2", "summary": "測試固定版本的上板檢查。",
+    return {"schema": "ReleaseReviewDraft/v3", "summary": "測試固定版本的上板檢查。",
             "coverage": coverage, "code_risks": [], "config_changes": [], "db_changes": [],
             "external_changes": [], "supporting_coverage": [], "functional_chain": [], "chain_gaps": [],
             "dependency_coverage": [{"kind": kind, "status": "reviewed", "reason": "已檢視固定變更與依賴使用。",
@@ -151,6 +152,7 @@ def db_item(context, manifest, resolution="identified"):
 def risk_item(manifest):
     source = release_report.final_version(manifest)[0]
     return {"id": "R-001", "priority": "P1", "title": "數量為零時平均金額計算會失敗",
+            "blocking_reason": "正式統計流程允許零數量，本次移除防護會使該必要流程中斷。",
             "trigger": "以數量 0 計算平均金額。",
             "impact": "原本回傳零的流程改成除以零例外。",
             "recommendation": "開發恢復零數量的處理。",

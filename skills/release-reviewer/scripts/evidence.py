@@ -40,9 +40,13 @@ def load_manifest(context: Path) -> dict:
     path = context / "manifest.json"
     require(not path.is_symlink(), "manifest 不能是符號連結。")
     manifest = json.loads(path.read_text(encoding="utf-8"))
-    require(isinstance(manifest, dict) and manifest.get("schema") == "ReleaseReviewContext/v2",
+    require(isinstance(manifest, dict) and manifest.get("schema") == "ReleaseReviewContext/v3",
             "context schema 無效。")
     require(Path(manifest["context_dir"]).resolve() == context, "context 目錄與 manifest 不符。")
+    report_root = manifest.get("report_root")
+    require(isinstance(report_root, str) and Path(report_root).is_absolute(), "缺少工作區報告根目錄。")
+    require(Path(report_root).is_dir() and Path(report_root).resolve() == Path(report_root),
+            "工作區報告根目錄不存在或已改指其他位置。")
     for field in ("base_sha", "head_sha", "diff_base"):
         require(isinstance(manifest.get(field), str) and SHA.fullmatch(manifest[field]), f"{field} 無效。")
     require(manifest.get("mode") == "merge", "只支援合併前審查。")

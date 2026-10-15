@@ -33,3 +33,7 @@
 語意判斷由建立 Skill 的 agent 完成，未做獨立模型盲測。35 項測試驗證 helpers 與輸出契約，不證明語意審查沒有漏報。尚未使用使用者的實際 Repo 驗收。本頁記錄本機驗證；Linux、Windows 及 Python 3.10、3.14 的持續驗證結果，請見 [GitHub Actions](https://github.com/dennis8499/ReleaseReviewer/actions/workflows/ci.yml)。
 
 GitlabWorkSpace 與既有 MergeReviewer 不在此階段修改範圍；整合留待獨立試用確認後另行處理。
+
+## 目前版本
+
+0.3.0 的單一 Release Report、v3 契約與工作區根目錄驗證見 [verification-v3.md](verification-v3.md)。本文件保留原始歷史驗證紀錄。

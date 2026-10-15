@@ -32,8 +32,12 @@ class PackageTests(RepoTest):
         context = Path(manifest["context_dir"])
         self.contexts.append(context)
         result = python(scripts / "release_report.py", "--context-dir", context,
-                        "--result", save_draft(context, draft_for(manifest)),
-                        "--report-dir", self.root / "standalone-reports")
+                        "--result", save_draft(context, draft_for(manifest)))
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue(Path(json.loads(result.stdout)["markdown_report"]).is_file())
+        output = json.loads(result.stdout)
+        self.assertEqual({"markdown_report"}, set(output))
+        report = Path(output["markdown_report"])
+        self.assertTrue(report.is_file())
+        self.assertEqual(self.repo, report.parent)
+        self.assertEqual([report], list(self.repo.glob("release-review-*.md")))
         self.assertFalse(context.exists())

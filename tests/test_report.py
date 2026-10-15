@@ -3,6 +3,7 @@ import copy
 import hashlib
 import json
 import re
+from unittest.mock import patch
 
 from support import *
 
@@ -19,8 +20,8 @@ class ReportTests(RepoTest):
     def test_report_checklist_metadata_and_cleanup(self):
         context, manifest, draft = self.valid_draft()
         result = release_report.validate_result(draft, manifest, context)
-        md, checklist = release_report.publish_report(context, save_draft(context, draft), self.root / "reports")
-        self.assertEqual(result["schema"], "ReleaseReviewReport/v2")
+        md = release_report.publish_report(context, save_draft(context, draft))
+        self.assertEqual(result["schema"], "ReleaseReviewReport/v3")
         self.assertEqual([len(result[k]) for k in ("code_risks", "config_changes", "db_changes")], [1, 1, 1])
         self.assertNotIn("CoreDb.dbo.Orders", [d["name"] for d in result["db_changes"]])
         self.assertTrue(result["review_complete"])
@@ -29,28 +30,35 @@ class ReportTests(RepoTest):
         marker = re.search(r"<!-- release-review-report:([A-Za-z0-9+/=]+) -->", document).group(1)
         metadata = json.loads(base64.b64decode(marker))
         body = document.split("\n<!-- release-review-report:")[0]
-        self.assertEqual(metadata["body_sha256"], hashlib.sha256(body.encode()).hexdigest())
-        self.assertEqual(metadata["checklist_file"], checklist.name)
+        self.assertEqual(metadata["static_body_sha256"], hashlib.sha256(release_report.static_body(body).encode()).hexdigest())
+        self.assertNotIn("checklist_file", metadata)
+        self.assertEqual("blocked", metadata["release_assessment"])
         self.assertEqual(metadata["head_sha"], manifest["head_sha"])
-        self.assertIn(manifest["head_sha"], checklist.read_text(encoding="utf-8"))
-        checklist.write_text(checklist.read_text(encoding="utf-8").replace("| 狀態 | 待確認 |", "| 狀態 | 已確認 |", 1), encoding="utf-8")
-        self.assertEqual(document, md.read_text(encoding="utf-8"))
+        self.assertIn(manifest["head_sha"], document)
+        edited = body.replace("| 待確認 |", "| 已確認 |", 1)
+        self.assertNotEqual(body, edited)
+        self.assertEqual(release_report.static_body(body), release_report.static_body(edited))
+        md.write_text(document.replace(body, edited), encoding="utf-8")
+        self.assertEqual(metadata["static_body_sha256"], hashlib.sha256(release_report.static_body(edited).encode()).hexdigest())
+        self.assertNotEqual(metadata["static_body_sha256"],
+                            hashlib.sha256(release_report.static_body(edited.replace("原本回傳零", "篡改原本回傳零")).encode()).hexdigest())
 
     def test_default_markdown_only(self):
         context, manifest = self.capture()
-        md, checklist = release_report.publish_report(context, save_draft(context, draft_for(manifest)),
-                                               self.root / "reports")
+        md = release_report.publish_report(context, save_draft(context, draft_for(manifest)))
         self.assertTrue(md.is_file())
-        self.assertTrue(checklist.is_file())
+        self.assertEqual(self.repo, md.parent)
+        self.assertEqual([md], list(self.repo.glob("release-review-*.md")))
+        self.assertFalse((self.repo / "review-reports").exists())
         self.assertEqual(list(md.parent.glob("*.json")), [])
 
     def test_missing_coverage_rejected_and_session_cleaned(self):
         context, manifest, draft = self.valid_draft()
         draft["coverage"] = draft["coverage"][:1]
         with self.assertRaisesRegex(ValueError, "所有變更路徑"):
-            release_report.publish_report(context, save_draft(context, draft), self.root / "reports")
+            release_report.publish_report(context, save_draft(context, draft))
         self.assertFalse(context.exists())
-        self.assertFalse((self.root / "reports").exists())
+        self.assertEqual([], list(self.repo.glob("release-review-*.md")))
 
     def test_wrong_citation_sha_and_line_rejected(self):
         context, manifest, draft = self.valid_draft()
@@ -139,12 +147,12 @@ class ReportTests(RepoTest):
         with self.assertRaisesRegex(ValueError, "實際執行"):
             release_report.validate_result(draft, manifest, context)
 
-    def test_secret_values_redacted_from_both_outputs(self):
+    def test_secret_values_redacted_from_fixed_text_and_checklist(self):
         context, manifest, draft = self.valid_draft()
         draft["summary"] = "Password=ExampleSecret; token=ExampleToken; https://user:ExamplePass@host/path"
         draft["config_changes"][0]["name"] = "token=ExampleToken"
-        md, checklist = release_report.publish_report(context, save_draft(context, draft), self.root / "reports")
-        for path in (md, checklist):
+        md = release_report.publish_report(context, save_draft(context, draft))
+        for path in (md,):
             output = path.read_text(encoding="utf-8")
             for secret in ("ExampleSecret", "ExampleToken", "ExamplePass"):
                 self.assertNotIn(secret, output)
@@ -172,8 +180,10 @@ class ReportTests(RepoTest):
         context, manifest = self.capture()
         obstruction = self.root / "not-a-directory"
         obstruction.write_text("keep", encoding="utf-8")
-        with self.assertRaises(OSError):
-            release_report.publish_report(context, save_draft(context, draft_for(manifest)), obstruction)
+        manifest["report_root"] = str(obstruction)
+        (context / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "報告根目錄"):
+            release_report.publish_report(context, save_draft(context, draft_for(manifest)))
         self.assertFalse(context.exists())
         self.assertEqual(obstruction.read_text(), "keep")
 
@@ -204,3 +214,144 @@ class ReportTests(RepoTest):
         result = release_report.validate_result(draft_for(manifest), manifest, context)
         self.assertEqual(result["status"], "沒有差異")
         self.assertEqual(result["config_changes"] + result["db_changes"], [])
+
+
+    def test_only_direct_blockers_are_accepted_and_reason_is_required(self):
+        context, manifest, draft = self.valid_draft()
+        for priority in ("P2", "P3"):
+            changed = copy.deepcopy(draft)
+            changed["code_risks"][0]["priority"] = priority
+            with self.assertRaisesRegex(ValueError, "P0／P1"):
+                release_report.validate_result(changed, manifest, context)
+        del draft["code_risks"][0]["blocking_reason"]
+        with self.assertRaisesRegex(ValueError, "blocking_reason"):
+            release_report.validate_result(draft, manifest, context)
+
+    def test_assessment_separates_blockers_gaps_and_pending_conditions(self):
+        context, manifest, draft = self.valid_draft()
+        result = release_report.validate_result(draft, manifest, context)
+        self.assertEqual("blocked", result["release_assessment"])
+        self.assertEqual(1, result["blocker_count"])
+        draft["code_risks"] = []
+        result = release_report.validate_result(draft, manifest, context)
+        self.assertEqual("pending-confirmation", result["release_assessment"])
+        self.assertGreater(result["pending_count"], 0)
+        draft["config_changes"][0]["definition_status"] = "unknown"
+        result = release_report.validate_result(draft, manifest, context)
+        self.assertEqual("incomplete", result["release_assessment"])
+        self.assertGreater(result["gap_count"], 0)
+        draft["code_risks"] = [risk_item(manifest)]
+        self.assertEqual("blocked", release_report.validate_result(draft, manifest, context)["release_assessment"])
+        clean = release_report.validate_result(draft_for(manifest), manifest, context)
+        self.assertEqual("no-blockers-found", clean["release_assessment"])
+        self.assertEqual(0, clean["pending_count"])
+
+    def test_conflict_is_a_blocker_even_without_code_risks(self):
+        git(self.repo, "switch", "main")
+        write(self.repo, "src/service.py", "def average(total, count):\n    return -1\n")
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-m", "conflicting base")
+        git(self.repo, "switch", "feature")
+        context, manifest = self.capture()
+        self.assertEqual("conflicts", manifest["merge_preview"]["status"])
+        draft = draft_for(manifest)
+        result = release_report.validate_result(draft, manifest, context)
+        self.assertEqual("blocked", result["release_assessment"])
+        self.assertEqual(1, result["blocker_count"])
+        self.assertFalse(result["review_complete"])
+        report = release_report.publish_report(context, save_draft(context, draft))
+        self.assertIn("M-001", report.read_text(encoding="utf-8"))
+
+    def test_folder_and_group_roots_are_preserved(self):
+        for workspace in (self.repo, self.root):
+            with self.subTest(workspace=workspace):
+                context, manifest = self.capture(workspace=workspace)
+                self.assertEqual(str(workspace), manifest["report_root"])
+                report = release_report.publish_report(context, save_draft(context, draft_for(manifest)))
+                self.assertEqual(workspace, report.parent)
+
+    def test_saved_workspace_file_parent_is_report_root(self):
+        saved = self.root / "saved workspace"
+        saved.mkdir()
+        workspace_file = saved / "review.code-workspace"
+        workspace_file.write_text(json.dumps({"folders": [{"path": str(self.repo)}]}), encoding="utf-8-sig")
+        context, manifest = self.capture(workspace=self.root, workspace_file=workspace_file)
+        self.assertEqual(str(saved), manifest["report_root"])
+        report = release_report.publish_report(context, save_draft(context, draft_for(manifest)))
+        self.assertEqual(saved, report.parent)
+        self.assertEqual([report], list(saved.glob("*.md")))
+        self.assertEqual([], list(self.repo.glob("release-review-*.md")))
+
+    def test_repeated_runs_do_not_overwrite_human_records(self):
+        with patch.object(release_report, "datetime") as clock:
+            clock.now.return_value.strftime.return_value = "20261014T000000Z"
+            context, manifest, draft = self.valid_draft()
+            first = release_report.publish_report(context, save_draft(context, draft))
+            manual = first.read_text(encoding="utf-8").replace("| 待確認 |", "| 已確認 |", 1)
+            first.write_text(manual, encoding="utf-8")
+            context, manifest, draft = self.valid_draft()
+            second = release_report.publish_report(context, save_draft(context, draft))
+        self.assertNotEqual(first, second)
+        self.assertTrue(second.stem.endswith("-01"))
+        self.assertEqual(manual, first.read_text(encoding="utf-8"))
+        self.assertEqual({first, second}, set(self.repo.glob("release-review-*.md")))
+        self.assertNotIn("已確認 |", second.read_text(encoding="utf-8"))
+
+    def test_report_destination_and_json_overrides_are_rejected(self):
+        context, manifest = self.capture()
+        draft = save_draft(context, draft_for(manifest))
+        for option in (("--report-dir", str(self.root)), ("--include-json",)):
+            result = python(SCRIPTS / "release_report.py", "--context-dir", context, "--result", draft, *option)
+            self.assertNotEqual(0, result.returncode)
+        self.assertEqual([], list(self.repo.glob("release-review-*.md")))
+
+    def test_ambiguous_checklist_boundaries_are_rejected(self):
+        context, manifest = self.capture()
+        body = release_report.render_markdown(release_report.validate_result(draft_for(manifest), manifest, context))
+        for bad in (body.replace(release_report.CHECKLIST_END, ""),
+                    body + release_report.CHECKLIST_START,
+                    body.replace(release_report.CHECKLIST_START, release_report.CHECKLIST_END, 1)):
+            with self.assertRaises(ValueError):
+                release_report.static_body(bad)
+
+
+    def test_final_cited_code_survives_divergent_merge_context_cleanup(self):
+        git(self.repo, "switch", "main")
+        base = git(self.repo, "show", "main:src/existing.py")
+        write(self.repo, "src/existing.py", base + "\nBASE_ONLY = True\n")
+        git(self.repo, "add", "src/existing.py")
+        git(self.repo, "commit", "-m", "base-only update")
+        git(self.repo, "switch", "feature")
+        context, manifest = self.capture()
+        self.assertEqual("clean", manifest["merge_preview"]["status"])
+        self.assertNotEqual(manifest["head_sha"], manifest["merge_preview"]["tree_sha"])
+        draft = draft_for(manifest)
+        draft["code_risks"] = [risk_item(manifest)]
+        result = release_report.validate_result(draft, manifest, context)
+        proof = result["code_risks"][0]["evidence"][0]
+        self.assertIn("8:     return total / count", proof["excerpt"])
+        report = release_report.publish_report(context, save_draft(context, draft))
+        self.assertFalse(context.exists())
+        self.assertEqual("", git(self.repo, "cat-file", "-t", manifest["merge_preview"]["tree_sha"], check=False))
+        document = report.read_text(encoding="utf-8")
+        self.assertIn("8:     return total / count", document)
+        self.assertIn(proof["content_sha256"], document)
+
+    def test_preview_evidence_omits_credentials_and_configuration_values(self):
+        write(self.repo, "src/credentials.py",
+              'API_TOKEN = "HiddenTokenValue"\nconnection = "Server=db;Password=HiddenPassword"\nsql = "Data Source=HiddenServer;Database=HiddenDatabase"\n')
+        write(self.repo, "src/settings.json", '{"ordinary_key": "HiddenConfigValue"}\n')
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-m", "snapshot privacy fixture")
+        context, manifest = self.capture()
+        draft = draft_for(manifest)
+        draft["code_risks"] = [risk_item(manifest)]
+        draft["code_risks"][0]["evidence"] += [
+            citation(manifest, "merge-preview", "src/credentials.py", 1, 3),
+            citation(manifest, "merge-preview", "src/settings.json", 1)]
+        report = release_report.publish_report(context, save_draft(context, draft))
+        document = report.read_text(encoding="utf-8")
+        for value in ("HiddenTokenValue", "HiddenPassword", "HiddenConfigValue", "HiddenServer", "HiddenDatabase"):
+            self.assertNotIn(value, document)
+        self.assertIn("ordinary_key", document)
+        self.assertIn("含認證或連線設定的行已省略", document)

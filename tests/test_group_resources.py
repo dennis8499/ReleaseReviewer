@@ -62,6 +62,7 @@ class GroupTests(RepoTest):
              "description": "consumer 仍讀取 amount 欄位。", "evidence": [refs["relay"], refs["consumer"]]},
         ]
         draft["code_risks"] = [{"id": "R-001", "priority": "P1", "title": "事件欄位改名使未變更消費端失敗",
+                                "blocking_reason": "既有 consumer 必須能處理上版後事件，欄位改名會中斷既有處理流程。",
                                 "trigger": "入口發出 total 事件並由既有 consumer 處理。", "impact": "consumer 讀取 amount 失敗。",
                                 "recommendation": "保留舊欄位或安排相容版本部署。", "scenario_source": "code-derived",
                                 "evidence": [entry, refs["consumer"]]}]
@@ -140,6 +141,7 @@ class GroupTests(RepoTest):
         context = Path(manifest["context_dir"])
         self.contexts.append(context)
         self.assertTrue(manifest["context_complete"])
+        self.assertEqual(str(workspace_file.parent), manifest["report_root"])
         self.assertEqual({self.repo.name, "relay", "consumer-checkout"}, {r["name"] for r in manifest["repositories"]})
         peer = next(r for r in manifest["repositories"] if r["name"] == worktree.name)
         self.assertIn(b'payload["amount"]', evidence.read_blob(manifest, context, "supporting", "src/service.py", repo=peer["id"]))
@@ -167,6 +169,25 @@ class GroupTests(RepoTest):
         draft["chain_gaps"] = []
         draft["supporting_coverage"][0]["status"] = "not-reviewed"
         self.assertFalse(release_report.validate_result(draft, manifest, context)["review_complete"])
+
+
+    def test_unreviewed_functional_link_is_visible_in_gap_count_and_body(self):
+        context, manifest = self.group_capture()
+        draft, refs = self.group_draft(context, manifest)
+        draft["code_risks"] = []
+        draft["functional_chain"].append({
+            "id": "F-003", "from_repo": refs["consumer"]["repo"], "to_repo": refs["relay"]["repo"],
+            "kind": "api", "status": "not-reviewed", "description": "消費端回呼結果。",
+            "reason": "尚未取得回呼失敗時的實際處理路徑。", "evidence": []})
+        result = release_report.validate_result(draft, manifest, context)
+        self.assertEqual("incomplete", result["release_assessment"])
+        self.assertEqual(1, result["gap_count"])
+        self.assertIn("尚未取得回呼失敗", result["review_gaps"][0])
+        body = release_report.render_markdown(result)
+        visible = body.split("<details>")[0]
+        self.assertIn("檢查缺口 1", visible)
+        self.assertIn("尚未取得回呼失敗", visible)
+        self.assertNotIn("沒有另外列出的待確認", visible)
 
     def test_resource_already_used_by_peer_still_requires_entry_service_acl(self):
         context, manifest = self.group_capture()

@@ -13,9 +13,9 @@
 | 同名資料表但連線、DB 或 schema 不同 | 分開判定 |
 | 新增且會隨部署套用的資源定義 | 列 resource-definition；不要求已有執行程式呼叫 |
 | 既有依賴新增存取操作或改指目標 | 列 access-change／target-change，核對新增權限與連線 |
-| 搬檔、等價改名、註解、測試或範例 | 不誤列正式上板新增依賴；測試所需依賴可放限制 |
+| 搬檔、等價改名、註解、測試或範例 | 不誤列正式上版新增依賴；測試所需依賴可放限制 |
 | 設定來自環境變數或部署平台 | 標需確認外部注入；不聲稱環境缺少 |
-| 新 DB 物件只有程式使用證據 | 提醒核對上板準備；不聲稱尚未建立 |
+| 新 DB 物件只有程式使用證據 | 提醒核對上版準備；不聲稱尚未建立 |
 | 動態 SQL 或 DB 目標由外部決定 | 列已知部分、待確認原因與核對方式 |
 
 搜尋即使命中，也可能只有定義或註解；零命中也可能有別名或 ORM mapping。baseline_reason 必須記錄具體推論，baseline_searches 保存實際全 Repo 搜尋的 search_id。沒有搜尋紀錄不得發佈新增提醒。
@@ -25,11 +25,11 @@
 | 等級 | 行動 | 依據 |
 | --- | --- | --- |
 | P0 | 立即處理 | 一般情況即造成大範圍服務不可用、重大安全暴露或資料毀損 |
-| P1 | 上板前優先修正 | 常見流程有高影響正確性、相容性或資料問題 |
-| P2 | 排程修正 | 有具體觸發條件的較局部缺陷 |
-| P3 | 後續改善 | 影響較低但可證明的缺陷 |
+| P1 | 上版前優先修正 | 常見流程有高影響正確性、相容性或資料問題 |
 
-缺少必要設定只有在能證明觸發失敗時才列程式風險；新增設定／DB 清單仍保留上板準備資訊，兩者用途不同。同一根因風險合併列出。每個風險至少引用一個 reviewed 的變更路徑，並確認問題在最終受審版本仍存在；基礎或 parent 證據可補充因果。
+只收錄直接阻止上版的 P0／P1：啟動／建置失敗、必要流程中斷、資料毀損、安全暴露或無法相容的契約等。一般局部缺陷與 P2／P3 改善不列入。blocking_reason 必須說明為何本次部署會失敗或不可接受，不能只重述等級。
+
+缺少必要設定只有在能證明觸發失敗時才列程式風險；新增設定／DB 清單仍保留上版準備資訊，兩者用途不同。同一根因風險合併列出。每個風險至少引用一個 reviewed 的變更路徑，並確認問題在最終受審版本仍存在；基礎或 parent 證據可補充因果。
 
 ## 固定證據與覆蓋
 
@@ -48,6 +48,8 @@ source 與 ref 必須相符：
 - merge-parent：manifest 已記錄 merge commit 的 parent SHA。
 - supporting：catalog 指定關聯 Repo 的本機預設分支固定 SHA，不能引用該 Repo 的 checkout 或 remote-tracking 版本。
 
+merge-preview 的文字證據由 helper 保存引用行的非機密片段與原始檔案 content_sha256，放入同一報告的可展開證據區，清理暫存合併物件後仍可閱讀。設定檔只記錄可解析鍵名，不保存設定值；認證、私鑰或完整連線設定行省略並明示。沒有行號時只保存摘要，不聲稱已保存完整來源。
+
 行號可省略（例如空檔案）；如指定就必須提供有效起訖行。同一路徑在多個比較範圍出現，coverage 的 evidence 必須包含每個對應版本：
 
 | 比較範圍 | 一般新增／修改路徑 | 刪除／rename 舊路徑 |
@@ -60,12 +62,12 @@ source 與 ref 必須相符：
 
 ## 草稿格式
 
-頂層 schema 固定為 ReleaseReviewDraft/v2，必要欄位：
+頂層 schema 固定為 ReleaseReviewDraft/v3，必要欄位：
 
 ~~~json
 {
-  "schema": "ReleaseReviewDraft/v2",
-  "summary": "一句話說明主要風險與上板提醒。",
+  "schema": "ReleaseReviewDraft/v3",
+  "summary": "一句話說明主要風險與上版提醒。",
   "coverage": [],
   "code_risks": [],
   "config_changes": [],
@@ -94,9 +96,9 @@ source 與 ref 必須相符：
 
 ### code_risks 項目
 
-必要欄位為 id、priority、title、trigger、impact、recommendation、scenario_source、evidence。
+必要欄位為 id、priority、title、blocking_reason、trigger、impact、recommendation、scenario_source、evidence。
 
-- 編號從 R-001 連續排列，依 P0 至 P3 排序。
+- 編號從 R-001 連續排列，依 P0、P1 排序。
 - trigger 描述能實際觸發問題的輸入或操作；impact 描述使用者、資料或服務受到的影響。
 - scenario_source 為 code-derived 或 reproduced；後者必須在 tests_executed 記錄實際執行及結果。
 - evidence 為上述固定證據陣列，不可只引用舊版而未確認最終行為。
@@ -123,7 +125,7 @@ source 與 ref 必須相符：
 - resolution 為 identified 或 unknown；動態來源可用「待解析的 BillingDb 動態資料表」等忠實描述。
 - evidence 包含最終版本的程式使用、連線目標或此次部署資源定義位置；必要時補 ORM mapping／設定定義證據。
 - 同一 connection、kind、name 去重。不同 DB／schema 的同名物件不要錯誤合併。
-- reminder 只要求確認所列依賴的上板準備；不把缺少 SQL／migration 判為環境物件不存在。
+- reminder 只要求確認所列依賴的上版準備；不把缺少 SQL／migration 判為環境物件不存在。
 
 ### 外部資源與新增判定
 
@@ -131,12 +133,16 @@ external_changes 必要欄位與 db_changes 相同，編號 E-001 起，kind 為
 
 三類提醒皆可帶 introduction：first-use（預設）、resource-definition、target-change、access-change。此次新增且會隨部署套用的定義，即使尚無執行程式呼叫，也要以 resource-definition 提醒，引用最終定義及 base 全 Repo 搜尋；不能把定義存在誤認為既有程式使用或環境已建立。
 
-不要在草稿預填 checklist；helper 依每項已驗證提醒產生非空 checklist_ids 與初始待確認核對項。人工在獨立 Checklist 記錄核對人、日期、工單／開通驗證證據及不適用理由，主報告不因人工更新而改寫。
+不要在草稿預填 checklist；helper 依每項已驗證提醒產生非空 checklist_ids 與初始待確認核對項。人工在同一 Release Report 的 Checklist 區塊記錄核對人、日期、工單／開通驗證證據及不適用理由，產生時判斷不因人工填寫而改寫。
 
 ## 發佈結果與判讀
 
-發佈使用 ReleaseReviewReport/v2；保留各類結果、coverage、依賴類型覆蓋、功能鏈與關聯覆蓋、搜尋摘要、所有 Repo 版本 identity、review_complete、chain_complete、context_gaps、限制及執行紀錄。固定輸出主報告與獨立 Checklist Markdown。
+發佈使用 ReleaseReviewReport/v3；保留各類結果、coverage、依賴類型覆蓋、功能鏈與關聯覆蓋、搜尋摘要、所有 Repo 版本 identity、review_complete、chain_complete、context_gaps、限制及執行紀錄。只在 Context 的 report_root 輸出一份含 Checklist 的 Markdown；根目錄由 VSCode 工作區或已儲存 .code-workspace 所在目錄決定。內部 CLI 只回傳 markdown_report。
 
-review_complete 只代表此靜態範圍的覆蓋完整。context／功能鏈缺口、未覆蓋路徑、未檢查依賴類型、設定或資源 unknown 使結果為「檢查未完成」；明確的 external 設定注入仍可完成靜態檢查。environment_status 與靜態完成分開，初始不宣告上板準備完成。沒有差異時明確說沒有差異。完成且沒有缺陷時說「已檢查範圍未發現有證據的程式缺陷」，不宣告保證安全上板。
+review_complete 只代表此靜態範圍的覆蓋完整。context／功能鏈缺口、未覆蓋路徑、未檢查依賴類型、設定或資源 unknown 使結果為「檢查未完成」；明確的 external 設定注入仍可完成靜態檢查。environment_status 與靜態完成分開，初始不宣告上版準備完成。沒有差異時明確說沒有差異。完成且沒有缺陷時說「已檢查範圍未發現有證據的程式缺陷」，不宣告保證安全上版。
 
-報告含獨立 release-review-report 中繼資料及正文摘要，供後續 adapter 使用；本階段沒有 MR 身分，不冒用 MergeReviewReport/v1 或已有的 GitlabWorkSpace 匯入格式。成功或失敗後清理 owned context，報告保留所有必要版本、路徑與搜尋摘要。
+report 的 release_assessment 由 helper 推導，優先序為 blocked（有直接程式阻擋或 Git 合併衝突）、incomplete（靜態缺口）、pending-confirmation（有必要待核對項）、no-blockers-found。另保存 blocker_count、pending_count、gap_count 與 review_gaps。草稿不指定判斷或預填人工確認。
+
+報告含 release-review-report 中繼資料及 static_body_sha256，摘要排除唯一的 <!-- release-checklist:start --> 至 <!-- release-checklist:end --> 人工區塊（含邊界），仍涵蓋全部固定正文。只有此區塊可填寫，其他修改視為快照改變。v3 沒有 checklist_file／checklist_filename／body_sha256。報告首段結論優先，後接阻擋、依賴與 Checklist、限制，詳細證據放可展開區，避免重複摘要。
+
+本階段沒有 MR 身分，不冒用 MergeReviewReport/v1 或已有的 GitlabWorkSpace 匯入格式。成功或失敗後清理 owned context，報告保留所有必要版本、路徑與搜尋摘要。

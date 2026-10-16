@@ -1,0 +1,380 @@
+{
+  "schema": "ReleaseReviewAgentExercise/v1",
+  "date": "2026-10-16",
+  "timezone": "Asia/Taipei",
+  "model": "Inherited parent model/settings for every isolated agent; no model override.",
+  "method": "Three independent agents per variant; each reviews the same committed single-Repo and Group cases. Timer starts after SKILL.md/job discovery and ends after both reports and cleanup. Helper command count is wrapper invocations, not all MCP round trips. Raw traces include retries.",
+  "limits": [
+    "Small exploratory sample with shared-machine/service variability; no tokens or reasoning latency isolation.",
+    "Baseline runs encountered PowerShell JSON/Unicode retries; two early runs also encountered missing wrapper argparse diagnostics before that tracing defect was fixed. Totals include that handling cost.",
+    "Optimized pilot 1 is excluded because it preceded BOM compatibility and PowerShell UTF-8 guidance. Final runs 2/3/4 use the frozen final candidate.",
+    "DB reminder granularity varies between agents; quality checks compare required resource/failure coverage, not exact checklist counts or wording."
+  ],
+  "summary": {
+    "baseline": {
+      "elapsed_seconds": 363.796,
+      "helper_commands": 89,
+      "git_calls": 494,
+      "output_bytes": 50537
+    },
+    "optimized": {
+      "elapsed_seconds": 199.334,
+      "helper_commands": 13,
+      "git_calls": 160,
+      "output_bytes": 28050
+    },
+    "elapsed_reduction_pct": 45.20720403742756,
+    "helper_command_reduction_pct": 85.39325842696628
+  },
+  "runs": [
+    {
+      "run": "baseline-1",
+      "variant": "baseline",
+      "elapsed_seconds": 222.635,
+      "helper_commands": 45,
+      "git_calls": 252,
+      "output_bytes": 24624,
+      "captured_sessions": 2,
+      "reports": [
+        {
+          "scope": "single",
+          "report": "agent-runs/baseline-1/single/repo/release-review-20261016T044548Z-49502ff5-c258ee6d.md",
+          "blockers": 2,
+          "pending": 8,
+          "gaps": 0,
+          "config_names": [
+            "billing_timeout_seconds",
+            "discount_rate",
+            "INVOICE_API_URL"
+          ],
+          "db_names": [
+            "BillingDb.dbo.InvoiceTax"
+          ],
+          "quality_checks": {
+            "snapshot_hash_valid": true,
+            "complete_without_gaps": true,
+            "expected_blockers": true,
+            "seven_dependency_categories_reviewed": true,
+            "readable_chinese": true,
+            "pending_checklist_only": true,
+            "expected_config_reminders": true,
+            "new_db_use_named": true,
+            "existing_orders_not_duplicated": true,
+            "both_failure_causes_explained": true
+          }
+        },
+        {
+          "scope": "group",
+          "report": "agent-runs/baseline-1/group/release-review-20261016T044545Z-75ff391e-89215c39.md",
+          "blockers": 1,
+          "pending": 0,
+          "gaps": 0,
+          "config_names": [],
+          "db_names": [],
+          "quality_checks": {
+            "snapshot_hash_valid": true,
+            "complete_without_gaps": true,
+            "expected_blockers": true,
+            "seven_dependency_categories_reviewed": true,
+            "readable_chinese": true,
+            "pending_checklist_only": true,
+            "event_failure_explained": true,
+            "all_supporting_repos_accounted": true,
+            "unchanged_kafka_not_duplicated": true
+          }
+        }
+      ]
+    },
+    {
+      "run": "baseline-2",
+      "variant": "baseline",
+      "elapsed_seconds": 424.032,
+      "helper_commands": 105,
+      "git_calls": 502,
+      "output_bytes": 55524,
+      "captured_sessions": 4,
+      "reports": [
+        {
+          "scope": "single",
+          "report": "agent-runs/baseline-2/single/repo/release-review-20261016T045042Z-49502ff5-c258ee6d.md",
+          "blockers": 2,
+          "pending": 8,
+          "gaps": 0,
+          "config_names": [
+            "billing_timeout_seconds",
+            "discount_rate",
+            "INVOICE_API_URL"
+          ],
+          "db_names": [
+            "BillingDb.dbo.InvoiceTax"
+          ],
+          "quality_checks": {
+            "snapshot_hash_valid": true,
+            "complete_without_gaps": true,
+            "expected_blockers": true,
+            "seven_dependency_categories_reviewed": true,
+            "readable_chinese": true,
+            "pending_checklist_only": true,
+            "expected_config_reminders": true,
+            "new_db_use_named": true,
+            "existing_orders_not_duplicated": true,
+            "both_failure_causes_explained": true
+          }
+        },
+        {
+          "scope": "group",
+          "report": "agent-runs/baseline-2/group/release-review-20261016T045040Z-75ff391e-89215c39.md",
+          "blockers": 1,
+          "pending": 0,
+          "gaps": 0,
+          "config_names": [],
+          "db_names": [],
+          "quality_checks": {
+            "snapshot_hash_valid": true,
+            "complete_without_gaps": true,
+            "expected_blockers": true,
+            "seven_dependency_categories_reviewed": true,
+            "readable_chinese": true,
+            "pending_checklist_only": true,
+            "event_failure_explained": true,
+            "all_supporting_repos_accounted": true,
+            "unchanged_kafka_not_duplicated": true
+          }
+        }
+      ]
+    },
+    {
+      "run": "baseline-3",
+      "variant": "baseline",
+      "elapsed_seconds": 363.796,
+      "helper_commands": 89,
+      "git_calls": 494,
+      "output_bytes": 50537,
+      "captured_sessions": 4,
+      "reports": [
+        {
+          "scope": "single",
+          "report": "agent-runs/baseline-3/single/repo/release-review-20261016T045314Z-49502ff5-c258ee6d.md",
+          "blockers": 2,
+          "pending": 8,
+          "gaps": 0,
+          "config_names": [
+            "billing_timeout_seconds",
+            "discount_rate",
+            "INVOICE_API_URL"
+          ],
+          "db_names": [
+            "BillingDb.dbo.InvoiceTax"
+          ],
+          "quality_checks": {
+            "snapshot_hash_valid": true,
+            "complete_without_gaps": true,
+            "expected_blockers": true,
+            "seven_dependency_categories_reviewed": true,
+            "readable_chinese": true,
+            "pending_checklist_only": true,
+            "expected_config_reminders": true,
+            "new_db_use_named": true,
+            "existing_orders_not_duplicated": true,
+            "both_failure_causes_explained": true
+          }
+        },
+        {
+          "scope": "group",
+          "report": "agent-runs/baseline-3/group/release-review-20261016T045311Z-75ff391e-89215c39.md",
+          "blockers": 1,
+          "pending": 0,
+          "gaps": 0,
+          "config_names": [],
+          "db_names": [],
+          "quality_checks": {
+            "snapshot_hash_valid": true,
+            "complete_without_gaps": true,
+            "expected_blockers": true,
+            "seven_dependency_categories_reviewed": true,
+            "readable_chinese": true,
+            "pending_checklist_only": true,
+            "event_failure_explained": true,
+            "all_supporting_repos_accounted": true,
+            "unchanged_kafka_not_duplicated": true
+          }
+        }
+      ]
+    },
+    {
+      "run": "optimized-2",
+      "variant": "optimized",
+      "elapsed_seconds": 181.626,
+      "helper_commands": 13,
+      "git_calls": 156,
+      "output_bytes": 28050,
+      "captured_sessions": 2,
+      "reports": [
+        {
+          "scope": "single",
+          "report": "agent-runs/optimized-2/single/repo/release-review-20261016T045308Z-49502ff5-c258ee6d.md",
+          "blockers": 2,
+          "pending": 13,
+          "gaps": 0,
+          "config_names": [
+            "billing_timeout_seconds",
+            "discount_rate",
+            "INVOICE_API_URL"
+          ],
+          "db_names": [
+            "BillingDb.dbo.InvoiceTax",
+            "BillingDb.dbo.InvoiceTax.tax_rate"
+          ],
+          "quality_checks": {
+            "snapshot_hash_valid": true,
+            "complete_without_gaps": true,
+            "expected_blockers": true,
+            "seven_dependency_categories_reviewed": true,
+            "readable_chinese": true,
+            "pending_checklist_only": true,
+            "expected_config_reminders": true,
+            "new_db_use_named": true,
+            "existing_orders_not_duplicated": true,
+            "both_failure_causes_explained": true
+          }
+        },
+        {
+          "scope": "group",
+          "report": "agent-runs/optimized-2/group/release-review-20261016T045431Z-75ff391e-89215c39.md",
+          "blockers": 1,
+          "pending": 0,
+          "gaps": 0,
+          "config_names": [],
+          "db_names": [],
+          "quality_checks": {
+            "snapshot_hash_valid": true,
+            "complete_without_gaps": true,
+            "expected_blockers": true,
+            "seven_dependency_categories_reviewed": true,
+            "readable_chinese": true,
+            "pending_checklist_only": true,
+            "event_failure_explained": true,
+            "all_supporting_repos_accounted": true,
+            "unchanged_kafka_not_duplicated": true
+          }
+        }
+      ]
+    },
+    {
+      "run": "optimized-3",
+      "variant": "optimized",
+      "elapsed_seconds": 199.334,
+      "helper_commands": 13,
+      "git_calls": 162,
+      "output_bytes": 29525,
+      "captured_sessions": 2,
+      "reports": [
+        {
+          "scope": "single",
+          "report": "agent-runs/optimized-3/single/repo/release-review-20261016T045450Z-49502ff5-c258ee6d.md",
+          "blockers": 2,
+          "pending": 8,
+          "gaps": 0,
+          "config_names": [
+            "billing_timeout_seconds",
+            "discount_rate",
+            "INVOICE_API_URL"
+          ],
+          "db_names": [
+            "BillingDb.dbo.InvoiceTax"
+          ],
+          "quality_checks": {
+            "snapshot_hash_valid": true,
+            "complete_without_gaps": true,
+            "expected_blockers": true,
+            "seven_dependency_categories_reviewed": true,
+            "readable_chinese": true,
+            "pending_checklist_only": true,
+            "expected_config_reminders": true,
+            "new_db_use_named": true,
+            "existing_orders_not_duplicated": true,
+            "both_failure_causes_explained": true
+          }
+        },
+        {
+          "scope": "group",
+          "report": "agent-runs/optimized-3/group/release-review-20261016T045450Z-75ff391e-89215c39.md",
+          "blockers": 1,
+          "pending": 0,
+          "gaps": 0,
+          "config_names": [],
+          "db_names": [],
+          "quality_checks": {
+            "snapshot_hash_valid": true,
+            "complete_without_gaps": true,
+            "expected_blockers": true,
+            "seven_dependency_categories_reviewed": true,
+            "readable_chinese": true,
+            "pending_checklist_only": true,
+            "event_failure_explained": true,
+            "all_supporting_repos_accounted": true,
+            "unchanged_kafka_not_duplicated": true
+          }
+        }
+      ]
+    },
+    {
+      "run": "optimized-4",
+      "variant": "optimized",
+      "elapsed_seconds": 201.968,
+      "helper_commands": 13,
+      "git_calls": 160,
+      "output_bytes": 27859,
+      "captured_sessions": 2,
+      "reports": [
+        {
+          "scope": "single",
+          "report": "agent-runs/optimized-4/single/repo/release-review-20261016T045716Z-49502ff5-c258ee6d.md",
+          "blockers": 2,
+          "pending": 8,
+          "gaps": 0,
+          "config_names": [
+            "billing_timeout_seconds",
+            "discount_rate",
+            "INVOICE_API_URL"
+          ],
+          "db_names": [
+            "BillingDb.dbo.InvoiceTax"
+          ],
+          "quality_checks": {
+            "snapshot_hash_valid": true,
+            "complete_without_gaps": true,
+            "expected_blockers": true,
+            "seven_dependency_categories_reviewed": true,
+            "readable_chinese": true,
+            "pending_checklist_only": true,
+            "expected_config_reminders": true,
+            "new_db_use_named": true,
+            "existing_orders_not_duplicated": true,
+            "both_failure_causes_explained": true
+          }
+        },
+        {
+          "scope": "group",
+          "report": "agent-runs/optimized-4/group/release-review-20261016T045716Z-75ff391e-89215c39.md",
+          "blockers": 1,
+          "pending": 0,
+          "gaps": 0,
+          "config_names": [],
+          "db_names": [],
+          "quality_checks": {
+            "snapshot_hash_valid": true,
+            "complete_without_gaps": true,
+            "expected_blockers": true,
+            "seven_dependency_categories_reviewed": true,
+            "readable_chinese": true,
+            "pending_checklist_only": true,
+            "event_failure_explained": true,
+            "all_supporting_repos_accounted": true,
+            "unchanged_kafka_not_duplicated": true
+          }
+        }
+      ]
+    }
+  ]
+}

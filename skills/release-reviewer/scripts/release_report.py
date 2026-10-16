@@ -18,6 +18,7 @@ import evidence as ev
 import chain_review
 import resource_rules
 import review_session
+from review_worklist import expected_coverage
 
 PRIORITIES = ("P0", "P1")
 CONFIG_KINDS = {"config-key", "environment-variable", "config-file"}
@@ -34,40 +35,79 @@ CHECKLIST_START = "<!-- release-checklist:start -->"
 CHECKLIST_END = "<!-- release-checklist:end -->"
 
 
+class DraftValidationError(ValueError):
+    """A draft field or citation can be repaired without replacing frozen sources."""
+
+
+def draft_require(condition, message):
+    if not condition:
+        raise DraftValidationError(message)
+
+
 def text(value, label):
-    ev.require(isinstance(value, str) and bool(value.strip()), f"{label} 必須是非空白文字。")
+    draft_require(isinstance(value, str) and bool(value.strip()), f"{label} 必須是非空白文字。")
     return value.strip()
 
 
 def strings(value, label):
-    ev.require(isinstance(value, list) and all(isinstance(v, str) and v.strip() for v in value),
+    draft_require(isinstance(value, list) and all(isinstance(v, str) and v.strip() for v in value),
                f"{label} 必須是文字陣列。")
     return value
 
 
-def validate_citations(items, manifest, context):
-    ev.require(isinstance(items, list), "evidence 必須是陣列。")
+def validate_citations(items, manifest, context, *, snapshots=None):
+    draft_require(isinstance(items, list), "evidence 必須是陣列。")
+    snapshots = {} if snapshots is None else snapshots
     cleaned = []
     for item in items:
-        ev.require(isinstance(item, dict), "證據必須是物件。")
+        draft_require(isinstance(item, dict), "證據必須是物件。")
         source = item.get("source")
         repo = item.get("repo")
-        ev.require(isinstance(repo, str) and bool(repo.strip()), "v3 證據必須含非空白 Repo 身分。")
+        draft_require(isinstance(repo, str) and bool(repo.strip()), "v3 證據必須含非空白 Repo 身分。")
         ref = item.get("ref")
         path = item.get("path")
-        ev.require(isinstance(ref, str) and ev.SHA.fullmatch(ref), "證據必須含完整 SHA。")
-        content = ev.read_blob(manifest, context, source, path, ref, repo)
+        draft_require(isinstance(ref, str) and ev.SHA.fullmatch(ref), "證據必須含完整 SHA。")
+        draft_require(ev.safe_path(path), "證據路徑必須是安全的 Repo 相對路徑。")
+        catalog = {r["id"]: r for r in manifest["repositories"]}
+        draft_require(repo in catalog, "證據 Repo 不在固定 catalog。")
+        draft_require(isinstance(source, str) and source in {
+            "base", "head", "merge-base", "merge-preview", "merge-parent", "supporting"}, "未知的證據來源。")
+        draft_require((repo == "entry") == (source != "supporting"), "證據來源與 Repo 角色不符。")
+        fixed = {"base": manifest["base_sha"], "head": manifest["head_sha"],
+                 "merge-base": manifest.get("merge_base")}
+        if source == "merge-preview":
+            preview = manifest.get("merge_preview") or {}
+            draft_require(preview.get("status") == "clean", "沒有可用的乾淨合併預覽。")
+            reference = preview.get("tree_sha")
+        elif source == "merge-parent":
+            parents = {p for merge in manifest["merge_commits"] for p in merge["parents"]}
+            draft_require(ref in parents, "merge-parent 版本不在固定紀錄內。")
+            reference = ref
+        elif source == "supporting":
+            draft_require(catalog[repo]["status"] == "captured", "關聯 Repo 沒有固定版本。")
+            reference = catalog[repo]["ref"]
+        else:
+            reference = fixed[source]
+        ev.require(isinstance(reference, str) and ev.SHA.fullmatch(reference), "固定來源版本無效。")
+        draft_require(ref == reference, "證據 SHA 與固定來源不符。")
+        # Source resolution and Git failures remain fatal; only the draft checks above
+        # are repairable. The evidence cache repeats source/ref/path checks on hits.
+        metadata = ev.blob_metadata(manifest, context, source, path, ref, repo)
+        content = metadata["content"]
         start, end = item.get("line_start"), item.get("line_end")
         if start is not None or end is not None:
-            ev.require(type(start) is int and type(end) is int and 1 <= start <= end,
+            draft_require(type(start) is int and type(end) is int and 1 <= start <= end,
                        "證據行號必須為有效的正整數區間。")
-            ev.require(b"\0" not in content, "二進位證據不能引用文字行號。")
-            ev.require(end <= len(content.splitlines()), f"證據行號超出固定檔案：{path}")
+            draft_require(not metadata["binary"], "二進位證據不能引用文字行號。")
+            draft_require(end <= metadata["line_count"], f"證據行號超出固定檔案：{path}")
         citation = {"repo": repo, "source": source, "ref": ref, "path": path,
-                    "content_sha256": hashlib.sha256(content).hexdigest(),
+                    "content_sha256": metadata["content_sha256"],
                     **({"line_start": start, "line_end": end} if start is not None else {})}
-        if source == "merge-preview" and b"\0" not in content:
-            citation.update(preview_snapshot(content, path, start, end))
+        if source == "merge-preview" and not metadata["binary"]:
+            key = (repo, source, ref, path, start, end)
+            if key not in snapshots:
+                snapshots[key] = preview_snapshot(content, path, start, end)
+            citation.update(snapshots[key])
         cleaned.append(citation)
     return cleaned
 
@@ -108,30 +148,6 @@ def preview_snapshot(content, path, start, end):
     return {"excerpt": excerpt}
 
 
-def expected_coverage(manifest):
-    expected = {}
-    preview = manifest.get("merge_preview") or {}
-    head_pair = ("head", manifest["head_sha"])
-    left_pair = ("merge-base", manifest["diff_base"])
-    scopes = [(manifest["changed_files"], left_pair, head_pair)]
-    if preview.get("status") == "clean":
-        merged = ("merge-preview", preview["tree_sha"])
-        scopes += [(preview["changed_files"], head_pair, merged),
-                   (manifest["release_changes"], ("base", manifest["base_sha"]), merged)]
-    # Conflict trees cannot be treated as a final executable version.
-    for changes, before, after in scopes:
-        for change in changes:
-            path = change["path"]
-            ev.require(ev.safe_path(path), "變更清單包含無法安全引用的路徑。")
-            pair = before if change["status"].startswith("D") else after
-            expected.setdefault(path, set()).add(pair)
-            old = change.get("old_path")
-            if old:
-                ev.require(ev.safe_path(old), "變更清單包含無法安全引用的舊路徑。")
-                expected.setdefault(old, set()).add(before)
-    return expected
-
-
 def final_version(manifest):
     preview = manifest.get("merge_preview") or {}
     if preview.get("status") == "clean":
@@ -140,12 +156,23 @@ def final_version(manifest):
 
 
 def validate_result(draft, manifest, context):
-    ev.require(isinstance(draft, dict) and draft.get("schema") == "ReleaseReviewDraft/v3",
+    """Validate once with caches scoped to this frozen-source operation."""
+    with ev.operation_cache(manifest, context):
+        return _validate_result(draft, manifest, context)
+
+
+def _validate_result(draft, manifest, context):
+    snapshots = {}
+
+    def cached_citations(items, manifest, context):
+        return validate_citations(items, manifest, context, snapshots=snapshots)
+
+    draft_require(isinstance(draft, dict) and draft.get("schema") == "ReleaseReviewDraft/v3",
                "結果須使用 ReleaseReviewDraft/v3。")
-    ev.require(not draft.get("checklist"), "初始 Checklist 由 helper 產生，不能預填已確認。")
+    draft_require(not draft.get("checklist"), "初始 Checklist 由 helper 產生，不能預填已確認。")
     result = {"schema": "ReleaseReviewReport/v3", "summary": text(draft.get("summary"), "summary")}
     for field in ("coverage", "code_risks", "config_changes", "db_changes", "external_changes", "dependency_coverage"):
-        ev.require(isinstance(draft.get(field), list), f"{field} 必須是陣列。")
+        draft_require(isinstance(draft.get(field), list), f"{field} 必須是陣列。")
     for field in ("next_steps", "tests_executed", "tests_not_executed", "limitations"):
         result[field] = strings(draft.get(field), field)
     expected = expected_coverage(manifest)
@@ -156,43 +183,44 @@ def validate_result(draft, manifest, context):
                       for p in (c.get("path"), c.get("old_path")) if p}
     covered = {}
     for item in draft["coverage"]:
-        ev.require(isinstance(item, dict), "coverage 項目須為物件。")
+        draft_require(isinstance(item, dict), "coverage 項目須為物件。")
         path = item.get("path")
-        ev.require(path in expected and path not in covered, f"覆蓋路徑重複或不在變更範圍：{path}")
+        draft_require(isinstance(path, str) and path in expected and path not in covered,
+                      f"覆蓋路徑重複或不在變更範圍：{path}")
         status = item.get("status")
-        ev.require(status in {"reviewed", "metadata-only", "not-reviewed"}, "覆蓋狀態無效。")
-        citations = validate_citations(item.get("evidence", []), manifest, context)
-        ev.require(all(e["repo"] == "entry" and e["path"] == path for e in citations), "覆蓋證據必須指向入口 Repo 該路徑。")
+        draft_require(isinstance(status, str) and status in {"reviewed", "metadata-only", "not-reviewed"}, "覆蓋狀態無效。")
+        citations = cached_citations(item.get("evidence", []), manifest, context)
+        draft_require(all(e["repo"] == "entry" and e["path"] == path for e in citations), "覆蓋證據必須指向入口 Repo 該路徑。")
         entry = {"path": path, "status": status, "evidence": citations}
         if status == "reviewed":
-            ev.require(path not in metadata_paths, "二進位或 submodule 路徑須保留內容檢查限制。")
+            draft_require(path not in metadata_paths, "二進位或 submodule 路徑須保留內容檢查限制。")
             actual = {(e["source"], e["ref"]) for e in citations}
-            ev.require(expected[path] <= actual, f"缺少此路徑在各比較範圍的固定證據：{path}")
+            draft_require(expected[path] <= actual, f"缺少此路徑在各比較範圍的固定證據：{path}")
         else:
             entry["reason"] = text(item.get("reason"), "未完整覆蓋原因")
         covered[path] = entry
-    ev.require(set(covered) == set(expected), "coverage 未列出所有變更路徑及改名前的路徑。")
+    draft_require(set(covered) == set(expected), "coverage 未列出所有變更路徑及改名前的路徑。")
     result["coverage"] = list(covered.values())
     reviewed = {p for p, item in covered.items() if item["status"] == "reviewed"}
     previous_priority = -1
     final_pair = final_version(manifest)
     risks = []
     for number, item in enumerate(draft["code_risks"], 1):
-        ev.require(isinstance(item, dict) and item.get("id") == f"R-{number:03}", "程式風險編號須連續。")
+        draft_require(isinstance(item, dict) and item.get("id") == f"R-{number:03}", "程式風險編號須連續。")
         priority = item.get("priority")
-        ev.require(priority in PRIORITIES, "只接受直接阻止上版的 P0／P1 程式風險。")
+        draft_require(priority in PRIORITIES, "只接受直接阻止上版的 P0／P1 程式風險。")
         order = PRIORITIES.index(priority)
-        ev.require(order >= previous_priority, "程式風險須依 P0、P1 排序。")
+        draft_require(order >= previous_priority, "程式風險須依 P0、P1 排序。")
         previous_priority = order
         risk = {k: text(item.get(k), k) for k in
                 ("id", "priority", "title", "blocking_reason", "trigger", "impact", "recommendation", "scenario_source")}
-        ev.require(risk["scenario_source"] in {"code-derived", "reproduced"}, "情境來源無效。")
-        ev.require(risk["scenario_source"] != "reproduced" or bool(result["tests_executed"]),
+        draft_require(risk["scenario_source"] in {"code-derived", "reproduced"}, "情境來源無效。")
+        draft_require(risk["scenario_source"] != "reproduced" or bool(result["tests_executed"]),
                    "標示已重現時須記錄實際執行的檢查。")
-        risk["evidence"] = validate_citations(item.get("evidence", []), manifest, context)
-        ev.require(any(e["repo"] == "entry" and e["path"] in reviewed for e in risk["evidence"]),
+        risk["evidence"] = cached_citations(item.get("evidence", []), manifest, context)
+        draft_require(any(e["repo"] == "entry" and e["path"] in reviewed for e in risk["evidence"]),
                    "程式風險至少須引用一個已審查的變更路徑。")
-        ev.require(any(e["repo"] == "entry" and (e["source"], e["ref"]) == final_pair for e in risk["evidence"]),
+        draft_require(any(e["repo"] == "entry" and (e["source"], e["ref"]) == final_pair for e in risk["evidence"]),
                    "程式風險須附最終受審版本的行為證據。")
         risks.append(risk)
     result["code_risks"] = risks
@@ -203,40 +231,44 @@ def validate_result(draft, manifest, context):
         changes = []
         identities = set()
         for number, item in enumerate(draft[field], 1):
-            ev.require(isinstance(item, dict) and item.get("id") == f"{prefix}-{number:03}",
+            draft_require(isinstance(item, dict) and item.get("id") == f"{prefix}-{number:03}",
                        f"{field} 編號須連續。")
             change = {k: text(item.get(k), k) for k in
                       ("id", "kind", "name", "description", "baseline_reason", "recommendation")}
-            ev.require(change["kind"] in kinds, f"{field} 類型無效。")
+            draft_require(change["kind"] in kinds, f"{field} 類型無效。")
             change["introduction"] = item.get("introduction", "first-use")
-            ev.require(change["introduction"] in INTRODUCTIONS, "新增依賴判定類型無效。")
-            change["evidence"] = validate_citations(item.get("evidence", []), manifest, context)
-            ev.require(any(e["repo"] == "entry" and (e["source"], e["ref"]) == final_pair for e in change["evidence"]),
+            draft_require(isinstance(change["introduction"], str) and change["introduction"] in INTRODUCTIONS,
+                          "新增依賴判定類型無效。")
+            change["evidence"] = cached_citations(item.get("evidence", []), manifest, context)
+            draft_require(any(e["repo"] == "entry" and (e["source"], e["ref"]) == final_pair for e in change["evidence"]),
                        "新增依賴須引用最終受審版本中的使用、目標或部署定義位置。")
             identifiers = item.get("baseline_searches")
-            ev.require(isinstance(identifiers, list) and bool(identifiers),
+            draft_require(isinstance(identifiers, list) and bool(identifiers),
                        "新增使用須附基礎版本整個 Repo 的搜尋紀錄。")
             for identifier in identifiers:
+                draft_require(isinstance(identifier, str) and re.fullmatch(r"[a-f0-9]{64}", identifier),
+                              "基礎搜尋紀錄 ID 無效。")
                 if identifier not in searches:
                     searches[identifier] = ev.validate_baseline_search(context, manifest, identifier)
             change["baseline_searches"] = identifiers
             if field == "config_changes":
                 status = item.get("definition_status")
-                ev.require(status in CONFIG_STATUSES, "設定定義狀態無效。")
+                draft_require(isinstance(status, str) and status in CONFIG_STATUSES, "設定定義狀態無效。")
                 change["definition_status"] = status
-                change["definition_evidence"] = validate_citations(
+                change["definition_evidence"] = cached_citations(
                     item.get("definition_evidence", []), manifest, context)
                 if status == "defined":
-                    ev.require(any(e["repo"] == "entry" and (e["source"], e["ref"]) == final_pair
+                    draft_require(any(e["repo"] == "entry" and (e["source"], e["ref"]) == final_pair
                                    for e in change["definition_evidence"]),
                                "已有定義須附最終版本中的設定定義證據。")
                 identity = (change["kind"], change["name"])
             else:
                 change["connection"] = text(item.get("connection"), "connection")
                 change["resolution"] = item.get("resolution")
-                ev.require(change["resolution"] in {"identified", "unknown"}, "資源辨識狀態無效。")
+                draft_require(isinstance(change["resolution"], str) and change["resolution"] in {"identified", "unknown"},
+                              "資源辨識狀態無效。")
                 identity = (change["connection"], change["kind"], change["name"])
-            ev.require(identity not in identities, "同一新增使用項目不應重複列出。")
+            draft_require(identity not in identities, "同一新增使用項目不應重複列出。")
             identities.add(identity)
             changes.append(change)
         result[field] = changes
@@ -245,23 +277,24 @@ def validate_result(draft, manifest, context):
                                    "ignore_case": record["ignore_case"],
                                    "match_count": len(record["matches"])}
                                   for identifier, record in searches.items()]
-    result.update(chain_review.validate(draft, manifest, context, validate_citations))
+    result.update(chain_review.validate(draft, manifest, context, cached_citations, require=draft_require))
     unrelated = {c["repo"] for c in result["supporting_coverage"] if c["status"] == "unrelated"}
-    ev.require(not any(e["repo"] in unrelated for risk in risks for e in risk["evidence"]), "風險不能引用已判定無關的 Repo。")
+    draft_require(not any(e["repo"] in unrelated for risk in risks for e in risk["evidence"]), "風險不能引用已判定無關的 Repo。")
     categories, resource_complete = {}, True
     for item in draft["dependency_coverage"]:
-        ev.require(isinstance(item, dict), "依賴覆蓋項目須為物件。")
+        draft_require(isinstance(item, dict), "依賴覆蓋項目須為物件。")
         kind = item.get("kind")
-        ev.require(kind in {"config", "db", *EXTERNAL_KINDS} and kind not in categories, "依賴覆蓋類型重複或無效。")
+        draft_require(isinstance(kind, str) and kind in {"config", "db", *EXTERNAL_KINDS} and kind not in categories,
+                      "依賴覆蓋類型重複或無效。")
         status = item.get("status")
-        ev.require(status in {"reviewed", "not-reviewed"}, "依賴覆蓋狀態無效。")
-        citations = validate_citations(item.get("evidence", []), manifest, context)
+        draft_require(isinstance(status, str) and status in {"reviewed", "not-reviewed"}, "依賴覆蓋狀態無效。")
+        citations = cached_citations(item.get("evidence", []), manifest, context)
         if status == "reviewed" and expected:
-            ev.require(any(e["repo"] == "entry" and (e["source"], e["ref"]) == final_pair for e in citations),
+            draft_require(any(e["repo"] == "entry" and (e["source"], e["ref"]) == final_pair for e in citations),
                        "依賴覆蓋須有最終受審版本證據。")
         categories[kind] = {"kind": kind, "status": status, "reason": text(item.get("reason"), "依賴覆蓋說明"), "evidence": citations}
         resource_complete = resource_complete and status == "reviewed"
-    ev.require(set(categories) == {"config", "db", *EXTERNAL_KINDS}, "缺少設定、DB 或外部資源類型覆蓋。")
+    draft_require(set(categories) == {"config", "db", *EXTERNAL_KINDS}, "缺少設定、DB 或外部資源類型覆蓋。")
     result["dependency_coverage"] = list(categories.values())
     result["checklist"] = resource_rules.build_checklist(result)
     for field in ("config_changes", "db_changes", "external_changes"):
@@ -484,15 +517,23 @@ def render_markdown(result):
     return "\n".join(lines)
 
 
-def publish_report(context, draft_path):
+def publish_report(context, draft_path, *, retain_on_validation_error=False):
     context = Path(context).expanduser().absolute()
+    retain_context = False
     try:
         context = review_session.validate_session(context)
         manifest = ev.load_manifest(context)
         draft_path = Path(draft_path).resolve()
-        ev.require(draft_path.is_relative_to(context), "草稿必須位於本次 context 內。")
-        draft = json.loads(draft_path.read_text(encoding="utf-8"))
-        result = redact(validate_result(draft, manifest, context))
+        try:
+            draft_require(draft_path.is_relative_to(context), "草稿必須位於本次 context 內。")
+            try:
+                draft = json.loads(draft_path.read_text(encoding="utf-8-sig"))
+            except json.JSONDecodeError as exc:
+                raise DraftValidationError(f"草稿 JSON 無效：{exc}") from exc
+            result = redact(validate_result(draft, manifest, context))
+        except DraftValidationError:
+            retain_context = bool(retain_on_validation_error)
+            raise
         destination = Path(manifest["report_root"])
         ev.require(not destination.is_relative_to(context), "報告不能寫入稍後會清理的 context。")
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -524,16 +565,26 @@ def publish_report(context, draft_path):
             return md
         raise ValueError("找不到可使用的新報告檔名。")
     finally:
-        review_session.cleanup_if_owned(context)
+        if not retain_context:
+            review_session.cleanup_if_owned(context)
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--context-dir", required=True)
     parser.add_argument("--result", required=True)
+    parser.add_argument("--retain-on-validation-error", action="store_true")
     args = parser.parse_args(argv)
     try:
-        md = publish_report(args.context_dir, args.result)
+        md = publish_report(args.context_dir, args.result,
+                            retain_on_validation_error=args.retain_on_validation_error)
+    except DraftValidationError as exc:
+        if args.retain_on_validation_error:
+            print(json.dumps({"context_dir": str(Path(args.context_dir).expanduser().absolute()),
+                              "context_retained": True, "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
+            return 3
+        print(f"release-report: 未建立報告：{exc}", file=sys.stderr)
+        return 2
     except (ValueError, OSError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
         print(f"release-report: 未建立報告：{exc}", file=sys.stderr)
         return 2

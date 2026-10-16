@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
+from contextvars import ContextVar
 import hashlib
 import json
 import math
@@ -17,6 +19,29 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import review_session
 
 SHA = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+_CACHE = ContextVar("release_evidence_operation", default=None)
+
+
+@contextmanager
+def operation_cache(manifest: dict, context: Path):
+    """Share immutable Git evidence only within one batch or validation operation.
+
+    A nested operation receives its own cache. All public readers still validate
+    source, Repo, SHA and path before consulting cached data.
+    """
+    token = _CACHE.set({"manifest": manifest, "context": Path(context),
+                        "sources": {}, "blobs": {}, "metadata": {}, "searches": {}})
+    try:
+        yield
+    finally:
+        _CACHE.reset(token)
+
+
+def _cache(manifest, context):
+    state = _CACHE.get()
+    if state is not None and state["manifest"] is manifest and state["context"] == Path(context):
+        return state
+    return None
 
 
 def require(condition, message):
@@ -102,6 +127,7 @@ def source_version(manifest: dict, context: Path, source: str, ref: str | None =
         env.pop(key, None)
     fixed = {"base": manifest["base_sha"], "head": manifest["head_sha"],
              "merge-base": manifest.get("merge_base")}
+    objects = None
     if source == "supporting":
         require(selected["status"] == "captured", "關聯 Repo 沒有固定版本。")
         reference = selected["ref"]
@@ -113,12 +139,6 @@ def source_version(manifest: dict, context: Path, source: str, ref: str | None =
         objects = context / "objects"
         require(objects.is_dir() and not objects.is_symlink() and objects.resolve().is_relative_to(context),
                 "預覽物件目錄超出 context。")
-        repo_objects = command(manifest, ["rev-parse", "--git-path", "objects"], env=env).decode().strip()
-        alternate = Path(repo_objects)
-        if not alternate.is_absolute():
-            alternate = Path(manifest["repo"]) / alternate
-        env["GIT_OBJECT_DIRECTORY"] = str(objects)
-        env["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = str(alternate)
     elif source == "merge-parent":
         allowed = {p for m in manifest["merge_commits"] for p in m["parents"]}
         require(ref in allowed, "merge-parent 版本不在固定紀錄內。")
@@ -128,6 +148,20 @@ def source_version(manifest: dict, context: Path, source: str, ref: str | None =
         reference = fixed[source]
     require(isinstance(reference, str) and SHA.fullmatch(reference), "證據版本無效。")
     require(ref is None or ref == reference, "證據 SHA 與固定來源不符。")
+    if objects is not None:
+        state = _cache(manifest, context)
+        key = (selected["id"], selected["path"], manifest["repo"], source, reference, str(objects))
+        alternate = state["sources"].get(key) if state is not None else None
+        if alternate is None:
+            repo_objects = command(manifest, ["rev-parse", "--git-path", "objects"], env=env).decode().strip()
+            alternate = Path(repo_objects)
+            if not alternate.is_absolute():
+                alternate = Path(manifest["repo"]) / alternate
+            alternate = str(alternate)
+            if state is not None:
+                state["sources"][key] = alternate
+        env["GIT_OBJECT_DIRECTORY"] = str(objects)
+        env["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = alternate
     return reference, env
 
 
@@ -142,44 +176,92 @@ def command(manifest: dict, args: list[str], *, env=None, acceptable=(0,)) -> by
     return result.stdout
 
 
-def read_blob(manifest: dict, context: Path, source: str, path: str, ref=None, repo=None) -> bytes:
+def _read_blob(manifest: dict, context: Path, source: str, path: str, ref=None, repo=None):
     require(safe_path(path), "證據路徑必須是安全的 Repo 相對路徑。")
     reference, env = source_version(manifest, context, source, ref, repo)
-    selected = {**manifest, "repo": repository(manifest, repo)["path"]}
-    return command(selected, ["cat-file", "blob", f"{reference}:{path}"], env=env)
+    selected = repository(manifest, repo)
+    key = (selected["id"], selected["path"], reference, path,
+           env.get("GIT_OBJECT_DIRECTORY"), env.get("GIT_ALTERNATE_OBJECT_DIRECTORIES"))
+    state = _cache(manifest, context)
+    if state is not None and key in state["blobs"]:
+        content = state["blobs"][key]
+    else:
+        content = command({**manifest, "repo": selected["path"]},
+                          ["cat-file", "blob", f"{reference}:{path}"], env=env)
+        if state is not None:
+            state["blobs"][key] = content
+    return reference, key, content
 
 
-def list_files(manifest: dict, context: Path, source: str, ref=None, repo=None) -> list[str]:
+def read_blob(manifest: dict, context: Path, source: str, path: str, ref=None, repo=None) -> bytes:
+    return _read_blob(manifest, context, source, path, ref, repo)[2]
+
+
+def blob_metadata(manifest: dict, context: Path, source: str, path: str, ref=None, repo=None) -> dict:
+    """Read, hash and count a validated blob once per operation."""
+    _, key, content = _read_blob(manifest, context, source, path, ref, repo)
+    state = _cache(manifest, context)
+    if state is not None and key in state["metadata"]:
+        return state["metadata"][key].copy()
+    result = {"content": content, "binary": b"\0" in content,
+              "content_sha256": hashlib.sha256(content).hexdigest(), "line_count": len(content.splitlines())}
+    if state is not None:
+        state["metadata"][key] = result
+    return result.copy()
+
+
+def _list_files(manifest: dict, context: Path, source: str, ref=None, repo=None):
     reference, env = source_version(manifest, context, source, ref, repo)
     selected = {**manifest, "repo": repository(manifest, repo)["path"]}
     raw = command(selected, ["ls-tree", "-r", "--full-tree", "-z", "--name-only", reference], env=env)
-    return [p.decode("utf-8", errors="surrogateescape") for p in raw.split(b"\0") if p]
+    return reference, [p.decode("utf-8", errors="surrogateescape") for p in raw.split(b"\0") if p]
+
+
+def list_files(manifest: dict, context: Path, source: str, ref=None, repo=None) -> list[str]:
+    return _list_files(manifest, context, source, ref, repo)[1]
 
 
 def search(manifest: dict, context: Path, source: str, query: str, *, ignore_case=False, ref=None, repo=None) -> dict:
     require(isinstance(query, str) and query and "\0" not in query and "\n" not in query,
             "搜尋字串須為非空白的單行 literal。")
     reference, env = source_version(manifest, context, source, ref, repo)
+    selected_repo = repository(manifest, repo)
+    key = (selected_repo["id"], selected_repo["path"], source, reference, query, bool(ignore_case),
+           env.get("GIT_OBJECT_DIRECTORY"), env.get("GIT_ALTERNATE_OBJECT_DIRECTORIES"))
+    state = _cache(manifest, context)
+    if state is not None and key in state["searches"]:
+        cached = state["searches"][key]
+        return {**cached, "matches": [match.copy() for match in cached["matches"]]}
     args = ["grep", "--no-textconv", "--full-name", "-I", "-n", "-z", "-F"]
     if ignore_case:
         args.append("-i")
     args += ["-e", query, reference, "--"]
-    selected = {**manifest, "repo": repository(manifest, repo)["path"]}
+    selected = {**manifest, "repo": selected_repo["path"]}
     raw = command(selected, args, env=env, acceptable=(0, 1))
     matches = []
-    while raw:
-        filename, separator, rest = raw.partition(b"\0")
-        number, separator2, rest = rest.partition(b"\0")
-        line, newline, raw = rest.partition(b"\n")
-        require(separator and separator2 and number.isdigit(), "Git grep 回傳格式不完整。")
-        prefix = reference.encode() + b":"
+    offset = 0
+    prefix = reference.encode() + b":"
+    while offset < len(raw):
+        filename_end = raw.find(b"\0", offset)
+        require(filename_end >= 0, "Git grep 回傳格式不完整。")
+        number_end = raw.find(b"\0", filename_end + 1)
+        require(number_end >= 0, "Git grep 回傳格式不完整。")
+        filename = raw[offset:filename_end]
+        number = raw[filename_end + 1:number_end]
+        require(number.isdigit(), "Git grep 回傳格式不完整。")
+        line_end = raw.find(b"\n", number_end + 1)
+        if line_end < 0:
+            line_end = len(raw)
+        line = raw[number_end + 1:line_end]
         require(filename.startswith(prefix), "搜尋結果版本不符。")
         matches.append({"path": filename[len(prefix):].decode("utf-8", errors="surrogateescape"),
                         "line": int(number), "text": line.decode("utf-8", errors="replace")})
-        if not newline:
-            break
-    return {"repo": repository(manifest, repo)["id"], "source": source, "ref": reference, "query": query, "ignore_case": bool(ignore_case),
-            "scope": "repo", "matches": matches}
+        offset = line_end + 1
+    result = {"repo": selected_repo["id"], "source": source, "ref": reference, "query": query,
+              "ignore_case": bool(ignore_case), "scope": "repo", "matches": matches}
+    if state is not None:
+        state["searches"][key] = {**result, "matches": [match.copy() for match in matches]}
+    return result
 
 
 def record_search(context: Path, result: dict) -> str:
@@ -213,40 +295,92 @@ def validate_baseline_search(context: Path, manifest: dict, identifier: str) -> 
     return validate_search(context, manifest, identifier)
 
 
+SOURCES = ("base", "head", "merge-base", "merge-preview", "merge-parent", "supporting")
+REQUEST_FIELDS = {"action", "source", "ref", "repo", "path", "query", "ignore_case"}
+EVIDENCE_ERRORS = (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired)
+
+
+def request_result(manifest: dict, context: Path, request: dict) -> dict:
+    """Execute one request with the same result shape as the original CLI."""
+    require(isinstance(request, dict), "batch request 必須是物件。")
+    require(not request.keys() - REQUEST_FIELDS, "batch request 含未知欄位。")
+    action = request.get("action")
+    require(action in ("list", "read", "search"), "未知的證據操作。")
+    source, repo = request.get("source", "base"), request.get("repo", "entry")
+    require(source in SOURCES, "未知的證據來源。")
+    require(isinstance(repo, str) and bool(repo), "證據 Repo 必須是非空白身分。")
+    ref, path = request.get("ref"), request.get("path")
+    ignore_case = request.get("ignore_case", False)
+    require(type(ignore_case) is bool, "ignore_case 必須是布林值。")
+    if action == "list":
+        reference, paths = _list_files(manifest, context, source, ref, repo)
+        return {"source": source, "ref": reference, "repo": repo, "paths": paths}
+    if action == "read":
+        reference, _, content = _read_blob(manifest, context, source, path, ref, repo)
+        require(b"\0" not in content, "二進位內容請列為 metadata-only，不能當作文字讀取。")
+        return {"repo": repo, "source": source, "ref": reference, "path": path,
+                "lines": [{"line": n, "text": line} for n, line in
+                          enumerate(content.decode("utf-8", errors="replace").splitlines(), 1)]}
+    result = search(manifest, context, source, request.get("query"),
+                    ignore_case=ignore_case, ref=ref, repo=repo)
+    result["search_id"] = record_search(context, result)
+    return result
+
+
+def batch(manifest: dict, context: Path, requests: list) -> dict:
+    """Keep input order and expose every failure while sharing operation-local data."""
+    require(isinstance(requests, list), "batch requests 必須是 JSON 陣列。")
+    results = []
+    with operation_cache(manifest, context):
+        for index, request in enumerate(requests):
+            try:
+                result = request_result(manifest, context, request)
+            except EVIDENCE_ERRORS as exc:
+                results.append({"index": index, "ok": False, "error": str(exc)})
+            else:
+                results.append({"index": index, "ok": True, "result": result})
+    return {"results": results, "complete": all(item["ok"] for item in results)}
+
+
+def load_requests(value: str) -> list:
+    require(isinstance(value, str) and bool(value.strip()), "batch 必須指定 --requests。")
+    inline = value.lstrip("\ufeff \t\r\n")
+    raw = inline if inline.startswith(("[", "{")) else Path(value).read_text(encoding="utf-8-sig")
+    requests = json.loads(raw)
+    if isinstance(requests, dict):
+        require(requests.get("schema") == "ReleaseReviewWorklist/v1", "batch worklist schema 無效。")
+        requests = requests.get("requests")
+    require(isinstance(requests, list), "batch requests 必須是 JSON 陣列。")
+    return requests
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("list", "read", "search"))
+    parser.add_argument("action", choices=("list", "read", "search", "batch"))
     parser.add_argument("--context-dir", required=True)
-    parser.add_argument("--source", choices=("base", "head", "merge-base", "merge-preview", "merge-parent", "supporting"),
-                        default="base")
+    parser.add_argument("--source", choices=SOURCES, default="base")
     parser.add_argument("--ref")
     parser.add_argument("--repo", default="entry")
     parser.add_argument("--path")
     parser.add_argument("--query")
     parser.add_argument("--ignore-case", action="store_true")
+    parser.add_argument("--requests", help="JSON array or worklist file (inline JSON is also accepted)")
     args = parser.parse_args(argv)
     try:
         context = review_session.validate_session(args.context_dir)
         manifest = load_manifest(context)
-        reference, _ = source_version(manifest, context, args.source, args.ref, args.repo)
-        if args.action == "list":
-            result = {"source": args.source, "ref": reference,
-                      "repo": args.repo, "paths": list_files(manifest, context, args.source, args.ref, args.repo)}
-        elif args.action == "read":
-            content = read_blob(manifest, context, args.source, args.path, args.ref, args.repo)
-            require(b"\0" not in content, "二進位內容請列為 metadata-only，不能當作文字讀取。")
-            result = {"repo": args.repo, "source": args.source, "ref": reference, "path": args.path,
-                      "lines": [{"line": n, "text": line} for n, line in
-                                enumerate(content.decode("utf-8", errors="replace").splitlines(), 1)]}
+        if args.action == "batch":
+            result = batch(manifest, context, load_requests(args.requests))
         else:
-            result = search(manifest, context, args.source, args.query,
-                            ignore_case=args.ignore_case, ref=args.ref, repo=args.repo)
-            result["search_id"] = record_search(context, result)
-    except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
+            with operation_cache(manifest, context):
+                result = request_result(manifest, context,
+                                        {key: getattr(args, key) for key in REQUEST_FIELDS})
+    except EVIDENCE_ERRORS as exc:
         print(f"release-evidence: {exc}", file=sys.stderr)
         return 2
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0
+    print(json.dumps(result, ensure_ascii=False,
+                     **({"separators": (",", ":")} if args.action == "batch" else {"indent": 2})))
+    return 2 if args.action == "batch" and not result["complete"] else 0
 
 
 if __name__ == "__main__":

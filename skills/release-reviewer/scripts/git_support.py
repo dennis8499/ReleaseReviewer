@@ -618,37 +618,21 @@ def collect_changes(
             env=env,
         )
     )
-    numstat = parse_numstat(
-        str(
-            run_git(
-                repo,
-                [
-                    "diff",
-                    *DIFF_FLAGS,
-                    "--numstat",
-                    "--find-renames",
-                    "--find-copies",
-                    "-z",
-                    left,
-                    right,
-                    "--",
-                ],
-                env=env,
-            )
-        )
-    )
     changes = parse_name_status(name_status)
+    # Raw metadata and numstat use the same diff options. Git emits all raw
+    # records before numstat, so they can share one traversal. Keep the
+    # histogram name-status pass separate to preserve its rename decisions.
     raw_status = str(
         run_git(
             repo,
-            ["diff", *DIFF_FLAGS, "--raw", "--no-abbrev", "--find-renames", "--find-copies", "-z", left, right, "--"],
+            ["diff", *DIFF_FLAGS, "--raw", "--numstat", "--no-abbrev", "--find-renames", "--find-copies", "-z", left, right, "--"],
             env=env,
         )
     )
     raw_parts = raw_status.split("\0")
     raw_records: dict[tuple[str | None, str], dict[str, str]] = {}
     index = 0
-    while index < len(raw_parts):
+    while index < len(raw_parts) and raw_parts[index].startswith(":"):
         metadata = raw_parts[index]
         index += 1
         if not metadata:
@@ -669,6 +653,7 @@ def collect_changes(
             "old_blob": old_blob,
             "new_blob": new_blob,
         }
+    numstat = parse_numstat("\0".join(raw_parts[index:]))
     for change in changes:
         path = str(change["path"])
         additions, deletions = numstat.get(path, ("0", "0"))
@@ -721,18 +706,19 @@ def commit_subject(repo: Path, commit: str) -> str:
 
 
 def merge_commit_records(repo: Path, left: str, right: str) -> list[dict[str, Any]]:
-    merge_shas = [
-        line.strip()
-        for line in str(
-            run_git(repo, ["rev-list", "--merges", "--reverse", f"{left}..{right}"])
-        ).splitlines()
-        if line.strip()
-    ]
+    # NUL-delimited fields keep subjects independent of line-oriented parsing,
+    # and one log walk replaces separate parent/subject queries per merge.
+    metadata = str(run_git(
+        repo, ["log", "--merges", "--reverse", "--format=%H%x00%P%x00%s", "-z", f"{left}..{right}"]
+    )).split("\0")
+    if metadata and not metadata[-1]:
+        metadata.pop()
+    if len(metadata) % 3:
+        raise ReviewContextError("Git 回傳的 merge commit 資料不完整。")
     records: list[dict[str, Any]] = []
-    for merge_sha in merge_shas:
-        parents_line = str(run_git(repo, ["rev-list", "--parents", "-n", "1", merge_sha])).strip()
-        tokens = parents_line.split()
-        parents = tokens[1:]
+    for index in range(0, len(metadata), 3):
+        merge_sha, parents_line, subject = metadata[index:index + 3]
+        parents = parents_line.split()
         parent_views = []
         for position, parent in enumerate(parents, start=1):
             parent_views.append(
@@ -746,7 +732,7 @@ def merge_commit_records(repo: Path, left: str, right: str) -> list[dict[str, An
         records.append(
             {
                 "sha": merge_sha,
-                "subject": commit_subject(repo, merge_sha),
+                "subject": subject.strip(),
                 "parents": parents,
                 "parent_views": parent_views,
             }

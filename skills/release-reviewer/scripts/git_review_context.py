@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_support as git
 import group_context
 import review_session
+import review_worklist
 
 SCHEMA = "ReleaseReviewContext/v3"
 
@@ -135,6 +136,7 @@ def build_manifest(args: argparse.Namespace) -> dict:
         }
         (session / "manifest.json").write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        review_worklist.write_worklist(session, manifest)
         succeeded = True
         return manifest
     finally:

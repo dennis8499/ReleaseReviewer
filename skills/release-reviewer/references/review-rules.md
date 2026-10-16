@@ -84,7 +84,7 @@ merge-preview 的文字證據由 helper 保存引用行的非機密片段與原�
 }
 ~~~
 
-以上是欄位示意，不能原樣當成完成草稿。coverage 只有沒有變更時可空白；dependency_coverage 必須逐類列 config、db、ftp、sftp、redis、kafka、other，欄位 kind、status（reviewed／not-reviewed）、reason、evidence。reason 說明已查範圍與沒有新增項目的依據；有變更時 reviewed 必須引用最終入口版本。未完成類型阻止完整狀態。Group 欄位依 group-review.md 填列。
+以上是欄位示意，不能原樣當成完成草稿。擷取產生的草稿骨架與待讀清單共用相同覆蓋計算；預填引用只表示必要來源，status 初始為 not-reviewed。coverage 只有沒有變更時可空白；dependency_coverage 必須逐類列 config、db、ftp、sftp、redis、kafka、other，欄位 kind、status（reviewed／not-reviewed）、reason、evidence。reason 說明已查範圍與沒有新增項目的依據；有變更時 reviewed 必須引用最終入口版本。未完成類型阻止完整狀態。Group 欄位依 group-review.md 填列。
 
 ### coverage 項目
 
@@ -145,4 +145,4 @@ report 的 release_assessment 由 helper 推導，優先序為 blocked（有直�
 
 報告含 release-review-report 中繼資料及 static_body_sha256，摘要排除唯一的 <!-- release-checklist:start --> 至 <!-- release-checklist:end --> 人工區塊（含邊界），仍涵蓋全部固定正文。只有此區塊可填寫，其他修改視為快照改變。v3 沒有 checklist_file／checklist_filename／body_sha256。報告首段結論優先，後接阻擋、依賴與 Checklist、限制，詳細證據放可展開區，避免重複摘要。
 
-本階段沒有 MR 身分，不冒用 MergeReviewReport/v1 或已有的 GitlabWorkSpace 匯入格式。成功或失敗後清理 owned context，報告保留所有必要版本、路徑與搜尋摘要。
+本階段沒有 MR 身分，不冒用 MergeReviewReport/v1 或已有的 GitlabWorkSpace 匯入格式。發布預設成功或失敗後清理 owned context；技能使用 --retain-on-validation-error 時，只在可修正草稿錯誤保留同次來源，修正後完整重驗。來源完整性、搜尋紀錄竄改、Git／逾時與輸出失敗仍終止清理；中止或放棄修稿也清理。報告保留所有必要版本、路徑與搜尋摘要。

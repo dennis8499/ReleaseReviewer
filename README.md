@@ -1,12 +1,12 @@
 # Release Reviewer｜上版檢查
 
-獨立 Codex Skill **0.3.1**。只接受 Repo、基礎分支、比較分支，固定合併前審查。檢查直接阻止上版的 P0／P1、相關功能鏈與新增部署依賴，在 VSCode 工作區根目錄產生**一份含可填寫 Checklist 的繁體中文 Release Report**。
+獨立 Codex Skill **0.4.0**。只接受 Repo、基礎分支、比較分支，固定合併前審查。檢查直接阻止上版的 P0／P1、相關功能鏈與新增部署依賴，在 VSCode 工作區根目錄產生**一份含可填寫 Checklist 的繁體中文 Release Report**。
 
 ## 安裝與使用
 
 需要 Python 3.10+、Git 及可使用本機 Skills 的 Codex。Git 須支援 merge-tree --write-tree 與 --merge-base；缺少乾淨預覽時保留缺口，不改用直接比較。
 
-將 skills/release-reviewer 複製到 Codex Skills 目錄，或解壓 dist/release-reviewer-0.3.1.zip。CODEX_HOME 有設定時使用其 skills 子目錄，否則使用使用者的 .codex/skills。
+將 skills/release-reviewer 複製到 Codex Skills 目錄，或解壓 dist/release-reviewer-0.4.0.zip。CODEX_HOME 有設定時使用其 skills 子目錄，否則使用使用者的 .codex/skills。
 
 ~~~text
 $release-reviewer Repo=OrderService 基礎分支=origin/main 比較分支=origin/feature/payment
@@ -17,7 +17,7 @@ $release-reviewer Repo=C:\projects\OrderService 基礎分支=main 比較分支=f
 
 工作區範圍由 VSCode／工作台內部資料取得。Group 的相關上下游使用各自本機預設分支固定 SHA，不 fetch、不改用 checkout；缺少版本或鏈路保留未完成。新增使用以入口 base_sha 整個 Repo 為基準，涵蓋首次使用、部署定義、目標改變及新增權限。
 
-透過 GitlabWorkSpace 使用時，請更新至整合 ReleaseReviewer 0.3.1 的 GitlabWorkSpace 0.24.2 VSIX／組合包；專案內另行安裝的技能也須更新至 0.3.1。舊 context／draft 須重新擷取審查，歷史報告保留。
+透過 GitlabWorkSpace 使用時，請更新至整合 ReleaseReviewer 0.4.0 的 GitlabWorkSpace 0.24.4 VSIX／組合包；專案內另行安裝的技能也須更新至 0.4.0。舊 context／draft 須重新擷取審查，歷史報告保留。
 
 ## 0.3.1 更新
 
@@ -111,8 +111,18 @@ python -X utf8 -B scripts/build_demo.py
 python -X utf8 -B scripts/package_release.py
 ~~~
 
-打包輸出 0.3.1 ZIP 與 SHA-256，ZIP 只有可安裝的 release-reviewer 目錄，不覆寫舊發行包。測試不需要第三方套件；CI 在 Linux／Windows 的 Python 3.10、3.14 執行測試與打包。
+打包輸出 0.4.0 ZIP 與 SHA-256，ZIP 只有可安裝的 release-reviewer 目錄，不覆寫舊發行包。測試不需要第三方套件；CI 在 Linux／Windows 的 Python 3.10、3.14 執行測試與打包。
 
 Context、Draft、Report 統一使用 v3。Context 保存 report_root；report 的 release_assessment 由 helper 推導。publish_report(context, draft_path) 回傳一個 Path；CLI 只回傳 markdown_report。v3 移除 --report-dir、checklist_report、checklist_file 與整份正文 body_sha256，改用排除人工區塊的 static_body_sha256。舊 context／draft 須重新擷取審查，舊報告不改寫。
 
-Git 與 owned-session 程式內附，無 MergeReviewer 執行期依賴；報告成功、失敗或中止後清理本次 owned 暫存證據。
+Git 與 owned-session 程式內附，無 MergeReviewer 執行期依賴；預設在報告成功、失敗或中止後清理本次 owned 暫存證據。啟用下節修稿重試時，可修正草稿錯誤會保留同次 context。
+
+## 0.4.0 批次證據與修稿重試
+
+本版新增批次固定證據操作、單次驗證快取、待讀清單與未審查草稿骨架。審查範圍、完整搜尋、v3 報告與人工 Checklist 契約保持一致；逐項語意審查後才標為 reviewed。
+
+擷取完成後可直接執行 `evidence.py batch --context-dir <context> --requests <context>/review-worklist.json`。後續讀取與搜尋沿用同一批次介面；批次逐項回傳結果及錯誤，搜尋仍保存完整命中與各自 search_id。細節見[證據操作](skills/release-reviewer/references/evidence-workflow.md)。
+
+技能發布命令增加 `--retain-on-validation-error`：可修正草稿錯誤以 exit 3 保留同次 context，修正後完整重驗；來源／搜尋完整性、Git、逾時及輸出失敗仍終止清理。成功路徑只驗證一次，舊呼叫的失敗清理行為不變；中止或放棄修稿須清理保留的 context。
+
+可重跑的效能比較與驗證界線見[效能驗證](docs/performance.md)。0.4.0 提供獨立 ZIP 與 SHA-256，並由 GitlabWorkSpace 0.24.4 整合正式附件；量測界線及歷史樣本保留於該文件。

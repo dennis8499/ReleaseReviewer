@@ -5,7 +5,7 @@ description: Check direct pre-release blockers and new deployment dependencies f
 
 # Release Reviewer｜上版檢查
 
-檢查本次變更直接造成的上版阻擋與新增部署依賴。Agent 判斷程式語意，helpers 驗證固定版本、證據與覆蓋，負責人核對實際環境。開始讀[輸出風格](references/report-style.md)；流程不依賴其他 Skills、GitLab API 或環境連線。
+檢查本次變更直接造成的上版阻擋與新增部署依賴。Agent 判斷程式語意，helpers 驗證固定版本、證據與覆蓋，負責人核對實際環境。開始讀[輸出風格](references/report-style.md)，已安裝 Output Style 時依其路由調整呈現；核心審查不依賴其他 Skills、GitLab API 或環境連線。
 
 ## 1. 固定入口與工作區
 

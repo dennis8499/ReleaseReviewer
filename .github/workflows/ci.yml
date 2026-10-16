@@ -2,32 +2,115 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+    tags:
+      - 'v*'
   pull_request:
   workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: release-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
-  test:
+  select:
+    name: Select exact main CI proof
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    outputs:
+      reuse_run_id: ${{ steps.proof.outputs.reuse_run_id }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - name: Reuse only complete trusted main proof within seven days
+        id: proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -X utf8 -B scripts/release_ci.py select --output "$GITHUB_OUTPUT"
+
+  build:
+    needs: select
+    if: ${{ always() && (needs.select.result == 'skipped' || (needs.select.result == 'success' && needs.select.outputs.reuse_run_id == '')) }}
+    name: Validate [${{ matrix.cell }}]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        python-version: ["3.10", "3.14"]
-    runs-on: ${{ matrix.os }}
+        include:
+          - cell: linux-py3.10
+            os: ubuntu-latest
+            python-version: '3.10'
+          - cell: linux-py3.14
+            os: ubuntu-latest
+            python-version: '3.14'
+          - cell: windows-py3.10
+            os: windows-latest
+            python-version: '3.10'
+          - cell: windows-py3.14
+            os: windows-latest
+            python-version: '3.14'
     steps:
-      - name: Check out source
+      - name: Check out exact source
         uses: actions/checkout@v5
-
+        with:
+          fetch-depth: 0
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Run unit tests
+      - name: Run the complete unit suite
         run: python -X utf8 -B -m unittest discover -s tests -v
-
-      - name: Build standalone Skill package
+      - name: Build canonical standalone Skill package
+        if: matrix.cell == 'linux-py3.14'
         run: python -X utf8 -B scripts/package_release.py
+      - name: Test release provenance and publication contracts
+        run: python -X utf8 -B scripts/test_release_ci.py -v
+      - name: Record complete cell and canonical asset provenance
+        run: python -X utf8 -B scripts/release_ci.py record --cell "${{ matrix.cell }}" --artifact-dir ".release-ci/${{ matrix.cell }}"
+      - name: Save exact validated proof and assets for fourteen days
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-ci-${{ github.sha }}-${{ matrix.cell }}-${{ github.run_attempt }}
+          path: .release-ci/${{ matrix.cell }}/*
+          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: error
+
+  publish:
+    name: Promote verified bytes to formal Release
+    needs: [select, build]
+    if: ${{ always() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && needs.select.result == 'success' && (needs.build.result == 'success' || (needs.build.result == 'skipped' && needs.select.outputs.reuse_run_id != '')) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - name: Verify proof and publish idempotently without rebuilding
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REUSE_RUN_ID: ${{ needs.select.outputs.reuse_run_id }}
+        run: python -X utf8 -B scripts/release_ci.py publish --run-id "$REUSE_RUN_ID" --fallback-current-run --output release-publication.json
+      - name: Save verified formal asset digests
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-publication-${{ github.sha }}-${{ github.run_attempt }}
+          path: release-publication.json
+          retention-days: 14
+          if-no-files-found: error

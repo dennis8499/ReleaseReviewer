@@ -55,9 +55,10 @@ def strings(value, label):
     return value
 
 
-def validate_citations(items, manifest, context, *, snapshots=None):
+def validate_citations(items, manifest, context, *, snapshots=None, analyses=None):
     draft_require(isinstance(items, list), "evidence 必須是陣列。")
     snapshots = {} if snapshots is None else snapshots
+    analyses = {} if analyses is None else analyses
     cleaned = []
     for item in items:
         draft_require(isinstance(item, dict), "證據必須是物件。")
@@ -106,20 +107,34 @@ def validate_citations(items, manifest, context, *, snapshots=None):
         if source == "merge-preview" and not metadata["binary"]:
             key = (repo, source, ref, path, start, end)
             if key not in snapshots:
-                snapshots[key] = preview_snapshot(content, path, start, end)
+                analysis_key = (metadata["content_sha256"], preview_classification(path))
+                if analysis_key not in analyses:
+                    analyses[analysis_key] = preview_analysis(content, path)
+                snapshots[key] = preview_snapshot(content, path, start, end, analysis=analyses[analysis_key])
             citation.update(snapshots[key])
         cleaned.append(citation)
     return cleaned
 
 
 
-def preview_snapshot(content, path, start, end):
-    """Keep cited final code after owned objects are cleaned; omit configuration values."""
+def preview_classification(path):
+    suffix = Path(path).suffix.lower()
+    if suffix in {".pem", ".key", ".pfx", ".p12"}:
+        return "private"
+    if suffix == ".json":
+        return "json"
+    if suffix in {".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".config", ".env"} or Path(path).name.startswith(".env"):
+        return "configuration"
+    return "code"
+
+
+def preview_analysis(content, path):
+    """Classify the full file once, before selecting any citation range."""
     decoded = content.decode("utf-8", errors="replace")
-    if re.search(r"(?i)BEGIN.*PRIVATE.*KEY", decoded) or Path(path).suffix.lower() in {".pem", ".key", ".pfx", ".p12"}:
-        return {"snapshot_note": "認證／私鑰內容已省略，保留原始內容 SHA-256。"}
-    config_suffixes = {".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".config", ".env"}
-    if Path(path).suffix.lower() in config_suffixes or Path(path).name.startswith(".env"):
+    classification = preview_classification(path)
+    if re.search(r"(?i)BEGIN.*PRIVATE.*KEY", decoded) or classification == "private":
+        return {"kind": "private"}
+    if classification in {"json", "configuration"}:
         keys = set()
         def collect(value):
             if isinstance(value, dict):
@@ -129,12 +144,22 @@ def preview_snapshot(content, path, start, end):
             elif isinstance(value, list):
                 for child in value:
                     collect(child)
-        if Path(path).suffix.lower() == ".json":
+        if classification == "json":
             try:
                 collect(json.loads(decoded))
             except ValueError:
                 pass
-        return {"configuration_keys": sorted(keys),
+        return {"kind": "configuration", "configuration_keys": sorted(keys)}
+    return {"kind": "code", "decoded": decoded}
+
+
+def preview_snapshot(content, path, start, end, *, analysis=None):
+    """Keep cited final code after owned objects are cleaned; omit configuration values."""
+    analysis = preview_analysis(content, path) if analysis is None else analysis
+    if analysis["kind"] == "private":
+        return {"snapshot_note": "認證／私鑰內容已省略，保留原始內容 SHA-256。"}
+    if analysis["kind"] == "configuration":
+        return {"configuration_keys": list(analysis["configuration_keys"]),
                 "snapshot_note": "設定值已省略；僅保留可解析的鍵名及原始內容 SHA-256。"}
     if start is None:
         return {}
@@ -142,7 +167,9 @@ def preview_snapshot(content, path, start, end):
                            r"credential|authorization|connection.?string|data\s*source|initial\s*catalog|"
                            r"server\s*=|host\s*=|begin.*private.*key")
     excerpt = []
-    for number, line in enumerate(decoded.splitlines()[start - 1:end], start):
+    if "lines" not in analysis:
+        analysis["lines"] = analysis["decoded"].splitlines()
+    for number, line in enumerate(analysis["lines"][start - 1:end], start):
         safe = "[含認證或連線設定的行已省略]" if sensitive.search(line) else redact(line)
         excerpt.append(f"{number}: {safe}")
     return {"excerpt": excerpt}
@@ -163,9 +190,10 @@ def validate_result(draft, manifest, context):
 
 def _validate_result(draft, manifest, context):
     snapshots = {}
+    analyses = {}
 
     def cached_citations(items, manifest, context):
-        return validate_citations(items, manifest, context, snapshots=snapshots)
+        return validate_citations(items, manifest, context, snapshots=snapshots, analyses=analyses)
 
     draft_require(isinstance(draft, dict) and draft.get("schema") == "ReleaseReviewDraft/v3",
                "結果須使用 ReleaseReviewDraft/v3。")

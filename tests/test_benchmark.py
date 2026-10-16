@@ -1,8 +1,11 @@
+import base64
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -14,6 +17,47 @@ SPEC.loader.exec_module(benchmark)
 
 
 class BenchmarkTests(unittest.TestCase):
+    def test_report_normalization_checks_both_hashes_before_ignoring_run_fields(self):
+        body = "fixed evidence\n- 擷取時間（UTC）：now\n"
+        metadata = {"generated_at": "now", "context_sha256": "context-hash", "head_sha": "commit",
+                    "static_body_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest()}
+        marker = base64.b64encode(json.dumps(metadata).encode("utf-8")).decode("ascii")
+        markdown = body + f"\n<!-- release-review-report:{marker} -->\n"
+        report = SimpleNamespace(static_body=lambda content: content)
+        result = benchmark.normalized_report(markdown, report, (), "context-hash")
+        self.assertEqual(result["metadata"], {"head_sha": "commit"})
+        self.assertIn("<capture-time>", result["body"])
+        with self.assertRaisesRegex(ValueError, "context hash"):
+            benchmark.normalized_report(markdown, report, (), "wrong")
+        with self.assertRaisesRegex(ValueError, "static body hash"):
+            benchmark.normalized_report(markdown.replace("fixed evidence", "tampered evidence"), report, (), "context-hash")
+
+    def test_shared_batch_expands_to_legacy_results_without_mutating_input(self):
+        shared = {"schema": "ReleaseReviewEvidenceBatch/v1", "complete": True,
+                  "contents": {"raw-sha": {"lines": [{"number": 1, "text": "body"}]}},
+                  "results": [{"ok": True, "result": {"repo": "entry", "source": "head", "ref": "commit",
+                                                        "path": "a.py", "content_id": "raw-sha"}},
+                              {"ok": True, "result": {"matches": [{"line": 1, "text": "search"}]}}]}
+        old = benchmark.expand_shared_batch(shared)
+        self.assertEqual(set(old), {"complete", "results"})
+        result = old["results"][0]["result"]
+        self.assertEqual(result, {"repo": "entry", "source": "head", "ref": "commit", "path": "a.py",
+                                  "lines": [{"number": 1, "text": "body"}]})
+        self.assertIn("content_id", shared["results"][0]["result"])
+        self.assertIs(old["results"][1]["result"]["matches"], shared["results"][1]["result"]["matches"])
+        shared["results"][0]["result"]["content_id"] = "missing"
+        with self.assertRaises(ValueError):
+            benchmark.expand_shared_batch(shared)
+
+    def test_oracle_restore_time_is_excluded_from_active_helper_stage(self):
+        measured = benchmark.Measurements()
+        with mock.patch.object(benchmark.time, "perf_counter", side_effect=[10.0, 11.0, 14.0, 16.0]):
+            with measured.stage("evidence"):
+                with measured.exclude_oracle():
+                    pass
+        self.assertEqual(measured.oracle_seconds, 3.0)
+        self.assertEqual(measured.stages["evidence"]["wall_seconds"], 3.0)
+
     def test_digest_ignores_only_run_times_and_replaced_locations(self):
         first = {"generated_at": "now", "repo": "C:/one/repo", "content": {"line": 1, "text": "same"}}
         second = {"generated_at": "later", "repo": "C:/two/repo", "content": {"line": 1, "text": "same"}}
@@ -53,6 +97,24 @@ class BenchmarkTests(unittest.TestCase):
             result = benchmark.launch_worker(Path("unused"), "normal")
         self.assertFalse(result["success"])
         self.assertIn("TimeoutExpired", result["error"])
+
+    def test_matrix_stops_on_first_failed_worker_or_artifact_mismatch(self):
+        skill = SCRIPT.parents[1] / "skills/release-reviewer"
+        cases = [([self.sample("baseline", 1, success=False)], 1),
+                 ([self.sample("baseline", 1), self.sample("current", 1, digest="changed")], 2)]
+        for samples, expected_calls in cases:
+            with self.subTest(expected_calls=expected_calls), tempfile.TemporaryDirectory() as temporary:
+                output = Path(temporary) / "partial.json"
+                with mock.patch.object(benchmark, "launch_worker", side_effect=samples) as launch:
+                    code = benchmark.main(["--baseline-skill-dir", str(skill), "--runs", "5",
+                                           "--scenario", "normal", "--scenario", "group", "--output", str(output)])
+                result = json.loads(output.read_text(encoding="utf-8"))
+                self.assertEqual(code, 2)
+                self.assertEqual(launch.call_count, expected_calls)
+                self.assertEqual(len(result["samples"]), expected_calls)
+                self.assertIn("failed_fast", result)
+                self.assertFalse(result["summary"]["success"])
+                self.assertTrue(all("speedup" not in item for item in result["summary"]["scenarios"].values()))
 
     def test_isolated_same_variant_smoke_run_has_equal_digest(self):
         skill = SCRIPT.parents[1] / "skills/release-reviewer"

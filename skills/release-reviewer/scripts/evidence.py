@@ -300,8 +300,8 @@ REQUEST_FIELDS = {"action", "source", "ref", "repo", "path", "query", "ignore_ca
 EVIDENCE_ERRORS = (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired)
 
 
-def request_result(manifest: dict, context: Path, request: dict) -> dict:
-    """Execute one request with the same result shape as the original CLI."""
+def request_result(manifest: dict, context: Path, request: dict, *, contents=None) -> dict:
+    """Validate one request, optionally sharing its read body within a batch."""
     require(isinstance(request, dict), "batch request 必須是物件。")
     require(not request.keys() - REQUEST_FIELDS, "batch request 含未知欄位。")
     action = request.get("action")
@@ -318,28 +318,41 @@ def request_result(manifest: dict, context: Path, request: dict) -> dict:
     if action == "read":
         reference, _, content = _read_blob(manifest, context, source, path, ref, repo)
         require(b"\0" not in content, "二進位內容請列為 metadata-only，不能當作文字讀取。")
-        return {"repo": repo, "source": source, "ref": reference, "path": path,
-                "lines": [{"line": n, "text": line} for n, line in
-                          enumerate(content.decode("utf-8", errors="replace").splitlines(), 1)]}
+        identity = {"repo": repo, "source": source, "ref": reference, "path": path}
+        if contents is not None:
+            content_id = hashlib.sha256(content).hexdigest()
+            if content_id not in contents:
+                contents[content_id] = {"lines": text_lines(content)}
+            return {**identity, "content_id": content_id}
+        return {**identity, "lines": text_lines(content)}
     result = search(manifest, context, source, request.get("query"),
                     ignore_case=ignore_case, ref=ref, repo=repo)
     result["search_id"] = record_search(context, result)
     return result
 
 
-def batch(manifest: dict, context: Path, requests: list) -> dict:
+def text_lines(content: bytes) -> list[dict]:
+    return [{"line": n, "text": line} for n, line in
+            enumerate(content.decode("utf-8", errors="replace").splitlines(), 1)]
+
+
+def batch(manifest: dict, context: Path, requests: list, *, shared_content=False) -> dict:
     """Keep input order and expose every failure while sharing operation-local data."""
     require(isinstance(requests, list), "batch requests 必須是 JSON 陣列。")
     results = []
+    contents = {} if shared_content else None
     with operation_cache(manifest, context):
         for index, request in enumerate(requests):
             try:
-                result = request_result(manifest, context, request)
+                result = request_result(manifest, context, request, contents=contents)
             except EVIDENCE_ERRORS as exc:
                 results.append({"index": index, "ok": False, "error": str(exc)})
             else:
                 results.append({"index": index, "ok": True, "result": result})
-    return {"results": results, "complete": all(item["ok"] for item in results)}
+    result = {"results": results, "complete": all(item["ok"] for item in results)}
+    if shared_content:
+        result.update(schema="ReleaseReviewEvidenceBatch/v1", contents=contents)
+    return result
 
 
 def load_requests(value: str) -> list:
@@ -365,12 +378,16 @@ def main(argv=None):
     parser.add_argument("--query")
     parser.add_argument("--ignore-case", action="store_true")
     parser.add_argument("--requests", help="JSON array or worklist file (inline JSON is also accepted)")
+    parser.add_argument("--shared-content", action="store_true",
+                        help="Batch only: emit a versioned wrapper with each unique read body once")
     args = parser.parse_args(argv)
+    if args.shared_content and args.action != "batch":
+        parser.error("--shared-content 僅適用於 batch。")
     try:
         context = review_session.validate_session(args.context_dir)
         manifest = load_manifest(context)
         if args.action == "batch":
-            result = batch(manifest, context, load_requests(args.requests))
+            result = batch(manifest, context, load_requests(args.requests), shared_content=args.shared_content)
         else:
             with operation_cache(manifest, context):
                 result = request_result(manifest, context,

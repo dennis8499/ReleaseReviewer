@@ -15,6 +15,9 @@ class ContextTests(RepoTest):
         content = evidence.read_blob(manifest, context, "merge-preview", "src/service.py")
         self.assertIn(b"BillingDb.dbo.InvoiceTax", content)
         self.assertTrue((context / "release.patch").is_file())
+        self.assertTrue((context / "diff.patch").is_file())
+        self.assertIn(b"diff --git", (context / "release.patch").read_bytes())
+        self.assertIn(b"diff --git", (context / "diff.patch").read_bytes())
 
     def test_dirty_worktree_and_index_do_not_enter_review(self):
         write(self.repo, "src/service.py", "STAGED_LOCAL_SECRET = 1\n")

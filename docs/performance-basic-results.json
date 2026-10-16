@@ -1,0 +1,1282 @@
+{
+  "schema": "ReleaseReviewerBasicOptimizationSummary/v1",
+  "baseline_commit": "d66fad153ec2d316c1fb6f2d0ff45a0244327e3b",
+  "baseline_skill_version": "0.4.1",
+  "environment": {
+    "os": "Windows",
+    "python": "3.14.7",
+    "git": "2.55.0.windows.5"
+  },
+  "scope": "Existing and large fixed-draft helper replay plus separate independent large-case Agent acceptance; no pure model inference timing.",
+  "method": {
+    "runs_per_variant": 5,
+    "summary": "median",
+    "fresh_worker_per_variant_scenario_run": true,
+    "fixture_setup_and_interpreter_startup_excluded": true,
+    "helper_main_and_json_parsing_measured": true,
+    "transport_expansion_excluded_and_recorded_as_oracle_seconds": true,
+    "normalized_artifact_comparison_outside_timed_stages": true,
+    "product_runtime_unchanged_between_initial_and_corrected_runs": true
+  },
+  "evidence_preservation": {
+    "initial_full_matrix_samples": 70,
+    "initial_release_samples": 50,
+    "corrected_release_samples": 50,
+    "initial_samples_preserved": true
+  },
+  "regression": {
+    "verified_tests_before_final_harness_checks": 110,
+    "final_count_status": "verified:110 initial unique+9 final benchmark module,7 overlapping;112 AST method inventory",
+    "preview_differential": {
+      "payload_cases": 8,
+      "path_cases": 19,
+      "range_cases": 5,
+      "exact_comparisons": 760,
+      "passed": 760,
+      "failed": 0
+    },
+    "unique_tests": 112,
+    "passed": 112,
+    "final_targeted_tests": {
+      "tests": 9,
+      "exit_code": 0,
+      "log": "workspace/.tmp/reviewer-basic-20261016-215439/release-final-benchmark-tests.log"
+    }
+  },
+  "cases": {
+    "no-diff": {
+      "semantic_equivalent": true,
+      "equivalent_to_initial_artifacts": true,
+      "time_reduction_pct": -6.55225,
+      "stdout_change_pct": 2.995643,
+      "baseline": {
+        "median_seconds": 1.160849,
+        "max_seconds": 1.369163,
+        "git_subprocesses": 31,
+        "helper_main_calls": 3,
+        "stdout_bytes": 1836,
+        "report_bytes": 4360,
+        "excluded_oracle_median_seconds": 1.8e-06,
+        "stage_median_seconds": {
+          "capture": 1.086349,
+          "evidence": 0.039698,
+          "validate": 0.000114,
+          "publish": 0.005664
+        }
+      },
+      "current": {
+        "median_seconds": 1.23691,
+        "max_seconds": 1.29923,
+        "git_subprocesses": 31,
+        "helper_main_calls": 3,
+        "stdout_bytes": 1891,
+        "report_bytes": 4360,
+        "excluded_oracle_median_seconds": 1.12e-05,
+        "stage_median_seconds": {
+          "capture": 1.185381,
+          "evidence": 0.044427,
+          "validate": 0.000119,
+          "publish": 0.005776
+        }
+      },
+      "initial_measurement": {
+        "baseline_median_seconds": 1.273435,
+        "current_median_seconds": 1.270742,
+        "time_reduction_pct": 0.211444
+      }
+    },
+    "normal": {
+      "semantic_equivalent": true,
+      "equivalent_to_initial_artifacts": true,
+      "time_reduction_pct": 0.073861,
+      "stdout_change_pct": -56.770118,
+      "baseline": {
+        "median_seconds": 1.614658,
+        "max_seconds": 1.893206,
+        "git_subprocesses": 47,
+        "helper_main_calls": 3,
+        "stdout_bytes": 18205,
+        "report_bytes": 8121,
+        "excluded_oracle_median_seconds": 1.8e-06,
+        "stage_median_seconds": {
+          "capture": 1.051092,
+          "evidence": 0.330185,
+          "validate": 0.255446,
+          "publish": 0.005853
+        }
+      },
+      "current": {
+        "median_seconds": 1.613465,
+        "max_seconds": 1.782598,
+        "git_subprocesses": 47,
+        "helper_main_calls": 3,
+        "stdout_bytes": 7870,
+        "report_bytes": 8121,
+        "excluded_oracle_median_seconds": 2.54e-05,
+        "stage_median_seconds": {
+          "capture": 1.040361,
+          "evidence": 0.320777,
+          "validate": 0.255301,
+          "publish": 0.005743
+        }
+      },
+      "initial_measurement": {
+        "baseline_median_seconds": 1.867621,
+        "current_median_seconds": 1.788032,
+        "time_reduction_pct": 4.261476
+      }
+    },
+    "repeated-citations": {
+      "semantic_equivalent": true,
+      "equivalent_to_initial_artifacts": true,
+      "time_reduction_pct": 0.764909,
+      "stdout_change_pct": -75.794352,
+      "baseline": {
+        "median_seconds": 1.74235,
+        "max_seconds": 1.911474,
+        "git_subprocesses": 47,
+        "helper_main_calls": 3,
+        "stdout_bytes": 186630,
+        "report_bytes": 19462,
+        "excluded_oracle_median_seconds": 1.8e-06,
+        "stage_median_seconds": {
+          "capture": 1.069761,
+          "evidence": 0.352585,
+          "validate": 0.314992,
+          "publish": 0.01142
+        }
+      },
+      "current": {
+        "median_seconds": 1.729023,
+        "max_seconds": 1.979842,
+        "git_subprocesses": 47,
+        "helper_main_calls": 3,
+        "stdout_bytes": 45175,
+        "report_bytes": 19462,
+        "excluded_oracle_median_seconds": 0.0001312,
+        "stage_median_seconds": {
+          "capture": 1.087628,
+          "evidence": 0.368054,
+          "validate": 0.288443,
+          "publish": 0.010888
+        }
+      },
+      "initial_measurement": {
+        "baseline_median_seconds": 1.962924,
+        "current_median_seconds": 1.791019,
+        "time_reduction_pct": 8.757607
+      }
+    },
+    "dense-search": {
+      "semantic_equivalent": true,
+      "equivalent_to_initial_artifacts": true,
+      "time_reduction_pct": -4.628307,
+      "stdout_change_pct": -0.674435,
+      "baseline": {
+        "median_seconds": 1.785543,
+        "max_seconds": 2.15351,
+        "git_subprocesses": 48,
+        "helper_main_calls": 3,
+        "stdout_bytes": 1532394,
+        "report_bytes": 8151,
+        "excluded_oracle_median_seconds": 2.5e-06,
+        "stage_median_seconds": {
+          "capture": 1.046689,
+          "evidence": 0.458639,
+          "validate": 0.276221,
+          "publish": 0.006878
+        }
+      },
+      "current": {
+        "median_seconds": 1.868183,
+        "max_seconds": 2.196178,
+        "git_subprocesses": 48,
+        "helper_main_calls": 3,
+        "stdout_bytes": 1522059,
+        "report_bytes": 8151,
+        "excluded_oracle_median_seconds": 4.83e-05,
+        "stage_median_seconds": {
+          "capture": 1.095267,
+          "evidence": 0.469612,
+          "validate": 0.296831,
+          "publish": 0.006473
+        }
+      },
+      "initial_measurement": {
+        "baseline_median_seconds": 1.97613,
+        "current_median_seconds": 2.152639,
+        "time_reduction_pct": -8.932028
+      }
+    },
+    "group": {
+      "semantic_equivalent": true,
+      "equivalent_to_initial_artifacts": true,
+      "time_reduction_pct": -10.664004,
+      "stdout_change_pct": -37.055912,
+      "baseline": {
+        "median_seconds": 2.732854,
+        "max_seconds": 3.402835,
+        "git_subprocesses": 75,
+        "helper_main_calls": 3,
+        "stdout_bytes": 20407,
+        "report_bytes": 8857,
+        "excluded_oracle_median_seconds": 1.6e-06,
+        "stage_median_seconds": {
+          "capture": 1.796801,
+          "evidence": 0.53729,
+          "validate": 0.454999,
+          "publish": 0.006559
+        }
+      },
+      "current": {
+        "median_seconds": 3.024286,
+        "max_seconds": 3.251664,
+        "git_subprocesses": 75,
+        "helper_main_calls": 3,
+        "stdout_bytes": 12845,
+        "report_bytes": 8857,
+        "excluded_oracle_median_seconds": 3.27e-05,
+        "stage_median_seconds": {
+          "capture": 1.931817,
+          "evidence": 0.551872,
+          "validate": 0.468651,
+          "publish": 0.007985
+        }
+      },
+      "initial_measurement": {
+        "baseline_median_seconds": 3.063272,
+        "current_median_seconds": 2.866472,
+        "time_reduction_pct": 6.424516
+      }
+    }
+  },
+  "limits": [
+    "Stdout reduction does not imply a uniform wall-time improvement.",
+    "Capture code and Git-call counts were unchanged; capture time still varied. Environmental or scheduling effects are an inference, not an isolated attribution.",
+    "The initial oracle deep-copied candidate-only search output. Corrected results exclude only transport-expansion comparison work; JSON parsing remains measured for both variants.",
+    "No claim is made here about globally installed skills or end-to-end Agent runtime."
+  ],
+  "agent": {
+    "method": {
+      "runs_per_variant": 3,
+      "independent_fresh_agents": true,
+      "sequential": true,
+      "no_model_override": true,
+      "timing_scope": "Before spawn through publication, report copy and owned-context cleanup; skill loading included. Final response excluded.",
+      "other_elapsed_note": "Includes model/service scheduling, source/skill reading, tool round trips, request/draft preparation and process startup. This is not measured model inference time.",
+      "fixture": "large-fixture-v2;12 repos,1000 tracked files and20 branch changes per repo; entry20 changes=16 text notes+4 publishers;4 event chains; unrelated3. Supporting repos pinned local main.",
+      "counter_scope": "Only traced reviewer helper main/CLI invocations, Git subprocesses and helper stdout; other shell/file/draft operations are not counted as helpers but remain within complete elapsed time."
+    },
+    "rows": [
+      {
+        "reviewer": "ReleaseReviewer",
+        "variant": "baseline",
+        "run": 1,
+        "elapsed_seconds": 253.14354619997903,
+        "within_600_seconds": true,
+        "helper_cli_calls": 6,
+        "git_calls": 263,
+        "helper_output_bytes": 323907,
+        "helper_seconds": 11.170049799984554,
+        "helper_wall_union_seconds": 11.170049667358398,
+        "helper_calls_overlap": false,
+        "helper_stages": {
+          "evidence": {
+            "calls": 4,
+            "seconds": 4.635904800001299
+          },
+          "git_review_context": {
+            "calls": 1,
+            "seconds": 3.5788308999908622
+          },
+          "release_report": {
+            "calls": 1,
+            "seconds": 2.9553140999923926
+          }
+        },
+        "other_elapsed_seconds": 241.97349653262063,
+        "model_review_seconds": null,
+        "helper_nonzero_exits": [
+          {
+            "module": "evidence",
+            "exit_code": 2
+          }
+        ]
+      },
+      {
+        "reviewer": "ReleaseReviewer",
+        "variant": "candidate",
+        "run": 1,
+        "elapsed_seconds": 282.3573903000215,
+        "within_600_seconds": true,
+        "helper_cli_calls": 7,
+        "git_calls": 359,
+        "helper_output_bytes": 364096,
+        "helper_seconds": 19.122436200035736,
+        "helper_wall_union_seconds": 19.122436046600342,
+        "helper_calls_overlap": false,
+        "helper_stages": {
+          "evidence": {
+            "calls": 5,
+            "seconds": 6.73353350002435
+          },
+          "git_review_context": {
+            "calls": 1,
+            "seconds": 3.88697890000185
+          },
+          "release_report": {
+            "calls": 1,
+            "seconds": 8.501923800009536
+          }
+        },
+        "other_elapsed_seconds": 263.23495425342117,
+        "model_review_seconds": null,
+        "helper_nonzero_exits": []
+      },
+      {
+        "reviewer": "ReleaseReviewer",
+        "variant": "candidate",
+        "run": 2,
+        "elapsed_seconds": 252.55746950002504,
+        "within_600_seconds": true,
+        "helper_cli_calls": 5,
+        "git_calls": 319,
+        "helper_output_bytes": 360746,
+        "helper_seconds": 16.967027800012147,
+        "helper_wall_union_seconds": 16.96702790260315,
+        "helper_calls_overlap": false,
+        "helper_stages": {
+          "evidence": {
+            "calls": 3,
+            "seconds": 7.114354799996363
+          },
+          "git_review_context": {
+            "calls": 1,
+            "seconds": 4.4641632999992
+          },
+          "release_report": {
+            "calls": 1,
+            "seconds": 5.388509700016584
+          }
+        },
+        "other_elapsed_seconds": 235.5904415974219,
+        "model_review_seconds": null,
+        "helper_nonzero_exits": []
+      },
+      {
+        "reviewer": "ReleaseReviewer",
+        "variant": "baseline",
+        "run": 2,
+        "elapsed_seconds": 240.09658559999662,
+        "within_600_seconds": true,
+        "helper_cli_calls": 7,
+        "git_calls": 385,
+        "helper_output_bytes": 368283,
+        "helper_seconds": 19.515888599999016,
+        "helper_wall_union_seconds": 19.515888452529907,
+        "helper_calls_overlap": false,
+        "helper_stages": {
+          "evidence": {
+            "calls": 5,
+            "seconds": 7.841409000015119
+          },
+          "git_review_context": {
+            "calls": 1,
+            "seconds": 3.492416900000535
+          },
+          "release_report": {
+            "calls": 1,
+            "seconds": 8.182062699983362
+          }
+        },
+        "other_elapsed_seconds": 220.5806971474667,
+        "model_review_seconds": null,
+        "helper_nonzero_exits": [
+          {
+            "module": "evidence",
+            "exit_code": 2
+          }
+        ]
+      },
+      {
+        "reviewer": "ReleaseReviewer",
+        "variant": "baseline",
+        "run": 3,
+        "elapsed_seconds": 249.6381222999771,
+        "within_600_seconds": true,
+        "helper_cli_calls": 6,
+        "git_calls": 373,
+        "helper_output_bytes": 366526,
+        "helper_seconds": 19.380398199980846,
+        "helper_wall_union_seconds": 19.380398273468018,
+        "helper_calls_overlap": false,
+        "helper_stages": {
+          "evidence": {
+            "calls": 4,
+            "seconds": 9.01323529999354
+          },
+          "git_review_context": {
+            "calls": 1,
+            "seconds": 3.4250275999947917
+          },
+          "release_report": {
+            "calls": 1,
+            "seconds": 6.942135299992515
+          }
+        },
+        "other_elapsed_seconds": 230.2577240265091,
+        "model_review_seconds": null,
+        "helper_nonzero_exits": []
+      },
+      {
+        "reviewer": "ReleaseReviewer",
+        "variant": "candidate",
+        "run": 3,
+        "elapsed_seconds": 269.37761300001875,
+        "within_600_seconds": true,
+        "helper_cli_calls": 7,
+        "git_calls": 365,
+        "helper_output_bytes": 365687,
+        "helper_seconds": 24.902805999969132,
+        "helper_wall_union_seconds": 24.902806520462036,
+        "helper_calls_overlap": false,
+        "helper_stages": {
+          "evidence": {
+            "calls": 4,
+            "seconds": 10.798285900003975
+          },
+          "git_review_context": {
+            "calls": 1,
+            "seconds": 6.2245441999984905
+          },
+          "release_report": {
+            "calls": 1,
+            "seconds": 7.868653899990022
+          },
+          "review_session": {
+            "calls": 1,
+            "seconds": 0.011321999976644292
+          }
+        },
+        "other_elapsed_seconds": 244.47480647955672,
+        "model_review_seconds": null,
+        "helper_nonzero_exits": []
+      }
+    ],
+    "summaries": [
+      {
+        "reviewer": "ReleaseReviewer",
+        "variant": "baseline",
+        "runs": 3,
+        "within_600": 3,
+        "review_complete": 3,
+        "context_cleaned": 3,
+        "max_elapsed_seconds": 253.14354619997903,
+        "median_elapsed_seconds": 249.6381222999771,
+        "median_helper_cli_calls": 6,
+        "median_git_calls": 373,
+        "median_helper_output_bytes": 366526,
+        "median_helper_seconds": 19.380398199980846
+      },
+      {
+        "reviewer": "ReleaseReviewer",
+        "variant": "candidate",
+        "runs": 3,
+        "within_600": 3,
+        "review_complete": 3,
+        "context_cleaned": 3,
+        "max_elapsed_seconds": 282.3573903000215,
+        "median_elapsed_seconds": 269.37761300001875,
+        "median_helper_cli_calls": 7,
+        "median_git_calls": 359,
+        "median_helper_output_bytes": 364096,
+        "median_helper_seconds": 19.122436200035736
+      }
+    ],
+    "quality": [
+      {
+        "job": "release-reviewer-baseline-1",
+        "required_paths_reviewed": 20,
+        "functional_edges": 8,
+        "four_chains_accounted": true,
+        "supporting_repositories": 11,
+        "unrelated_repositories_excluded": 3,
+        "dependency_categories_reviewed": 7,
+        "P1_findings": 1,
+        "no_new_deployment_dependencies": true,
+        "fixed_main_refs_match_fixture": true,
+        "static_body_and_context_hash_verified": true,
+        "archived_report_hash_verified": true,
+        "v3_review_complete": true,
+        "assessment": "blocked",
+        "gaps": 0,
+        "pending": 0,
+        "initial_checklist_unconfirmed": true,
+        "context_absent_verified": true,
+        "semantic_manual_review": "All six independently describe removal of amount, unchanged pass-through relays and amount-reading consumers across all four chains; no speculative broker behavior or invented new dependency."
+      },
+      {
+        "job": "release-reviewer-baseline-2",
+        "required_paths_reviewed": 20,
+        "functional_edges": 8,
+        "four_chains_accounted": true,
+        "supporting_repositories": 11,
+        "unrelated_repositories_excluded": 3,
+        "dependency_categories_reviewed": 7,
+        "P1_findings": 1,
+        "no_new_deployment_dependencies": true,
+        "fixed_main_refs_match_fixture": true,
+        "static_body_and_context_hash_verified": true,
+        "archived_report_hash_verified": true,
+        "v3_review_complete": true,
+        "assessment": "blocked",
+        "gaps": 0,
+        "pending": 0,
+        "initial_checklist_unconfirmed": true,
+        "context_absent_verified": true,
+        "semantic_manual_review": "All six independently describe removal of amount, unchanged pass-through relays and amount-reading consumers across all four chains; no speculative broker behavior or invented new dependency."
+      },
+      {
+        "job": "release-reviewer-baseline-3",
+        "required_paths_reviewed": 20,
+        "functional_edges": 8,
+        "four_chains_accounted": true,
+        "supporting_repositories": 11,
+        "unrelated_repositories_excluded": 3,
+        "dependency_categories_reviewed": 7,
+        "P1_findings": 1,
+        "no_new_deployment_dependencies": true,
+        "fixed_main_refs_match_fixture": true,
+        "static_body_and_context_hash_verified": true,
+        "archived_report_hash_verified": true,
+        "v3_review_complete": true,
+        "assessment": "blocked",
+        "gaps": 0,
+        "pending": 0,
+        "initial_checklist_unconfirmed": true,
+        "context_absent_verified": true,
+        "semantic_manual_review": "All six independently describe removal of amount, unchanged pass-through relays and amount-reading consumers across all four chains; no speculative broker behavior or invented new dependency."
+      },
+      {
+        "job": "release-reviewer-candidate-1",
+        "required_paths_reviewed": 20,
+        "functional_edges": 8,
+        "four_chains_accounted": true,
+        "supporting_repositories": 11,
+        "unrelated_repositories_excluded": 3,
+        "dependency_categories_reviewed": 7,
+        "P1_findings": 1,
+        "no_new_deployment_dependencies": true,
+        "fixed_main_refs_match_fixture": true,
+        "static_body_and_context_hash_verified": true,
+        "archived_report_hash_verified": true,
+        "v3_review_complete": true,
+        "assessment": "blocked",
+        "gaps": 0,
+        "pending": 0,
+        "initial_checklist_unconfirmed": true,
+        "context_absent_verified": true,
+        "semantic_manual_review": "All six independently describe removal of amount, unchanged pass-through relays and amount-reading consumers across all four chains; no speculative broker behavior or invented new dependency."
+      },
+      {
+        "job": "release-reviewer-candidate-2",
+        "required_paths_reviewed": 20,
+        "functional_edges": 8,
+        "four_chains_accounted": true,
+        "supporting_repositories": 11,
+        "unrelated_repositories_excluded": 3,
+        "dependency_categories_reviewed": 7,
+        "P1_findings": 1,
+        "no_new_deployment_dependencies": true,
+        "fixed_main_refs_match_fixture": true,
+        "static_body_and_context_hash_verified": true,
+        "archived_report_hash_verified": true,
+        "v3_review_complete": true,
+        "assessment": "blocked",
+        "gaps": 0,
+        "pending": 0,
+        "initial_checklist_unconfirmed": true,
+        "context_absent_verified": true,
+        "semantic_manual_review": "All six independently describe removal of amount, unchanged pass-through relays and amount-reading consumers across all four chains; no speculative broker behavior or invented new dependency."
+      },
+      {
+        "job": "release-reviewer-candidate-3",
+        "required_paths_reviewed": 20,
+        "functional_edges": 8,
+        "four_chains_accounted": true,
+        "supporting_repositories": 11,
+        "unrelated_repositories_excluded": 3,
+        "dependency_categories_reviewed": 7,
+        "P1_findings": 1,
+        "no_new_deployment_dependencies": true,
+        "fixed_main_refs_match_fixture": true,
+        "static_body_and_context_hash_verified": true,
+        "archived_report_hash_verified": true,
+        "v3_review_complete": true,
+        "assessment": "blocked",
+        "gaps": 0,
+        "pending": 0,
+        "initial_checklist_unconfirmed": true,
+        "context_absent_verified": true,
+        "semantic_manual_review": "All six independently describe removal of amount, unchanged pass-through relays and amount-reading consumers across all four chains; no speculative broker behavior or invented new dependency."
+      }
+    ],
+    "conclusion": "All6 complete and below600s. Candidate full Agent median higher; Agent wall-time acceleration is not established in this sample."
+  },
+  "date_range": "2026-10-16/2026-10-17 Asia/Taipei",
+  "large_helper": {
+    "method": "Actual authored baseline1 scenario;129 ordered requests combined into one known batch;5 per variant alternating; helpers only, interpreter startup excluded.",
+    "result": {
+      "equivalent": true,
+      "runs_per_variant": 5,
+      "methodology": {
+        "runs": 5,
+        "summary": "median",
+        "processes": "One fresh process per variant, scenario and run; fixture setup and interpreter startup excluded.",
+        "helper_commands": "In-process helper main() invocations; per-command Python startup is not measured.",
+        "oracle": "JSON parsing remains measured for both variants. Shared-content format restoration is excluded from evidence wall time and recorded as oracle_seconds; report/hash normalization also runs outside measured stages.",
+        "fail_fast": "Stop on the first failed worker, absent digest or normalized artifact mismatch, preserving partial evidence.",
+        "stages": "Capture, evidence/draft preparation, one nested publish validation, and publish excluding that validation.",
+        "output_bytes": "UTF-8 bytes of captured helper stdout; report file bytes are artifact_bytes.",
+        "dense_lines": 25000,
+        "citation_repetitions": 12
+      },
+      "baseline": {
+        "total": {
+          "wall_seconds": 12.080516399990302,
+          "git_subprocesses": 262,
+          "helper_commands": 3,
+          "output_bytes": 319461,
+          "artifact_bytes": 32131
+        },
+        "stages": {
+          "capture": {
+            "wall_seconds": 3.900232399988454,
+            "git_subprocesses": 74,
+            "helper_commands": 1,
+            "output_bytes": 16049,
+            "artifact_bytes": 0
+          },
+          "evidence": {
+            "wall_seconds": 4.761979999981122,
+            "git_subprocesses": 110,
+            "helper_commands": 1,
+            "output_bytes": 303226,
+            "artifact_bytes": 0
+          },
+          "validate": {
+            "wall_seconds": 3.1924263999972027,
+            "git_subprocesses": 78,
+            "helper_commands": 0,
+            "output_bytes": 0,
+            "artifact_bytes": 0
+          },
+          "publish": {
+            "wall_seconds": 0.016424700006609783,
+            "git_subprocesses": 0,
+            "helper_commands": 1,
+            "output_bytes": 186,
+            "artifact_bytes": 32131
+          }
+        },
+        "max_seconds": 12.434152100002393,
+        "excluded_oracle_seconds": 2.2999884095042944e-06
+      },
+      "current": {
+        "total": {
+          "wall_seconds": 11.795088599988958,
+          "git_subprocesses": 262,
+          "helper_commands": 3,
+          "output_bytes": 325346,
+          "artifact_bytes": 32131
+        },
+        "stages": {
+          "capture": {
+            "wall_seconds": 4.367605600011302,
+            "git_subprocesses": 74,
+            "helper_commands": 1,
+            "output_bytes": 16049,
+            "artifact_bytes": 0
+          },
+          "evidence": {
+            "wall_seconds": 4.483632999996189,
+            "git_subprocesses": 110,
+            "helper_commands": 1,
+            "output_bytes": 309111,
+            "artifact_bytes": 0
+          },
+          "validate": {
+            "wall_seconds": 3.142549600015627,
+            "git_subprocesses": 78,
+            "helper_commands": 0,
+            "output_bytes": 0,
+            "artifact_bytes": 0
+          },
+          "publish": {
+            "wall_seconds": 0.01490950002335012,
+            "git_subprocesses": 0,
+            "helper_commands": 1,
+            "output_bytes": 186,
+            "artifact_bytes": 32131
+          }
+        },
+        "max_seconds": 13.608763900003396,
+        "excluded_oracle_seconds": 9.879999561235309e-05
+      },
+      "time_reduction_pct": 2.3627119118978412,
+      "output_change_pct": 1.8421653973411445
+    },
+    "samples": [
+      {
+        "variant": "baseline",
+        "run": 1,
+        "success": true,
+        "scenario": "large",
+        "semantic_digest": "ee164640ae9e37106f4072832d6cb53e8216e2d34ff90a415cea0b863c8d09b3",
+        "artifact_digests": {
+          "manifest": "ec5658c24e3e5fd8c2ce1d40ae2f63a86f96494a830bf003eba69b015bcc2b89",
+          "evidence": "71ee20324c436b279cb4f8b2536b552b858e61b1b7ae670b33eadeca007daa6c",
+          "draft": "13f7066e4d145defe61423ca714905515341414b4c19db3992c3e7a348265724",
+          "result": "9d8df441bcd2357c6cae65ec96bcd961d7cb23823f606d0aba6070894053b7dc",
+          "patches": "7dc586db195c5a8977282acb1a08458b42a4a682138b1fe735c416bd95ea2ef0",
+          "report": "7ab7e451e66dfbc6e2c3e78e170de590a82e2d7a510ef2f031e8eeb912eb574e"
+        },
+        "request_count": 129,
+        "dense_matches": 0,
+        "stages": {
+          "capture": {
+            "wall_seconds": 3.608366600004956,
+            "git_subprocesses": 74,
+            "helper_commands": 1,
+            "output_bytes": 16049,
+            "artifact_bytes": 0
+          },
+          "evidence": {
+            "wall_seconds": 4.27367470000172,
+            "git_subprocesses": 110,
+            "helper_commands": 1,
+            "output_bytes": 303226,
+            "artifact_bytes": 0
+          },
+          "validate": {
+            "wall_seconds": 4.310939999995753,
+            "git_subprocesses": 78,
+            "helper_commands": 0,
+            "output_bytes": 0,
+            "artifact_bytes": 0
+          },
+          "publish": {
+            "wall_seconds": 0.0241175000264775,
+            "git_subprocesses": 0,
+            "helper_commands": 1,
+            "output_bytes": 186,
+            "artifact_bytes": 32131
+          }
+        },
+        "total": {
+          "wall_seconds": 12.217098800028907,
+          "git_subprocesses": 262,
+          "helper_commands": 3,
+          "output_bytes": 319461,
+          "artifact_bytes": 32131
+        },
+        "oracle_seconds": 2.4999899324029684e-06
+      },
+      {
+        "variant": "current",
+        "run": 1,
+        "success": true,
+        "scenario": "large",
+        "semantic_digest": "ee164640ae9e37106f4072832d6cb53e8216e2d34ff90a415cea0b863c8d09b3",
+        "artifact_digests": {
+          "manifest": "ec5658c24e3e5fd8c2ce1d40ae2f63a86f96494a830bf003eba69b015bcc2b89",
+          "evidence": "71ee20324c436b279cb4f8b2536b552b858e61b1b7ae670b33eadeca007daa6c",
+          "draft": "13f7066e4d145defe61423ca714905515341414b4c19db3992c3e7a348265724",
+          "result": "9d8df441bcd2357c6cae65ec96bcd961d7cb23823f606d0aba6070894053b7dc",
+          "patches": "7dc586db195c5a8977282acb1a08458b42a4a682138b1fe735c416bd95ea2ef0",
+          "report": "7ab7e451e66dfbc6e2c3e78e170de590a82e2d7a510ef2f031e8eeb912eb574e"
+        },
+        "request_count": 129,
+        "dense_matches": 0,
+        "stages": {
+          "capture": {
+            "wall_seconds": 5.125947599997744,
+            "git_subprocesses": 74,
+            "helper_commands": 1,
+            "output_bytes": 16049,
+            "artifact_bytes": 0
+          },
+          "evidence": {
+            "wall_seconds": 4.947420600015903,
+            "git_subprocesses": 110,
+            "helper_commands": 1,
+            "output_bytes": 309111,
+            "artifact_bytes": 0
+          },
+          "validate": {
+            "wall_seconds": 3.5183028999890666,
+            "git_subprocesses": 78,
+            "helper_commands": 0,
+            "output_bytes": 0,
+            "artifact_bytes": 0
+          },
+          "publish": {
+            "wall_seconds": 0.017092800000682473,
+            "git_subprocesses": 0,
+            "helper_commands": 1,
+            "output_bytes": 186,
+            "artifact_bytes": 32131
+          }
+        },
+        "total": {
+          "wall_seconds": 13.608763900003396,
+          "git_subprocesses": 262,
+          "helper_commands": 3,
+          "output_bytes": 325346,
+          "artifact_bytes": 32131
+        },
+        "oracle_seconds": 0.00027409999165683985
+      },
+      {
+        "variant": "current",
+        "run": 2,
+        "success": true,
+        "scenario": "large",
+        "semantic_digest": "ee164640ae9e37106f4072832d6cb53e8216e2d34ff90a415cea0b863c8d09b3",
+        "artifact_digests": {
+          "manifest": "ec5658c24e3e5fd8c2ce1d40ae2f63a86f96494a830bf003eba69b015bcc2b89",
+          "evidence": "71ee20324c436b279cb4f8b2536b552b858e61b1b7ae670b33eadeca007daa6c",
+          "draft": "13f7066e4d145defe61423ca714905515341414b4c19db3992c3e7a348265724",
+          "result": "9d8df441bcd2357c6cae65ec96bcd961d7cb23823f606d0aba6070894053b7dc",
+          "patches": "7dc586db195c5a8977282acb1a08458b42a4a682138b1fe735c416bd95ea2ef0",
+          "report": "7ab7e451e66dfbc6e2c3e78e170de590a82e2d7a510ef2f031e8eeb912eb574e"
+        },
+        "request_count": 129,
+        "dense_matches": 0,
+        "stages": {
+          "capture": {
+            "wall_seconds": 4.423111000010977,
+            "git_subprocesses": 74,
+            "helper_commands": 1,
+            "output_bytes": 16049,
+            "artifact_bytes": 0
+          },
+          "evidence": {
+            "wall_seconds": 4.569989700015867,
+            "git_subprocesses": 110,
+            "helper_commands": 1,
+            "output_bytes": 309111,
+            "artifact_bytes": 0
+          },
+          "validate": {
+            "wall_seconds": 3.142549600015627,
+            "git_subprocesses": 78,
+            "helper_commands": 0,
+            "output_bytes": 0,
+            "artifact_bytes": 0
+          },
+          "publish": {
+            "wall_seconds": 0.014692399970954284,
+            "git_subprocesses": 0,
+            "helper_commands": 1,
+            "output_bytes": 186,
+            "artifact_bytes": 32131
+          }
+        },
+        "total": {
+          "wall_seconds": 12.150342700013425,
+          "git_subprocesses": 262,
+          "helper_commands": 3,
+          "output_bytes": 325346,
+          "artifact_bytes": 32131
+        },
+        "oracle_seconds": 9.879999561235309e-05
+      },
+      {
+        "variant": "baseline",
+        "run": 2,
+        "success": true,
+        "scenario": "large",
+        "semantic_digest": "ee164640ae9e37106f4072832d6cb53e8216e2d34ff90a415cea0b863c8d09b3",
+        "artifact_digests": {
+          "manifest": "ec5658c24e3e5fd8c2ce1d40ae2f63a86f96494a830bf003eba69b015bcc2b89",
+          "evidence": "71ee20324c436b279cb4f8b2536b552b858e61b1b7ae670b33eadeca007daa6c",
+          "draft": "13f7066e4d145defe61423ca714905515341414b4c19db3992c3e7a348265724",
+          "result": "9d8df441bcd2357c6cae65ec96bcd961d7cb23823f606d0aba6070894053b7dc",
+          "patches": "7dc586db195c5a8977282acb1a08458b42a4a682138b1fe735c416bd95ea2ef0",
+          "report": "7ab7e451e66dfbc6e2c3e78e170de590a82e2d7a510ef2f031e8eeb912eb574e"
+        },
+        "request_count": 129,
+        "dense_matches": 0,
+        "stages": {
+          "capture": {
+            "wall_seconds": 4.146824099996593,
+            "git_subprocesses": 74,
+            "helper_commands": 1,
+            "output_bytes": 16049,
+            "artifact_bytes": 0
+          },
+          "evidence": {
+            "wall_seconds": 4.762995800003409,
+            "git_subprocesses": 110,
+            "helper_commands": 1,
+            "output_bytes": 303226,
+            "artifact_bytes": 0
+          },
+          "validate": {
+            "wall_seconds": 3.495336899999529,
+            "git_subprocesses": 78,
+            "helper_commands": 0,
+            "output_bytes": 0,
+            "artifact_bytes": 0
+          },
+          "publish": {
+            "wall_seconds": 0.028995300002861768,
+            "git_subprocesses": 0,
+            "helper_commands": 1,
+            "output_bytes": 186,
+            "artifact_bytes": 32131
+          }
+        },
+        "total": {
+          "wall_seconds": 12.434152100002393,
+          "git_subprocesses": 262,
+          "helper_commands": 3,
+          "output_bytes": 319461,
+          "artifact_bytes": 32131
+        },
+        "oracle_seconds": 2.6999914553016424e-06
+      },
+      {
+        "variant": "baseline",
+        "run": 3,
+        "success": true,
+        "scenario": "large",
+        "semantic_digest": "ee164640ae9e37106f4072832d6cb53e8216e2d34ff90a415cea0b863c8d09b3",
+        "artifact_digests": {
+          "manifest": "ec5658c24e3e5fd8c2ce1d40ae2f63a86f96494a830bf003eba69b015bcc2b89",
+          "evidence": "71ee20324c436b279cb4f8b2536b552b858e61b1b7ae670b33eadeca007daa6c",
+          "draft": "13f7066e4d145defe61423ca714905515341414b4c19db3992c3e7a348265724",
+          "result": "9d8df441bcd2357c6cae65ec96bcd961d7cb23823f606d0aba6070894053b7dc",
+          "patches": "7dc586db195c5a8977282acb1a08458b42a4a682138b1fe735c416bd95ea2ef0",
+          "report": "7ab7e451e66dfbc6e2c3e78e170de590a82e2d7a510ef2f031e8eeb912eb574e"
+        },
+        "request_count": 129,
+        "dense_matches": 0,
+        "stages": {
+          "capture": {
+            "wall_seconds": 3.900232399988454,
+            "git_subprocesses": 74,
+            "helper_commands": 1,
+            "output_bytes": 16049,
+            "artifact_bytes": 0
+          },
+          "evidence": {
+            "wall_seconds": 4.400280500034569,
+            "git_subprocesses": 110,
+            "helper_commands": 1,
+            "output_bytes": 303226,
+            "artifact_bytes": 0
+          },
+          "validate": {
+            "wall_seconds": 3.0120731000206433,
+            "git_subprocesses": 78,
+            "helper_commands": 0,
+            "output_bytes": 0,
+            "artifact_bytes": 0
+          },
+          "publish": {
+            "wall_seconds": 0.014393899968126789,
+            "git_subprocesses": 0,
+            "helper_commands": 1,
+            "output_bytes": 186,
+            "artifact_bytes": 32131
+          }
+        },
+        "total": {
+          "wall_seconds": 11.326979900011793,
+          "git_subprocesses": 262,
+          "helper_commands": 3,
+          "output_bytes": 319461,
+          "artifact_bytes": 32131
+        },
+        "oracle_seconds": 2.2999884095042944e-06
+      },
+      {
+        "variant": "current",
+        "run": 3,
+        "success": true,
+        "scenario": "large",
+        "semantic_digest": "ee164640ae9e37106f4072832d6cb53e8216e2d34ff90a415cea0b863c8d09b3",
+        "artifact_digests": {
+          "manifest": "ec5658c24e3e5fd8c2ce1d40ae2f63a86f96494a830bf003eba69b015bcc2b89",
+          "evidence": "71ee20324c436b279cb4f8b2536b552b858e61b1b7ae670b33eadeca007daa6c",
+          "draft": "13f7066e4d145defe61423ca714905515341414b4c19db3992c3e7a348265724",
+          "result": "9d8df441bcd2357c6cae65ec96bcd961d7cb23823f606d0aba6070894053b7dc",
+          "patches": "7dc586db195c5a8977282acb1a08458b42a4a682138b1fe735c416bd95ea2ef0",
+          "report": "7ab7e451e66dfbc6e2c3e78e170de590a82e2d7a510ef2f031e8eeb912eb574e"
+        },
+        "request_count": 129,
+        "dense_matches": 0,
+        "stages": {
+          "capture": {
+            "wall_seconds": 3.6586511000059545,
+            "git_subprocesses": 74,
+            "helper_commands": 1,
+            "output_bytes": 16049,
+            "artifact_bytes": 0
+          },
+          "evidence": {
+            "wall_seconds": 4.483632999996189,
+            "git_subprocesses": 110,
+            "helper_commands": 1,
+            "output_bytes": 309111,
+            "artifact_bytes": 0
+          },
+          "validate": {
+            "wall_seconds": 3.164282599987928,
+            "git_subprocesses": 78,
+            "helper_commands": 0,
+            "output_bytes": 0,
+            "artifact_bytes": 0
+          },
+          "publish": {
+            "wall_seconds": 0.01490950002335012,
+            "git_subprocesses": 0,
+            "helper_commands": 1,
+            "output_bytes": 186,
+            "artifact_bytes": 32131
+          }
+        },
+        "total": {
+          "wall_seconds": 11.321476200013421,
+          "git_subprocesses": 262,
+          "helper_commands": 3,
+          "output_bytes": 325346,
+          "artifact_bytes": 32131
+        },
+        "oracle_seconds": 9.469999349676073e-05
+      },
+      {
+        "variant": "current",
+        "run": 4,
+        "success": true,
+        "scenario": "large",
+        "semantic_digest": "ee164640ae9e37106f4072832d6cb53e8216e2d34ff90a415cea0b863c8d09b3",
+        "artifact_digests": {
+          "manifest": "ec5658c24e3e5fd8c2ce1d40ae2f63a86f96494a830bf003eba69b015bcc2b89",
+          "evidence": "71ee20324c436b279cb4f8b2536b552b858e61b1b7ae670b33eadeca007daa6c",
+          "draft": "13f7066e4d145defe61423ca714905515341414b4c19db3992c3e7a348265724",
+          "result": "9d8df441bcd2357c6cae65ec96bcd961d7cb23823f606d0aba6070894053b7dc",
+          "patches": "7dc586db195c5a8977282acb1a08458b42a4a682138b1fe735c416bd95ea2ef0",
+          "report": "7ab7e451e66dfbc6e2c3e78e170de590a82e2d7a510ef2f031e8eeb912eb574e"
+        },
+        "request_count": 129,
+        "dense_matches": 0,
+        "stages": {
+          "capture": {
+            "wall_seconds": 4.367605600011302,
+            "git_subprocesses": 74,
+            "helper_commands": 1,
+            "output_bytes": 16049,
+            "artifact_bytes": 0
+          },
+          "evidence": {
+            "wall_seconds": 4.42329089998384,
+            "git_subprocesses": 110,
+            "helper_commands": 1,
+            "output_bytes": 309111,
+            "artifact_bytes": 0
+          },
+          "validate": {
+            "wall_seconds": 2.988911199994618,
+            "git_subprocesses": 78,
+            "helper_commands": 0,
+            "output_bytes": 0,
+            "artifact_bytes": 0
+          },
+          "publish": {
+            "wall_seconds": 0.015280899999197572,
+            "git_subprocesses": 0,
+            "helper_commands": 1,
+            "output_bytes": 186,
+            "artifact_bytes": 32131
+          }
+        },
+        "total": {
+          "wall_seconds": 11.795088599988958,
+          "git_subprocesses": 262,
+          "helper_commands": 3,
+          "output_bytes": 325346,
+          "artifact_bytes": 32131
+        },
+        "oracle_seconds": 9.549999958835542e-05
+      },
+      {
+        "variant": "baseline",
+        "run": 4,
+        "success": true,
+        "scenario": "large",
+        "semantic_digest": "ee164640ae9e37106f4072832d6cb53e8216e2d34ff90a415cea0b863c8d09b3",
+        "artifact_digests": {
+          "manifest": "ec5658c24e3e5fd8c2ce1d40ae2f63a86f96494a830bf003eba69b015bcc2b89",
+          "evidence": "71ee20324c436b279cb4f8b2536b552b858e61b1b7ae670b33eadeca007daa6c",
+          "draft": "13f7066e4d145defe61423ca714905515341414b4c19db3992c3e7a348265724",
+          "result": "9d8df441bcd2357c6cae65ec96bcd961d7cb23823f606d0aba6070894053b7dc",
+          "patches": "7dc586db195c5a8977282acb1a08458b42a4a682138b1fe735c416bd95ea2ef0",
+          "report": "7ab7e451e66dfbc6e2c3e78e170de590a82e2d7a510ef2f031e8eeb912eb574e"
+        },
+        "request_count": 129,
+        "dense_matches": 0,
+        "stages": {
+          "capture": {
+            "wall_seconds": 3.7880734999780543,
+            "git_subprocesses": 74,
+            "helper_commands": 1,
+            "output_bytes": 16049,
+            "artifact_bytes": 0
+          },
+          "evidence": {
+            "wall_seconds": 4.761979999981122,
+            "git_subprocesses": 110,
+            "helper_commands": 1,
+            "output_bytes": 303226,
+            "artifact_bytes": 0
+          },
+          "validate": {
+            "wall_seconds": 3.1924263999972027,
+            "git_subprocesses": 78,
+            "helper_commands": 0,
+            "output_bytes": 0,
+            "artifact_bytes": 0
+          },
+          "publish": {
+            "wall_seconds": 0.016424700006609783,
+            "git_subprocesses": 0,
+            "helper_commands": 1,
+            "output_bytes": 186,
+            "artifact_bytes": 32131
+          }
+        },
+        "total": {
+          "wall_seconds": 11.758904599962989,
+          "git_subprocesses": 262,
+          "helper_commands": 3,
+          "output_bytes": 319461,
+          "artifact_bytes": 32131
+        },
+        "oracle_seconds": 1.700012944638729e-06
+      },
+      {
+        "variant": "baseline",
+        "run": 5,
+        "success": true,
+        "scenario": "large",
+        "semantic_digest": "ee164640ae9e37106f4072832d6cb53e8216e2d34ff90a415cea0b863c8d09b3",
+        "artifact_digests": {
+          "manifest": "ec5658c24e3e5fd8c2ce1d40ae2f63a86f96494a830bf003eba69b015bcc2b89",
+          "evidence": "71ee20324c436b279cb4f8b2536b552b858e61b1b7ae670b33eadeca007daa6c",
+          "draft": "13f7066e4d145defe61423ca714905515341414b4c19db3992c3e7a348265724",
+          "result": "9d8df441bcd2357c6cae65ec96bcd961d7cb23823f606d0aba6070894053b7dc",
+          "patches": "7dc586db195c5a8977282acb1a08458b42a4a682138b1fe735c416bd95ea2ef0",
+          "report": "7ab7e451e66dfbc6e2c3e78e170de590a82e2d7a510ef2f031e8eeb912eb574e"
+        },
+        "request_count": 129,
+        "dense_matches": 0,
+        "stages": {
+          "capture": {
+            "wall_seconds": 4.082507599989185,
+            "git_subprocesses": 74,
+            "helper_commands": 1,
+            "output_bytes": 16049,
+            "artifact_bytes": 0
+          },
+          "evidence": {
+            "wall_seconds": 4.851209400017979,
+            "git_subprocesses": 110,
+            "helper_commands": 1,
+            "output_bytes": 303226,
+            "artifact_bytes": 0
+          },
+          "validate": {
+            "wall_seconds": 3.132526000001235,
+            "git_subprocesses": 78,
+            "helper_commands": 0,
+            "output_bytes": 0,
+            "artifact_bytes": 0
+          },
+          "publish": {
+            "wall_seconds": 0.014273399981902912,
+            "git_subprocesses": 0,
+            "helper_commands": 1,
+            "output_bytes": 186,
+            "artifact_bytes": 32131
+          }
+        },
+        "total": {
+          "wall_seconds": 12.080516399990302,
+          "git_subprocesses": 262,
+          "helper_commands": 3,
+          "output_bytes": 319461,
+          "artifact_bytes": 32131
+        },
+        "oracle_seconds": 1.8999853637069464e-06
+      },
+      {
+        "variant": "current",
+        "run": 5,
+        "success": true,
+        "scenario": "large",
+        "semantic_digest": "ee164640ae9e37106f4072832d6cb53e8216e2d34ff90a415cea0b863c8d09b3",
+        "artifact_digests": {
+          "manifest": "ec5658c24e3e5fd8c2ce1d40ae2f63a86f96494a830bf003eba69b015bcc2b89",
+          "evidence": "71ee20324c436b279cb4f8b2536b552b858e61b1b7ae670b33eadeca007daa6c",
+          "draft": "13f7066e4d145defe61423ca714905515341414b4c19db3992c3e7a348265724",
+          "result": "9d8df441bcd2357c6cae65ec96bcd961d7cb23823f606d0aba6070894053b7dc",
+          "patches": "7dc586db195c5a8977282acb1a08458b42a4a682138b1fe735c416bd95ea2ef0",
+          "report": "7ab7e451e66dfbc6e2c3e78e170de590a82e2d7a510ef2f031e8eeb912eb574e"
+        },
+        "request_count": 129,
+        "dense_matches": 0,
+        "stages": {
+          "capture": {
+            "wall_seconds": 3.9801850999938324,
+            "git_subprocesses": 74,
+            "helper_commands": 1,
+            "output_bytes": 16049,
+            "artifact_bytes": 0
+          },
+          "evidence": {
+            "wall_seconds": 4.341695000010077,
+            "git_subprocesses": 110,
+            "helper_commands": 1,
+            "output_bytes": 309111,
+            "artifact_bytes": 0
+          },
+          "validate": {
+            "wall_seconds": 2.952545200008899,
+            "git_subprocesses": 78,
+            "helper_commands": 0,
+            "output_bytes": 0,
+            "artifact_bytes": 0
+          },
+          "publish": {
+            "wall_seconds": 0.014548100007232279,
+            "git_subprocesses": 0,
+            "helper_commands": 1,
+            "output_bytes": 186,
+            "artifact_bytes": 32131
+          }
+        },
+        "total": {
+          "wall_seconds": 11.28897340002004,
+          "git_subprocesses": 262,
+          "helper_commands": 3,
+          "output_bytes": 325346,
+          "artifact_bytes": 32131
+        },
+        "oracle_seconds": 0.00011789999553002417
+      }
+    ]
+  }
+}

@@ -125,6 +125,8 @@ Git 與 owned-session 程式內附，無 MergeReviewer 執行期依賴；預設�
 
 擷取完成後可直接執行 `evidence.py batch --context-dir <context> --requests <context>/review-worklist.json`。後續讀取與搜尋沿用同一批次介面；批次逐項回傳結果及錯誤，搜尋仍保存完整命中與各自 search_id。細節見[證據操作](skills/release-reviewer/references/evidence-workflow.md)。
 
+批次可明確加上 `--shared-content`，選用版本化的共享全文輸出：相同原始內容只輸出一次，每筆固定來源與覆蓋仍分別保留；省略旗標時沿用原格式。發佈在單次驗證內共用整檔快照分析，各引用的來源、行號及機密遮蔽照常驗證；Context／Draft／Report v3、patch 暫存產物及清理流程不變。
+
 技能發布命令增加 `--retain-on-validation-error`：可修正草稿錯誤以 exit 3 保留同次 context，修正後完整重驗；來源／搜尋完整性、Git、逾時及輸出失敗仍終止清理。成功路徑只驗證一次，舊呼叫的失敗清理行為不變；中止或放棄修稿須清理保留的 context。
 
 可重跑的效能比較與驗證界線見[效能驗證](docs/performance.md)。0.4.0 提供獨立 ZIP 與 SHA-256，並由 GitlabWorkSpace 0.24.4 整合正式附件；量測界線及歷史樣本保留於該文件。

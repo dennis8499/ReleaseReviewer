@@ -15,10 +15,12 @@ PowerShell 透過管線傳送含中文的 Python／JSON 前，在同一次命令
 ~~~
 
 ~~~powershell
-python "<skill-dir>/scripts/evidence.py" batch --context-dir "<context_dir>" --requests "<context_dir>/followup-requests.json"
+python "<skill-dir>/scripts/evidence.py" batch --context-dir "<context_dir>" --requests "<context_dir>/followup-requests.json" --shared-content
 ~~~
 
 每筆沿用 `list`／`read`／`search` 與 `source`、`repo`、`ref`、`path`、`query`、`ignore_case`；省略 source／repo 分別為 base／entry。merge-parent 必須帶固定 parent 的完整 ref。requests 與草稿檔案接受 UTF-8（含 BOM）。回傳 `results` 按原順序保存 index、ok 與 result 或 error，`complete` 只有全部成功才是 true。任一失敗 exit 2，其他結果仍保留；必須處理失敗項，不可把它當零命中。
+
+`--shared-content` 僅適用於 batch，回傳 `schema=ReleaseReviewEvidenceBatch/v1` 與 `contents`。成功 read 保留自己的 `repo`、`source`、`ref`、`path`，以 `content_id` 連到 `contents[content_id].lines`；行號與完整文字沿用原格式。同一份原始 bytes 只解碼及輸出一次；每個來源仍獨立驗證及審查，coverage 引用保留各來源。`content_id` 是原始 bytes 的 SHA-256，不以 UTF-8 replacement 解碼後的文字判斷相同。list／search、搜尋紀錄、錯誤及結束碼保持原樣。省略旗標時仍回傳原本每筆 read 內含 lines 的 batch；單筆 reader 不變。
 
 搜尋仍針對固定版本整個 Repo；完整命中保存於 owned context，成功項回傳自己的 `search_id`。同一紀錄可用於多個依賴的 baseline_searches，但各項 baseline_reason 仍須說明實際使用、定義、別名與存取語意。補充搜尋與內容讀取依新線索執行，不能只靠字串命中決定新增或無關。
 
@@ -29,4 +31,4 @@ python "<skill-dir>/scripts/evidence.py" read --context-dir "<context_dir>" --so
 python "<skill-dir>/scripts/evidence.py" search --context-dir "<context_dir>" --source base --query "BillingDb" --ignore-case
 ~~~
 
-快取只存在單次操作內，跨命令重新驗證固定來源；發佈前仍核對搜尋紀錄與原始版本。由同一主流程依序落盤，所有證據操作結束後才發佈或清理 context。
+快取只存在單次操作內，跨命令重新驗證固定來源；發佈前仍核對搜尋紀錄與原始版本。單次發佈驗證共用相同內容及路徑分類的整檔快照分析，引用仍逐筆核對來源與行號；私鑰、設定值及認證遮蔽規則相同。diff.patch／release.patch 維持既有生成條件。由同一主流程依序落盤，所有證據操作結束後才發佈或清理 context。

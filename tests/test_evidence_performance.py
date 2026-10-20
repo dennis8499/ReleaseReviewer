@@ -83,7 +83,7 @@ class EvidencePerformanceTests(RepoTest):
         self.assertEqual((status, errors), (0, ""))
         self.assertIn("lines", json.loads(raw))
         self.assertEqual(len(raw.splitlines()) > 1, True)
-        self.assertEqual([call.args[1][0] for call in command.call_args_list], ["rev-parse", "cat-file"])
+        self.assertEqual([call.args[1][0] for call in command.call_args_list], ["cat-file"])
 
     def test_batch_shares_blobs_source_resolution_and_searches(self):
         context, manifest = self.capture()
@@ -93,7 +93,7 @@ class EvidencePerformanceTests(RepoTest):
             result = evidence.batch(manifest, context, requests)
         self.assertTrue(result["complete"])
         self.assertEqual([call.args[1][0] for call in command.call_args_list],
-                         ["rev-parse", "cat-file", "grep"])
+                         ["cat-file", "grep"])
         self.assertEqual(result["results"][3]["result"], result["results"][5]["result"])
 
     def test_cache_does_not_bypass_source_ref_repo_path_or_manifest_checks(self):

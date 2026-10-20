@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import evidence as ev
+import review_worklist
 
 KINDS = {"api", "event", "contract", "database", "cache", "other"}
 
@@ -56,6 +57,8 @@ def validate(draft, manifest, context, citations, *, require=ev.require):
         link = {k: item[k] for k in ("id", "from_repo", "to_repo", "kind", "status")}
         link["description"] = nonempty(item.get("description"), "功能鏈行為", require)
         link["evidence"] = citations(item.get("evidence", []), manifest, context)
+        link["diff_roots"] = review_worklist.validate_diff_roots(item, manifest, link["evidence"], require=require)
+        link["diff_reason"] = item.get("diff_reason", "未提供")
         require(all(coverage[r]["status"] != "unrelated" for r in {left, right} - {"entry"}), "功能鏈不能引用已判定無關的 Repo。")
         if link["status"] == "reviewed":
             require({left, right} <= {e["repo"] for e in link["evidence"]}, "功能鏈須附兩端固定版本證據。")

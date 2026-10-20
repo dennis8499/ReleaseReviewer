@@ -18,6 +18,7 @@ import evidence as ev
 import chain_review
 import resource_rules
 import review_session
+import review_worklist
 from review_worklist import expected_coverage
 
 PRIORITIES = ("P0", "P1")
@@ -198,6 +199,8 @@ def _validate_result(draft, manifest, context):
     draft_require(isinstance(draft, dict) and draft.get("schema") == "ReleaseReviewDraft/v3",
                "結果須使用 ReleaseReviewDraft/v3。")
     draft_require(not draft.get("checklist"), "初始 Checklist 由 helper 產生，不能預填已確認。")
+    layout = draft.get("report_layout")
+    draft_require(layout in (None, "engineering-review/v1"), "不支援的 report_layout。")
     result = {"schema": "ReleaseReviewReport/v3", "summary": text(draft.get("summary"), "summary")}
     for field in ("coverage", "code_risks", "config_changes", "db_changes", "external_changes", "dependency_coverage"):
         draft_require(isinstance(draft.get(field), list), f"{field} 必須是陣列。")
@@ -242,6 +245,15 @@ def _validate_result(draft, manifest, context):
         previous_priority = order
         risk = {k: text(item.get(k), k) for k in
                 ("id", "priority", "title", "blocking_reason", "trigger", "impact", "recommendation", "scenario_source")}
+        risk["scenario"] = text(item.get("scenario", "未提供"), "scenario")
+        technical = item.get("technical_details", {})
+        draft_require(isinstance(technical, dict), "technical_details 必須為物件。")
+        risk["technical_details"] = {key: text(technical.get(key, "未提供"), f"technical_details.{key}")
+                                     for key in ("explanation", "impact_scope", "engineering_fix")}
+        if layout == "engineering-review/v1":
+            draft_require("scenario" in item and risk["scenario"] != "未提供" and
+                          all(key in technical and value != "未提供" for key, value in risk["technical_details"].items()),
+                          "新草稿須完整填 scenario 與 technical_details.explanation／impact_scope／engineering_fix；未提供僅供舊草稿相容。")
         draft_require(risk["scenario_source"] in {"code-derived", "reproduced"}, "情境來源無效。")
         draft_require(risk["scenario_source"] != "reproduced" or bool(result["tests_executed"]),
                    "標示已重現時須記錄實際執行的檢查。")
@@ -268,6 +280,8 @@ def _validate_result(draft, manifest, context):
             draft_require(isinstance(change["introduction"], str) and change["introduction"] in INTRODUCTIONS,
                           "新增依賴判定類型無效。")
             change["evidence"] = cached_citations(item.get("evidence", []), manifest, context)
+            change["diff_roots"] = review_worklist.validate_diff_roots(item, manifest, change["evidence"], require=draft_require)
+            change["diff_reason"] = item.get("diff_reason", "未提供")
             draft_require(any(e["repo"] == "entry" and (e["source"], e["ref"]) == final_pair for e in change["evidence"]),
                        "新增依賴須引用最終受審版本中的使用、目標或部署定義位置。")
             identifiers = item.get("baseline_searches")
@@ -343,7 +357,14 @@ def _validate_result(draft, manifest, context):
                           ("project", "repo", "base_input", "head_input", "base_sha", "head_sha",
                            "merge_base", "diff_base", "mode", "generated_at", "working_tree_unchanged", "report_root")}
     result["identity"].update({"final_source": final_pair[0], "final_ref": final_pair[1]})
-    result["identity"].update({"scope": manifest["scope"], "entry_repo": "entry", "repositories": manifest["repositories"]})
+    catalog = [{key: value for key, value in record.items() if key != "snapshot"}
+               for record in manifest["repositories"]]
+    for projected, record in zip(catalog, manifest["repositories"]):
+        if record.get("snapshot"):
+            projected["snapshot"] = {key: value for key, value in record["snapshot"].items() if key != "sources"}
+    result["identity"].update({"scope": manifest["scope"], "entry_repo": "entry", "repositories": catalog})
+    result["identity"].update({key: manifest.get(key) for key in
+                               ("snapshot_policy", "capture_completed_at", "workspace_instructions", "diff_roots")})
     result["context_gaps"] = manifest["context_gaps"]
     result["merge_status"] = (manifest.get("merge_preview") or {}).get("status")
     result["merge_detail"] = (manifest.get("merge_preview") or {}).get("detail", "")
@@ -446,34 +467,67 @@ def render_checklist(result):
 
 def render_markdown(result):
     identity = result["identity"]
-    lines = ["# Release Report", "",
+    lines = [f"# 上版檢查: {identity['project']}", "", "## 審查結論", "",
              f"**產生時上版判斷：{ASSESSMENTS[result['release_assessment']]}**", "",
              result["summary"], "",
              f"阻擋 {result['blocker_count']} 項｜待確認 {result['pending_count']} 項｜檢查缺口 {result['gap_count']} 項。",
              f"靜態範圍：{result['status']}。判斷固定於產生時；人工填寫 Checklist 不會自動核准上版。",
-             "", "## 已確認阻擋項", ""]
+             "", "## 問題總攬", "",
+             "| 問題 | 等級 | 影響 | 建議處理 |", "| --- | --- | --- | --- |"]
     if result["merge_status"] == "conflicts":
-        lines += ["### M-001｜合併衝突", "",
-                  "基礎與比較版本無法產生乾淨的合併結果，須先解決衝突並重新審查。",
-                  "衝突樹不能當成最終可執行版本；Git 固定版本紀錄見後文。", ""]
+        lines.append("| [M-001 合併衝突](#M-001) | 阻擋 | 無法產生乾淨上版版本 | 解決衝突後重新審查 |")
     for risk in result["code_risks"]:
-        lines += [f"### {risk['id']}｜{risk['priority']}｜{risk['title']}", "",
-                  f"**阻擋原因**：{risk['blocking_reason']}", "",
-                  f"**觸發條件**：{risk['trigger']}", "",
-                  f"**影響**：{risk['impact']}", "",
-                  f"**處理方式**：{risk['recommendation']}", "",
-                  f"**證據**：{short_citations(risk['evidence'])}。",
+        lines.append(f"| [{cell(risk['id'] + ' ' + risk['title'])}](#{risk['id']}) | {risk['priority']} | {cell(risk['impact'])} | {cell(risk['recommendation'])} |")
+    if not result["blocker_count"]:
+        lines.append("| — | — | 已檢查範圍未發現有證據的直接阻擋 | 核對下方範圍、限制與上版前置條件 |")
+    lines += ["", "新增部署依賴是待人工核對的上版前置條件，見「範圍與限制」。", "",
+              "## 問題詳情（工程師參考）", ""]
+    if result["merge_status"] == "conflicts":
+        lines += ['<a id="M-001"></a>', "", "### M-001｜合併衝突", "",
+                  "**問題名稱**：合併衝突", "",
+                  "**影響說明**：本次分支無法直接整合為乾淨的上版版本。", "",
+                  "**操作情境**：將比較分支合入基礎分支時，Git 要求人工處理衝突。", "",
+                  "**建議處理**：解決衝突並提交後，重新執行審查。", "",
+                  "**技術證據**：", "",
+                  "- 觸發條件：對本次固定 base/head 執行 merge-tree。",
+                  "- 證據說明：Git 回報衝突，無法取得乾淨的最終合併內容。",
+                  "- 影響範圍：本次受審分支的合併與上版版本。",
+                  "- 工程修正建議：逐一處理固定版本紀錄中的衝突，建立新提交後重新擷取。", "",
+                  "Git 原始結果與固定 SHA 見技術審查紀錄。", ""]
+    for risk in result["code_risks"]:
+        technical = risk["technical_details"]
+        lines += [f'<a id="{risk["id"]}"></a>', "", f"### {risk['id']}｜{risk['priority']}｜{risk['title']}", "",
+                  f"**問題名稱**：{risk['title']}", "",
+                  f"**影響說明**：{risk['impact']}", "",
+                  f"**操作情境**：{risk['scenario']}", "",
+                  f"**建議處理**：{risk['recommendation']}", "",
+                  "**技術證據**：", "",
+                  f"- 觸發條件：{risk['trigger']}",
+                  f"- 證據說明：{technical['explanation']}",
+                  f"- 影響範圍：{technical['impact_scope']}",
+                  f"- 工程修正建議：{technical['engineering_fix']}", "",
+                  f"**上版阻擋依據**：{risk['blocking_reason']}", "",
+                  *citations(risk["evidence"]),
                   "**情境**：" + ("程式推導，未實際執行。" if risk["scenario_source"] == "code-derived"
                                 else "已實際重現，執行紀錄見後文。"), ""]
     if not result["blocker_count"]:
         lines += ["已檢查範圍未發現有證據的直接阻擋；待確認條件與缺口見後文。", ""]
-    lines += ["## 新增項目與 Checklist", ""]
+    lines += ["## 範圍與限制", "",
+              "本次只審查指定 Repo 的已提交差異；其他 Repo 的擷取時 HEAD 是功能鏈佐證。",
+              "結論只適用本次固定版本；擷取後分支移動不改寫本次結果。", ""]
+    lines += [f"- {gap}" for gap in result["review_gaps"]]
+    lines += [f"- {limit}" for limit in result["limitations"]]
+    if not result["review_gaps"] and not result["limitations"]:
+        lines += ["本次沒有另外列出的靜態缺口或限制。"]
+    if result["next_steps"]:
+        lines += ["", "**後續處理**：", "", *[f"- {step}" for step in result["next_steps"]]]
+    lines += ["", "### 新增部署依賴與人工核對", ""]
     dependencies = result["config_changes"] + result["db_changes"] + result["external_changes"]
     for dependency in dependencies:
         status = (CONFIG_STATUSES[dependency["definition_status"]] if "definition_status" in dependency
                   else "待解析目標" if dependency["resolution"] == "unknown" else "已辨識目標")
         lines += [f"<a id=\"{dependency['id']}\"></a>", "",
-                  f"### {dependency['id']}｜{dependency['name']}", "",
+                  f"#### {dependency['id']}｜{dependency['name']}", "",
                   f"{dependency['description']}（{status}）",
                   f"連線／用途：{dependency.get('connection', '入口服務設定')}。",
                   f"**上版準備**：{dependency['recommendation']}", "",
@@ -483,54 +537,51 @@ def render_markdown(result):
     lines += ["核對狀態限「待確認／已確認／未通過／不適用」。已確認需核對人、日期及開通／套用後驗證證據；",
               "僅有申請工單仍為待確認，不適用需具體理由。必要項目待確認或未通過時，上版準備未完成。",
               "本段核對紀錄可人工更新；固定正文與產生時判斷保留原始快照。", "",
-              render_checklist(result), "", "## 待確認事項與限制", ""]
-    if result["checklist"]:
-        lines += ["- 新增依賴的目標環境準備尚待上述 Checklist 核對。"]
-    lines += [f"- {gap}" for gap in result["review_gaps"]]
-    lines += [f"- {limit}" for limit in result["limitations"]]
-    if not result["review_gaps"] and not result["limitations"] and not result["checklist"]:
-        lines += ["本次沒有另外列出的待確認事項或檢查缺口。"]
-    if result["next_steps"]:
-        lines += ["", "**後續處理**：", "", *[f"- {step}" for step in result["next_steps"]]]
-    lines += ["", "## 證據與版本紀錄", "", "<details>",
+               render_checklist(result), ""]
+    lines += ["", "## 技術審查紀錄（工程師參考）", "", "<details>",
               "<summary>固定版本、搜尋、功能鏈與覆蓋紀錄</summary>", ""]
-    for label, key in (("Repo", "repo"), ("工作區報告根目錄", "report_root"),
+    for label, key in (("Repo", "repo"), ("報告目錄", "report_root"),
                        ("基礎分支", "base_input"), ("比較分支", "head_input"),
                        ("基礎 SHA", "base_sha"), ("比較 SHA", "head_sha"), ("共同起點", "merge_base"),
                        ("最終來源", "final_source"), ("最終 SHA", "final_ref"),
-                       ("擷取時間（UTC）", "generated_at"), ("本機檔案與暫存區維持原狀", "working_tree_unchanged")):
+                       ("擷取開始（UTC）", "generated_at"), ("快照完成（UTC）", "capture_completed_at"),
+                       ("快照政策", "snapshot_policy"), ("本機檔案與暫存區維持原狀", "working_tree_unchanged")):
         lines.append(f"- {label}：{identity.get(key)}")
     lines += ["", "版本比對只包含已提交內容。靜態範圍完整不代表目標環境已驗證。", ""]
     if result["merge_status"] != "clean":
         lines += ["**合併預覽紀錄**：", "",
                   *["> " + line for line in result["merge_detail"].splitlines()], ""]
-    for risk in result["code_risks"]:
-        lines += [f"### {risk['id']} 固定證據", "", *citations(risk["evidence"]), ""]
+    for item in identity.get("workspace_instructions") or []:
+        lines.append(f"- 固定工作區指示：{cell(item['origin'])}；SHA-256 {item['sha256']}")
+    for root in identity.get("diff_roots") or []:
+        lines.append(f"- Diff 起點 {root['id']}：{cell(root['path'])}；{root['before']['ref']} → {root['after']['ref']}")
     records = {r["id"]: r for r in result["baseline_searches"]}
     for dependency in dependencies:
         lines += [f"### {dependency['id']} 新增判定與證據", "",
                   f"新增類型：{dependency['introduction']}；{dependency['baseline_reason']}", "",
+                  f"Diff 起點：{'、'.join(dependency['diff_roots'])}；{dependency['diff_reason']}", "",
                   *citations(dependency["evidence"]), ""]
         if dependency.get("definition_evidence"):
             lines += ["設定定義：", "", *citations(dependency["definition_evidence"]), ""]
         for identifier in dependency["baseline_searches"]:
             record = records[identifier]
-            lines.append(f"- 基礎全 Repo 搜尋：{cell(record['query'])}；命中 {record['match_count']}；紀錄 {identifier}")
+            lines.append(f"- 基礎全 Repo 搜尋：命中 {record['match_count']}；紀錄 {identifier}")
         lines.append("")
     lines += ["### 關聯 Repo 與功能鏈", "",
               "| Repo | 固定本機分支 | SHA | 狀態 |", "| --- | --- | --- | --- |"]
     for repo in identity["repositories"]:
-        lines.append(f"| {cell(repo['id'] + ' / ' + repo['name'])} | {cell(repo.get('default_branch') or '入口指定分支')} | {repo.get('ref') or '見入口版本／未取得'} | {repo['status']} |")
+        lines.append(f"| {cell(repo['id'] + ' / ' + repo['name'])} | {cell(repo.get('branch') or ('detached HEAD' if repo['role'] == 'supporting' else '入口指定分支'))} | {repo.get('ref') or '見入口版本／未取得'} | {repo['status']} |")
     for coverage in result["supporting_coverage"]:
         lines += ["", f"**{coverage['repo']}：{coverage['status']}**；{coverage['reason']}", "",
                   *citations(coverage["evidence"])]
     for link in result["functional_chain"]:
         lines += ["", f"**{link['id']}｜{link['from_repo']} → {link['to_repo']}｜{link['kind']}**",
-                  f"{link['status']}：{link['description']}", "", *citations(link["evidence"])]
+                  f"{link['status']}：{link['description']}",
+                  f"Diff 起點：{'、'.join(link['diff_roots'])}；{link['diff_reason']}", "", *citations(link["evidence"])]
         if link.get("reason"):
             lines += ["", link["reason"]]
     for record in result["supporting_searches"]:
-        lines.append(f"- 關聯搜尋：{record['repo']}；版本 {record['ref']}；{cell(record['query'])}；命中 {record['match_count']}；紀錄 {record['id']}")
+        lines.append(f"- 關聯搜尋：{record['repo']}；版本 {record['ref']}；命中 {record['match_count']}；紀錄 {record['id']}")
     lines += ["", "### 靜態覆蓋", "", "| 路徑 | 狀態 | 未完成原因 |", "| --- | --- | --- |"]
     for coverage in result["coverage"]:
         lines.append(f"| {cell(coverage['path'])} | {coverage['status']} | {cell(coverage.get('reason', ''))} |")
@@ -564,6 +615,9 @@ def publish_report(context, draft_path, *, retain_on_validation_error=False):
             raise
         destination = Path(manifest["report_root"])
         ev.require(not destination.is_relative_to(context), "報告不能寫入稍後會清理的 context。")
+        if manifest.get("snapshot_policy") is not None:
+            ev.require(Path(manifest["repo"]).is_dir(), "受審 Repo 目錄不存在，無法寫入報告。")
+            destination.mkdir(exist_ok=True)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         stem = f"release-review-{stamp}-{manifest['base_sha'][:8]}-{manifest['head_sha'][:8]}"
         body = render_markdown(result)

@@ -26,7 +26,7 @@ class GroupTests(RepoTest):
             git(peer, "add", ".")
             git(peer, "commit", "-m", name)
             git(peer, "switch", "-c", "feature/local")
-            write(peer, "src/service.py", "LOCAL_CHECKOUT_MUST_NOT_BE_USED = True\n")
+            write(peer, "src/service.py", source + "\nCURRENT_FEATURE_BRANCH = True\n")
             git(peer, "add", ".")
             git(peer, "commit", "-m", "local feature")
             write(peer, "untracked.txt", "LOCAL_UNCOMMITTED\n")
@@ -56,9 +56,9 @@ class GroupTests(RepoTest):
                                                 "evidence": [proof], "searches": [identifier]})
         entry = citation(manifest, "merge-preview", "src/contract.py", 1, 2)
         draft["functional_chain"] = [
-            {"id": "F-001", "from_repo": "entry", "to_repo": refs["relay"]["repo"], "kind": "api", "status": "reviewed",
+            {"id": "F-001", "from_repo": "entry", "to_repo": refs["relay"]["repo"], "kind": "api", "status": "reviewed", **diff_anchor(manifest, "src/contract.py"),
              "description": "入口事件交給 relay 原樣傳遞。", "evidence": [entry, refs["relay"]]},
-            {"id": "F-002", "from_repo": refs["relay"]["repo"], "to_repo": refs["consumer"]["repo"], "kind": "event", "status": "reviewed",
+            {"id": "F-002", "from_repo": refs["relay"]["repo"], "to_repo": refs["consumer"]["repo"], "kind": "event", "status": "reviewed", **diff_anchor(manifest, "src/contract.py"),
              "description": "consumer 仍讀取 amount 欄位。", "evidence": [refs["relay"], refs["consumer"]]},
         ]
         draft["code_risks"] = [{"id": "R-001", "priority": "P1", "title": "事件欄位改名使未變更消費端失敗",
@@ -87,13 +87,14 @@ class GroupTests(RepoTest):
         with self.assertRaises(KeyError):
             namespaces["consumer"]["consume"](namespaces["relay"]["forward"](final["emit"]()))
 
-    def test_local_default_branch_is_pinned_without_fetch_or_checkout(self):
+    def test_current_head_is_pinned_without_fetch_or_checkout(self):
         before = {name: (git(p, "status", "--porcelain"), git(p, "rev-parse", "HEAD")) for name, p in self.peers.items()}
         context, manifest = self.group_capture()
         self.assertEqual(manifest["fetches"], [])
         for repo in manifest["repositories"][1:]:
             path = Path(repo["path"])
-            self.assertEqual(repo["ref"], git(path, "rev-parse", "main"))
+            self.assertEqual(repo["ref"], git(path, "rev-parse", "HEAD"))
+            self.assertNotEqual(repo["ref"], git(path, "rev-parse", "main"))
             self.assertNotIn(b"LOCAL_", evidence.read_blob(manifest, context, "supporting", "src/service.py", repo=repo["id"]))
             self.assertEqual(before[repo["name"]], (git(path, "status", "--porcelain"), git(path, "rev-parse", "HEAD")))
         peer = self.peers["consumer"]
@@ -104,9 +105,10 @@ class GroupTests(RepoTest):
         captured = next(r for r in manifest["repositories"] if r["name"] == "consumer")
         self.assertIn(b'payload["amount"]', evidence.read_blob(manifest, context, "supporting", "src/service.py", repo=captured["id"]))
 
-    def test_missing_default_branch_no_fallback_and_missing_repo_are_gaps(self):
+    def test_unborn_head_and_missing_repo_are_gaps(self):
         hints = copy.deepcopy(self.hints)
         hints["repositories"][0]["defaultBranch"] = "production-missing"
+        git(self.peers["relay"], "symbolic-ref", "HEAD", "refs/heads/unborn")
         hints["repositories"].append({"path": str(self.root / "absent"), "defaultBranch": "main"})
         context, manifest = self.group_capture(hints)
         self.assertFalse(manifest["context_complete"])
@@ -115,16 +117,18 @@ class GroupTests(RepoTest):
         self.assertIsNone(missing["ref"])
         self.assertTrue(any("absent" in gap for gap in manifest["context_gaps"]))
 
-    def test_local_remote_head_fallback_and_no_main_guess(self):
+    def test_detached_head_is_captured_independently_of_remote_default(self):
         for peer in self.peers.values():
             git(peer, "remote", "add", "origin", str(self.root / "unreachable.git"))
             git(peer, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
         context, manifest = self.group_capture({})
         self.assertTrue(manifest["context_complete"])
-        self.assertTrue(all(r["branch_source"] == "local-origin-HEAD" for r in manifest["repositories"][1:]))
+        self.assertTrue(all(r["branch_source"] == "local-HEAD" for r in manifest["repositories"][1:]))
         git(self.peers["relay"], "symbolic-ref", "--delete", "refs/remotes/origin/HEAD")
+        git(self.peers["relay"], "checkout", "--detach", "HEAD")
         context, manifest = self.group_capture({})
-        self.assertFalse(manifest["context_complete"])
+        self.assertTrue(manifest["context_complete"])
+        self.assertIsNone(next(r for r in manifest["repositories"] if r["name"] == "relay")["branch"])
 
     def test_multiroot_jsonc_workspace_and_git_worktree_use_only_declared_roots(self):
         worktree = self.root / "consumer-checkout"
@@ -141,7 +145,7 @@ class GroupTests(RepoTest):
         context = Path(manifest["context_dir"])
         self.contexts.append(context)
         self.assertTrue(manifest["context_complete"])
-        self.assertEqual(str(workspace_file.parent), manifest["report_root"])
+        self.assertEqual(str(self.repo / "review-reports"), manifest["report_root"])
         self.assertEqual({self.repo.name, "relay", "consumer-checkout"}, {r["name"] for r in manifest["repositories"]})
         peer = next(r for r in manifest["repositories"] if r["name"] == worktree.name)
         self.assertIn(b'payload["amount"]', evidence.read_blob(manifest, context, "supporting", "src/service.py", repo=peer["id"]))
@@ -149,7 +153,7 @@ class GroupTests(RepoTest):
     def test_cycles_terminate_and_unconnected_or_wrong_repo_evidence_is_rejected(self):
         context, manifest = self.group_capture()
         draft, refs = self.group_draft(context, manifest)
-        draft["functional_chain"].append({"id": "F-003", "from_repo": refs["consumer"]["repo"], "to_repo": refs["relay"]["repo"],
+        draft["functional_chain"].append({"id": "F-003", "from_repo": refs["consumer"]["repo"], "to_repo": refs["relay"]["repo"], **diff_anchor(manifest, "src/contract.py"),
                                           "kind": "event", "status": "reviewed", "description": "確認訊息回傳 relay。", "evidence": [refs["consumer"], refs["relay"]]})
         self.assertTrue(release_report.validate_result(draft, manifest, context)["chain_complete"])
         disconnected = copy.deepcopy(draft)
@@ -176,7 +180,7 @@ class GroupTests(RepoTest):
         draft, refs = self.group_draft(context, manifest)
         draft["code_risks"] = []
         draft["functional_chain"].append({
-            "id": "F-003", "from_repo": refs["consumer"]["repo"], "to_repo": refs["relay"]["repo"],
+            "id": "F-003", "from_repo": refs["consumer"]["repo"], "to_repo": refs["relay"]["repo"], **diff_anchor(manifest, "src/contract.py"),
             "kind": "api", "status": "not-reviewed", "description": "消費端回呼結果。",
             "reason": "尚未取得回呼失敗時的實際處理路徑。", "evidence": []})
         result = release_report.validate_result(draft, manifest, context)
@@ -195,7 +199,7 @@ class GroupTests(RepoTest):
         peer_use = evidence.search(manifest, context, "supporting", "invoice.created", repo=refs["consumer"]["repo"])
         self.assertEqual(1, len(peer_use["matches"]))
         self.assertEqual([], evidence.search(manifest, context, "base", "invoice.created")["matches"])
-        draft["external_changes"] = [{"id": "E-001", "kind": "kafka", "name": "invoice.created",
+        draft["external_changes"] = [{"id": "E-001", "kind": "kafka", "name": "invoice.created", **diff_anchor(manifest, "src/contract.py"),
             "connection": "EntryPublisher", "resolution": "identified", "introduction": "first-use",
             "description": "入口服務首次對既有共用 Topic 發送事件。",
             "baseline_reason": "入口全基礎版本沒有使用；consumer 既有使用不代表入口帳號已授權。",
@@ -207,6 +211,41 @@ class GroupTests(RepoTest):
         self.assertEqual("EntryPublisher", auth["connection"])
         self.assertEqual("待確認", auth["status"])
         self.assertEqual("待人工核對", result["environment_status"])
+
+    def test_environment_limits_keep_static_chain_complete_but_real_gaps_are_preserved(self):
+        write(self.repo, "src/contract.py", 'def emit():\n    return {"total": 10}\n\ndef publish(bus):\n    return bus.send("invoice.created", emit())\n')
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-m", "provider-independent event interface")
+        context, manifest = self.group_capture()
+        draft, refs = self.group_draft(context, manifest)
+        draft["limitations"] = ["事件 bus provider 未提供；實際部署與 provider 內部行為尚未查證。"]
+        draft["external_changes"] = [{"id": "E-001", "kind": "other", "name": "invoice.created payload schema", **diff_anchor(manifest, "src/contract.py"),
+            "connection": "EntryPublisher", "resolution": "identified", "introduction": "first-use",
+            "description": "入口首次發布 invoice.created；payload 從 amount 改為 total。",
+            "baseline_reason": "入口 base 全 Repo 沒有此 Topic 使用，consumer 既有訂閱另作相容性證據。",
+            "baseline_searches": [baseline_search(context, manifest, "invoice.created")],
+            "recommendation": "核對事件 schema 相容性及部署順序；實際 provider 待負責人確認。",
+            "evidence": [citation(manifest, "merge-preview", "src/contract.py", 1, 5), refs["consumer"]]}]
+        result = release_report.validate_result(draft, manifest, context)
+        self.assertTrue(result["review_complete"])
+        self.assertEqual(0, result["gap_count"])
+        self.assertEqual(draft["limitations"], result["limitations"])
+        self.assertEqual("P1", result["code_risks"][0]["priority"])
+        contract = next(item for item in result["checklist"] if item["operation"] == "provisioning")
+        self.assertEqual("待確認", contract["status"])
+        self.assertIn("契約", contract["question"])
+        self.assertTrue(all(item["operation"] not in {"authentication", "topic", "consumer-group"}
+                            for item in result["checklist"]))
+        body = release_report.render_markdown(result)
+        self.assertIn("invoice.created payload schema", body)
+        self.assertIn("事件 schema 相容性及部署順序", body)
+        self.assertNotIn("Kafka", body)
+        draft["chain_gaps"] = ["新增必要回呼的 provider 回應契約未取得，無法判斷失敗分支。"]
+        result = release_report.validate_result(draft, manifest, context)
+        self.assertFalse(result["review_complete"])
+        self.assertEqual(draft["chain_gaps"], result["chain_gaps"])
+        self.assertIn(draft["chain_gaps"][0], result["review_gaps"])
+        self.assertEqual("blocked", result["release_assessment"])
 
 
 class ResourceTests(RepoTest):
@@ -245,7 +284,7 @@ class ResourceTests(RepoTest):
         draft["config_changes"] = [config_item(context, manifest)]
         draft["db_changes"] = [db_item(context, manifest)]
         for number, (kind, name) in enumerate(zip(("ftp", "sftp", "redis", "kafka", "other"), self.new_names), 1):
-            draft["external_changes"].append({"id": f"E-{number:03}", "kind": kind, "name": name,
+            draft["external_changes"].append({"id": f"E-{number:03}", "kind": kind, "name": name, **diff_anchor(manifest, "src/resources.py"),
                 "connection": f"{kind}Connection", "resolution": "identified", "introduction": "target-change",
                 "description": "本次新增目標服務存取。", "baseline_reason": "全基礎 Repo 沒有此目標的實際使用。",
                 "baseline_searches": [baseline_search(context, manifest, name)],

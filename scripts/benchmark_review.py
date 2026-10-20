@@ -32,7 +32,7 @@ def normalize(value, replacements=()):
     """Remove run-specific locations/times while retaining review semantics."""
     if isinstance(value, dict):
         return {key: normalize(item, replacements) for key, item in value.items()
-                if key != "generated_at"}
+                if key not in {"generated_at", "captured_at", "capture_completed_at"}}
     if isinstance(value, list):
         return [normalize(item, replacements) for item in value]
     if isinstance(value, str):
@@ -88,7 +88,7 @@ def normalized_report(markdown, report, replacements, expected_context_sha256=No
         raise ValueError("Published report context hash is invalid.")
     metadata.pop("static_body_sha256")
     metadata.pop("context_sha256")
-    body = re.sub(r"(?m)^- 擷取時間（UTC）：.*$", "- 擷取時間（UTC）：<capture-time>", body)
+    body = re.sub(r"(?m)^- (擷取時間|擷取開始|快照完成)（UTC）：.*$", r"- \1（UTC）：<capture-time>", body)
     return normalize({"body": body, "metadata": metadata}, replacements)
 
 

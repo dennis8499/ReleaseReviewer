@@ -1,12 +1,12 @@
 # Release Reviewer｜上版檢查
 
-獨立 Codex Skill **0.4.1**。只接受 Repo、基礎分支、比較分支，固定合併前審查。檢查直接阻止上版的 P0／P1、相關功能鏈與新增部署依賴，在 VSCode 工作區根目錄產生**一份含可填寫 Checklist 的繁體中文 Release Report**。
+獨立 Codex Skill **0.5.0**。只接受 Repo、基礎分支、比較分支，固定合併前審查。檢查直接阻止上版的 P0／P1、相關功能鏈與新增部署依賴，在 VSCode 受審 Repo/review-reports 產生**一份含可填寫 Checklist 的繁體中文 Release Report**。
 
 ## 安裝與使用
 
 需要 Python 3.10+、Git 及可使用本機 Skills 的 Codex。Git 須支援 merge-tree --write-tree 與 --merge-base；缺少乾淨預覽時保留缺口，不改用直接比較。
 
-將 skills/release-reviewer 複製到 Codex Skills 目錄，或解壓 dist/release-reviewer-0.4.1.zip。CODEX_HOME 有設定時使用其 skills 子目錄，否則使用使用者的 .codex/skills。
+將 skills/release-reviewer 複製到 Codex Skills 目錄，或解壓 dist/release-reviewer-0.5.0.zip。CODEX_HOME 有設定時使用其 skills 子目錄，否則使用使用者的 .codex/skills。
 
 ~~~text
 $release-reviewer Repo=OrderService 基礎分支=origin/main 比較分支=origin/feature/payment
@@ -15,11 +15,17 @@ $release-reviewer Repo=C:\projects\OrderService 基礎分支=main 比較分支=f
 
 三項均必填。短分支名代表本機分支；明確遠端分支會取得最新指定版本，失敗停止。不接受 tag、commit、HEAD、直接比較、JSON 或報告路徑選項。本機未提交修改不納入審查。
 
-工作區範圍由 VSCode／工作台內部資料取得。Group 的相關上下游使用各自本機預設分支固定 SHA，不 fetch、不改用 checkout；缺少版本或鏈路保留未完成。新增使用以入口 base_sha 整個 Repo 為基準，涵蓋首次使用、部署定義、目標改變及新增權限。
+工作區範圍由 VSCode／工作台內部資料取得。Group 的相關上下游使用各自擷取時已提交 HEAD 固定 SHA，不 fetch、不改用 checkout；缺少版本或鏈路保留未完成。新增使用以入口 base_sha 整個 Repo 為基準，涵蓋首次使用、部署定義、目標改變及新增權限。
 
-透過 GitlabWorkSpace 使用時，請更新至整合 ReleaseReviewer 0.4.0 的 GitlabWorkSpace 0.24.4 VSIX／組合包；專案內另行安裝的技能也須更新至 0.4.0。舊 context／draft 須重新擷取審查，歷史報告保留。
+透過 GitlabWorkSpace 使用時，請同步更新包含本版原生 Skill 的離線套件；專案內另行安裝的技能也須更新。歷史報告保留。
 
-## 0.3.1 更新
+## 0.5.0 更新
+
+一次只審查指定 Repo/base/head。由同一 Skill Agent 採 Code Review 方法審查，延伸項目連回固定 Diff；執行時沿用所選模型。擷取先封存入口版本、關聯 Repo 目前已提交 HEAD 與適用指示，後續閱讀及驗證只使用 owned Git 快照。明確遠端分支依 remote 批次同步一次；本機分支與關聯 Repo 不連線。
+
+報告改放受審 Repo/review-reports，標題為「上版檢查: Repo」，五節依序為審查結論、問題總攬、問題詳情（工程師參考）、範圍與限制、技術審查紀錄（工程師參考）。Checklist 保留在範圍與限制中。舊草稿新增說明欄位缺值時標「未提供」。GPT-6 Luna MAX 僅用於獨立驗收，不是技能執行預設。
+
+## 0.3.1 更新（歷史）
 
 精簡 Skill 入口與工作流程路由，統一進度、回答及文件的 Concise 規則，補上部署資源與審查範例。沿用 v3 context／draft／report 與單檔人工 Checklist。
 
@@ -59,16 +65,16 @@ Multi-root：先儲存 .code-workspace，再使用相同三項輸入。工作區
 
 | VSCode 開啟的環境 | 入口 Repo | 報告目錄 |
 | --- | --- | --- |
-| 單一 Repo 資料夾 | C:\projects\OrderService | C:\projects\OrderService |
-| Group 資料夾 C:\projects\BillingGroup | BillingGroup 內的 OrderService | C:\projects\BillingGroup |
-| 儲存在 C:\workspaces\billing.code-workspace 的工作區 | 任一宣告的 Repo | C:\workspaces |
+| 單一 Repo 資料夾 | C:\projects\OrderService | C:\projects\OrderService\review-reports |
+| Group 資料夾 C:\projects\BillingGroup | BillingGroup 內的 OrderService | OrderService\review-reports |
+| 儲存在 C:\workspaces\billing.code-workspace 的工作區 | 任一宣告的 Repo | 該 Repo\review-reports |
 | 未儲存 multi-root，沒有唯一根目錄 | 任一 Repo | 先釐清／儲存工作區，不猜位置 |
 
-即使命令從入口 Repo 執行，Group 與已儲存工作區的報告仍使用上表的工作區位置。檔名例子為 `release-review-20261014T063454Z-12345678-abcdef12.md`；時間是 UTC，兩段短 SHA 對應本次基礎與比較版本。
+工作區位置只界定可讀範圍，報告一律留在受審 Repo。檔名例子為 `release-review-20261014T063454Z-12345678-abcdef12.md`；時間是 UTC，兩段短 SHA 對應本次基礎與比較版本。
 
 ### 如何填寫 Checklist
 
-開啟報告的「新增項目與 Checklist → 人工核對紀錄」。每個新增資源有對應核對項與文件內連結；只更新 `release-checklist:start` 與 `release-checklist:end` 之間的紀錄。
+開啟報告的「範圍與限制 → 新增部署依賴與人工核對 → 人工核對紀錄」。每個新增資源有對應核對項與文件內連結；只更新 `release-checklist:start` 與 `release-checklist:end` 之間的紀錄。
 
 | 狀態 | 使用方式 |
 | --- | --- |
@@ -83,12 +89,11 @@ Multi-root：先儲存 .code-workspace，再使用相同三項輸入。工作區
 
 ## 單一 Release Report
 
-- 一般資料夾：直接存於目前 VSCode 工作區根目錄。
-- 已儲存工作區：存於 .code-workspace 所在目錄。
+- 一般資料夾、Group 或已儲存工作區：一律存於受審 Repo 的 review-reports。
 - 未儲存 multi-root 或根目錄不明：先釐清，不推測位置。
 - 每次只產生 release-review-<UTC時間>-<base8>-<head8>.md；重名續號，保留歷史與人工紀錄。
 
-進度、問答及新增或更新文件共用[技能輸出風格](skills/release-reviewer/SKILL.md#輸出風格)：首句給結果，簡單問答一至三句，完整保留必要證據、缺口及錯誤資訊；要求詳解時完整說明。報告依序呈現產生時判斷、已確認阻擋、新增項目與 Checklist、待確認與限制，以及可展開的固定版本證據。
+進度、問答及文件共用[報告風格](skills/release-reviewer/references/report-style.md)：首句給結果，保留必要證據、缺口及錯誤資訊。固定報告章節先呈現結論與問題，再交代範圍、依賴 Checklist 及工程技術紀錄。
 
 | 產生時判斷 | 條件 |
 | --- | --- |
@@ -111,7 +116,7 @@ python -X utf8 -B scripts/build_demo.py
 python -X utf8 -B scripts/package_release.py
 ~~~
 
-打包輸出 0.4.0 ZIP 與 SHA-256，ZIP 只有可安裝的 release-reviewer 目錄，不覆寫舊發行包。測試不需要第三方套件；CI 在 Linux／Windows 的 Python 3.10、3.14 執行測試與打包。
+打包輸出 0.5.0 ZIP 與 SHA-256，ZIP 只有可安裝的 release-reviewer 目錄，不覆寫舊發行包。測試不需要第三方套件；CI 在 Linux／Windows 的 Python 3.10、3.14 執行測試與打包。
 
 main 與手動驗證會保存完整矩陣證據及 Linux／Python 3.14 的正式 ZIP／SHA-256，附件保留十四天。推送版本 tag 時，只重用七天內且最終 commit、工作流程、依賴及矩陣識別相同的 main 證據；證據或附件缺漏就重跑完整矩陣。發布直接使用已驗證的附件，已有相同 tag／附件可重試，內容不同則停止；PR 與本機測試紀錄不能取代正式 CI 證據。
 
@@ -126,6 +131,12 @@ Git 與 owned-session 程式內附，無 MergeReviewer 執行期依賴；預設�
 擷取完成後可直接執行 `evidence.py batch --context-dir <context> --requests <context>/review-worklist.json`。後續讀取與搜尋沿用同一批次介面；批次逐項回傳結果及錯誤，搜尋仍保存完整命中與各自 search_id。細節見[證據操作](skills/release-reviewer/references/evidence-workflow.md)。
 
 批次可明確加上 `--shared-content`，選用版本化的共享全文輸出：相同原始內容只輸出一次，每筆固定來源與覆蓋仍分別保留；省略旗標時沿用原格式。發佈在單次驗證內共用整檔快照分析，各引用的來源、行號及機密遮蔽照常驗證；Context／Draft／Report v3、patch 暫存產物及清理流程不變。
+
+可相容選用 `git_review_context.py --summary`，只回傳身分、版本、catalog、合併狀態、完整缺口、範圍計數及證據檔路徑；完整 manifest 照常落盤。`evidence.py batch --auto-content` 執行證據一次，再按 compact UTF-8 JSON bytes 選較小的 normal／shared 格式，相等選 normal；它與 `--shared-content` 互斥。既有無旗標 CLI 行為保持原樣，技能採用這兩個選項。
+
+靜態必要的 caller／consumer／mapping／動態目標缺證據時仍保留未完成；僅部署、ACL、ACK／retry 或 provider 內部實作未知，列限制及既有 Checklist。條件式設定 P1、新增事件 schema 提醒及真正的 unknown 均保留，詳見[靜態缺口邊界](skills/release-reviewer/references/review-rules.md#靜態缺口與環境核對)。
+
+外部類型按固定 provider 證據判斷；抽象 bus／Topic 不能直接認定為 Kafka。provider 未知但 Topic／schema 已辨識時，用既有 `other` 類型保留契約提醒與限制，不產生無依據的 Kafka 專屬核對項。
 
 技能發布命令增加 `--retain-on-validation-error`：可修正草稿錯誤以 exit 3 保留同次 context，修正後完整重驗；來源／搜尋完整性、Git、逾時及輸出失敗仍終止清理。成功路徑只驗證一次，舊呼叫的失敗清理行為不變；中止或放棄修稿須清理保留的 context。
 

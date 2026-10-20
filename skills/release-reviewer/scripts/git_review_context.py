@@ -17,8 +17,43 @@ import git_support as git
 import group_context
 import review_session
 import review_worklist
+import frozen_evidence
 
 SCHEMA = "ReleaseReviewContext/v3"
+SUMMARY_SCHEMA = "ReleaseReviewCaptureSummary/v1"
+
+
+def capture_summary(manifest: dict) -> dict:
+    """Project saved metadata without changing the canonical manifest or evidence."""
+    context = Path(manifest["context_dir"])
+    worklist = json.loads((context / "review-worklist.json").read_text(encoding="utf-8"))
+    identity = ("generated_at", "repo", "project", "report_root", "base_input", "head_input",
+                "base_resolved_ref", "head_resolved_ref", "base_sha", "head_sha", "merge_base",
+                "diff_base", "mode", "scope", "entry_repo", "repositories", "review_scope",
+                "working_tree_unchanged", "fetches", "context_gaps", "context_complete",
+                "context_dir", "git_timeout", "snapshot_policy", "capture_completed_at", "workspace_instructions", "diff_roots")
+    preview = manifest["merge_preview"]
+    files = {"manifest": "manifest.json", "worklist": "review-worklist.json",
+             "draft": "review-result-draft.json", "diff": "diff.patch",
+             "merge_output": "merge-output.txt"}
+    if preview["status"] == "clean":
+        files["release_diff"] = "release.patch"
+    return {
+        "schema": SUMMARY_SCHEMA, "context_schema": manifest["schema"],
+        "skill_version": (Path(__file__).resolve().parents[1] / "VERSION").read_text(encoding="utf-8").strip(),
+        **{key: manifest[key] for key in identity},
+        "merge_preview": {key: preview[key] for key in ("status", "tree_sha")},
+        "counts": {"repositories": len(manifest["repositories"]),
+                   "changed_files": len(manifest["changed_files"]),
+                   "release_changes": len(manifest["release_changes"]),
+                   "merge_preview_changed_files": len(preview["changed_files"]),
+                   "merge_commits": len(manifest["merge_commits"]),
+                   "read_requests": len(worklist["requests"]),
+                   "metadata_only": len(worklist["metadata_only"]),
+                   "required_coverage": len(worklist["required_coverage"]),
+                   "merge_parent_views": len(worklist["merge_parent_views"])},
+        "files": {key: str(context / value) for key, value in files.items()},
+    }
 
 
 def worktree_fingerprint(repo: Path) -> str:
@@ -49,6 +84,7 @@ def worktree_fingerprint(repo: Path) -> str:
 
 
 def build_manifest(args: argparse.Namespace) -> dict:
+    capture_started_at = datetime.now(timezone.utc).isoformat()
     timeout = args.git_timeout
     if not math.isfinite(timeout) or timeout <= 0:
         raise git.ReviewContextError("--git-timeout 必須是正數。")
@@ -63,16 +99,18 @@ def build_manifest(args: argparse.Namespace) -> dict:
         workspace_file = git.normalize_path(args.workspace_file) if args.workspace_file else None
         if workspace_file and not workspace_file.is_file():
             raise git.ReviewContextError(f"找不到 workspace：{workspace_file}")
-        report_root = workspace_file.parent if workspace_file else workspace
-        if not report_root.is_dir():
+        if not workspace.is_dir():
             raise git.ReviewContextError("無法辨識工作區報告根目錄；請確認目前 VSCode 工作區。")
         repositories, discovery_gaps = group_context.discover(workspace, workspace_file)
         repo = group_context.choose(repositories, workspace, args.project)
+        report_root = repo / "review-reports"
         catalog, catalog_gaps = group_context.catalog(repositories, repo, args.workspace_context_json)
         # Validate both namespaces before any remote operation. Tags/revisions never fetch.
         base_ref = group_context.branch_ref(repo, args.base)
         head_ref = group_context.branch_ref(repo, args.head)
         session = review_session.create_session(args.context_dir)
+        workspace_instructions = frozen_evidence.capture_workspace_instructions(
+            session, git.workspace_roots(workspace, workspace_file), repositories)
         before = worktree_fingerprint(repo)
         fetches = git.fetch_inputs(repo, [args.base, args.head], True)
         base, head = git.verified_commit(repo, base_ref), git.verified_commit(repo, head_ref)
@@ -116,9 +154,24 @@ def build_manifest(args: argparse.Namespace) -> dict:
         unchanged = before == worktree_fingerprint(repo)
         if not unchanged:
             gaps.append("擷取期間偵測到本機工作檔、HEAD 或暫存區異動。")
+        merge_commits = git.merge_commit_records(repo, diff_base, head)
+        entry_refs = [base, head, merge_base] + [p for m in merge_commits for p in m["parents"]]
+        if preview.get("tree_sha"):
+            entry_refs.append(preview["tree_sha"])
+        frozen_evidence.seal(session, catalog[0], entry_refs, env=preview_env)
+        for item in catalog[1:]:
+            if item["status"] != "captured":
+                continue
+            try:
+                frozen_evidence.seal(session, item, [item["ref"]])
+            except (OSError, ValueError, git.ReviewContextError) as exc:
+                item.update(status="unavailable", reason=str(exc), ref=None)
+                item.pop("snapshot", None)
+                item.pop("instructions", None)
+                gaps.append(f"{item['name']} 關聯快照未完成：{exc}")
         manifest = {
             "schema": SCHEMA,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": capture_started_at,
             "repo": str(repo), "project": repo.name,
             "report_root": str(report_root),
             "base_input": args.base, "head_input": args.head,
@@ -130,10 +183,14 @@ def build_manifest(args: argparse.Namespace) -> dict:
             "review_scope": "committed", "working_tree_unchanged": unchanged,
             "fetches": fetches, "changed_files": changes,
             "release_changes": release_changes, "merge_preview": preview,
-            "merge_commits": git.merge_commit_records(repo, diff_base, head),
+            "merge_commits": merge_commits,
             "context_gaps": sorted(set(gaps)), "context_complete": not gaps,
             "context_dir": str(session), "git_timeout": timeout,
+            "snapshot_policy": frozen_evidence.POLICY,
+            "capture_completed_at": datetime.now(timezone.utc).isoformat(),
+            "workspace_instructions": workspace_instructions,
         }
+        manifest["diff_roots"] = review_worklist.diff_roots(manifest)
         (session / "manifest.json").write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         review_worklist.write_worklist(session, manifest)
@@ -156,6 +213,8 @@ def parse_args(argv=None):
     parser.add_argument("--context-dir")
     parser.add_argument("--git-timeout", type=float, default=180.0)
     parser.add_argument("--pretty", action="store_true")
+    parser.add_argument("--summary", action="store_true",
+                        help="Return capture identity, scope counts and saved evidence paths; keep the full manifest on disk")
     return parser.parse_args(argv)
 
 
@@ -166,6 +225,13 @@ def main(argv=None):
     except (OSError, ValueError, git.ReviewContextError) as exc:
         print(f"release-reviewer: {exc}", file=sys.stderr)
         return 2
+    if args.summary:
+        try:
+            result = capture_summary(result)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            review_session.cleanup_session(Path(result["context_dir"]))
+            print(f"release-reviewer: {exc}", file=sys.stderr)
+            return 2
     print(json.dumps(result, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0
 

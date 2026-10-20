@@ -88,7 +88,7 @@ class ReportPerformanceTests(RepoTest):
         self.assertTrue(context.exists())
         draft["supporting_coverage"][0]["reason"] = "Consumer fixed version is unavailable."
         link = {"id": "F-001", "from_repo": "entry", "to_repo": "repo-001", "kind": "event",
-                "status": "not-reviewed", "evidence": []}
+                "status": "not-reviewed", "evidence": [], **diff_anchor(manifest)}
         draft["functional_chain"] = [link]
         with self.assertRaises(release_report.DraftValidationError):
             release_report.publish_report(context, save_draft(context, draft), retain_on_validation_error=True)

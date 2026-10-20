@@ -12,7 +12,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests"))
 from support import (BASE_FILES, HEAD_FILES, baseline_search, capture, citation, config_item,
-                     db_item, draft_for, evidence, git, init_repo, release_report,
+                     db_item, diff_anchor, draft_for, evidence, git, init_repo, release_report,
                      review_session, risk_item, save_draft, write)
 
 BASE_APP = '''from existing import read_orders
@@ -86,6 +86,10 @@ def main():
             "trigger": "發票準備流程讀取檔案內的必要逾時設定。",
             "impact": "設定檔沒有該鍵，讀取時發生例外，發票準備流程中斷。",
             "recommendation": "開發補齊必要設定，或依產品需求提供可用的預設行為。",
+            "scenario": "使用者準備發票時，流程讀取未提供的逾時設定而中止。",
+            "technical_details": {"explanation": "billing_timeout 直接索引缺少的必要鍵而產生 KeyError。",
+                                  "impact_scope": "會經過發票準備設定載入路徑的呼叫。",
+                                  "engineering_fix": "補上必要設定或提供符合產品需求的預設值。"},
             "scenario_source": "reproduced",
             "evidence": [citation(manifest, "merge-preview", "src/service.py", 5, 11),
                          citation(manifest, "merge-preview", "src/settings.json", 1),
@@ -98,7 +102,7 @@ def main():
         external = config_item(context, manifest)
         external["id"] = "C-002"
         defined = {
-            "id": "C-003", "kind": "config-key", "name": "discount_rate",
+            "id": "C-003", "kind": "config-key", "name": "discount_rate", **diff_anchor(manifest),
             "description": "新增折扣設定；比較版本的設定檔已提供定義。",
             "baseline_reason": "基礎版本整個 Repo 未找到此設定的程式使用或定義。",
             "baseline_searches": [baseline_search(context, manifest, "discount_rate")],
@@ -120,7 +124,7 @@ def main():
         draft["db_changes"] = [database, table, column]
         for number, (kind, name, line) in enumerate((("ftp", "invoices", 2), ("sftp", "settlements", 3),
                                                      ("redis", "invoice:status", 4), ("kafka", "invoice.created", 5)), 1):
-            draft["external_changes"].append({"id": f"E-{number:03}", "kind": kind, "name": name,
+            draft["external_changes"].append({"id": f"E-{number:03}", "kind": kind, "name": name, **diff_anchor(manifest, "src/resources.py"),
                 "connection": f"傳入的 {kind} client", "resolution": "identified", "introduction": "first-use",
                 "description": "本次首次使用的外部資源；實際主機與服務帳號由部署決定。",
                 "baseline_reason": "搜尋整個入口基礎 Repo，沒有此資源的程式使用或部署定義。",
@@ -152,9 +156,9 @@ def main():
         md = destination / generated.name
         shutil.copyfile(generated, md)
         (destination / "README.md").write_text(
-            "# ReleaseReviewer 0.3.0 示範\n\n" + f"[Release Report（含 Checklist）]({md.name})。\n\n" +
+            "# ReleaseReviewer 0.5.0 示範\n\n" + f"[Release Report（含 Checklist）]({md.name})。\n\n" +
             "本案例保留 base／head 原始來源，重現兩項程式失敗，並列出設定、DB、FTP、SFTP、Redis、Kafka 的核對事項。\n" +
-            "報告原先產生於 fixture Repo 根目錄，再複製至此供閱讀；環境未連線查證，所有 Checklist 初始待確認。舊版 v1／v2 示範保留。\n", encoding="utf-8")
+            "報告原先產生於 fixture Repo/review-reports，再複製至此供閱讀；環境未連線查證，所有 Checklist 初始待確認。舊版 v1／v2 示範保留。\n", encoding="utf-8")
         print(json.dumps({"report": str(md), "code_risks": 2,
                           "config_changes": 3, "db_changes": 3, "external_changes": 4,
                           "checklist_items": len(expected["checklist"])}, ensure_ascii=False))

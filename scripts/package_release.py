@@ -19,6 +19,7 @@ def build_release(skill: Path, destination: Path) -> Path:
                 "scripts/evidence.py", "scripts/release_report.py", "scripts/review_session.py",
                 "scripts/group_context.py", "scripts/chain_review.py", "scripts/resource_rules.py",
                 "scripts/review_worklist.py", "references/evidence-workflow.md",
+                "scripts/frozen_evidence.py",
                 "references/group-review.md", "references/resource-checks.md")
     for relative in required:
         if not (skill / relative).is_file():

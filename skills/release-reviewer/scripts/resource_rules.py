@@ -26,7 +26,7 @@ EXTERNAL = {
               ("topic", "確認 Topic 已建立，partition、replication 與 retention 符合需求。"),
               ("consumer-group", "確認 Consumer Group、offset、重送與冪等處理符合上板安排。"),
               ("contract", "確認事件 key／payload／schema 與上下游新舊版本相容。")],
-    "other": [("provisioning", "確認新增外部資源已建立、帳號與操作權限已開通，並核對服務契約。")],
+    "other": [("provisioning", "確認本次所需的外部資源、帳號與操作權限已備妥；沿用既有資源時，核對變更後的服務契約與部署相容性。")],
 }
 
 

@@ -18,6 +18,34 @@ def comparison_scopes(manifest):
     return scopes
 
 
+def diff_roots(manifest):
+    result = []
+    for changes, before, after in comparison_scopes(manifest):
+        for change in changes:
+            result.append({"id": f"DIFF-{len(result) + 1:03}", "path": change["path"],
+                           "old_path": change.get("old_path"), "status": change["status"],
+                           "before": {"source": before[0], "ref": before[1]},
+                           "after": {"source": after[0], "ref": after[1]}})
+    return result
+
+
+def validate_diff_roots(item, manifest, evidence, *, require=ev.require):
+    """Every extension points back to a captured code change, even across peers."""
+    roots = manifest.get("diff_roots")
+    if roots is None:  # Older v3 contexts keep their original contract.
+        return []
+    require(roots == diff_roots(manifest), "固定 Diff 起點與變更範圍不符。")
+    by_id = {root["id"]: root for root in roots}
+    identifiers = item.get("diff_roots")
+    require(isinstance(identifiers, list) and bool(identifiers) and all(
+        isinstance(value, str) and value in by_id for value in identifiers),
+        "延伸項目須連回本次固定 Diff 起點。")
+    require(len(identifiers) == len(set(identifiers)), "Diff 起點不能重複。")
+    require(isinstance(item.get("diff_reason"), str) and item["diff_reason"].strip(),
+            "延伸項目須說明與固定 Diff 的因果關係。")
+    return identifiers
+
+
 def expected_coverage(manifest):
     expected = {}
     for changes, before, after in comparison_scopes(manifest):
@@ -76,8 +104,8 @@ def prepare(manifest):
                 for path, pairs in expected_coverage(manifest).items()]
     worklist = {"schema": "ReleaseReviewWorklist/v1", "requests": requests,
                 "metadata_only": metadata, "required_coverage": coverage,
-                "merge_parent_views": parent_views}
-    draft = {"schema": "ReleaseReviewDraft/v3", "summary": "尚未完成本次審查。",
+                "merge_parent_views": parent_views, "diff_roots": manifest.get("diff_roots", [])}
+    draft = {"schema": "ReleaseReviewDraft/v3", "report_layout": "engineering-review/v1", "summary": "尚未完成本次審查。",
              "coverage": coverage, "code_risks": [], "config_changes": [], "db_changes": [],
              "external_changes": [], "functional_chain": [], "chain_gaps": [],
              "supporting_coverage": [

@@ -1,4 +1,4 @@
-"""Discover workspace Git roots and pin local default branches without fetching."""
+"""Discover workspace Git roots and pin current committed HEADs without fetching."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -74,30 +74,13 @@ def branch_ref(repo: Path, value: str) -> str:
 
 def supporting(repo: Path, identifier: str, hints: list[dict]) -> dict:
     record = {"id": identifier, "name": repo.name, "path": str(repo), "role": "supporting",
-              "status": "unavailable", "default_branch": None, "branch_source": None, "ref": None}
+              "status": "unavailable", "branch": None, "branch_source": "local-HEAD", "ref": None}
     try:
-        matches = [h for h in hints if git.normalize_path(h["path"]) == repo]
-        names = {h.get("defaultBranch") for h in matches if h.get("defaultBranch")}
-        if len(names) > 1:
-            raise git.ReviewContextError("工作區提供的預設分支名稱不一致")
-        if names:
-            branch, source = names.pop(), "workspace-project"
-        else:
-            remotes = git.remote_names(repo)
-            remote = "origin" if "origin" in remotes else remotes[0] if len(remotes) == 1 else None
-            if remote is None:
-                raise git.ReviewContextError("沒有可唯一辨識的本機遠端 HEAD")
-            target = str(git.run_git(repo, ["symbolic-ref", "--quiet", f"refs/remotes/{remote}/HEAD"],
-                                     check=False)).strip()
-            prefix = f"refs/remotes/{remote}/"
-            if not target.startswith(prefix):
-                raise git.ReviewContextError("本機遠端 HEAD 未設定；不猜 main／master")
-            branch, source = target[len(prefix):], f"local-{remote}-HEAD"
-        record.update(default_branch=branch, branch_source=source)
-        ref = branch_ref(repo, f"refs/heads/{branch}")
-        sha = git.verified_commit(repo, ref)
+        branch = str(git.run_git(repo, ["symbolic-ref", "--quiet", "HEAD"], check=False)).strip()
+        record["branch"] = branch.removeprefix("refs/heads/") or None
+        sha = git.verified_commit(repo, "HEAD")
         if not sha:
-            raise git.ReviewContextError(f"本機預設分支 {branch} 不存在；不改用 checkout 或 remote-tracking 版本")
+            raise git.ReviewContextError("目前 HEAD 沒有已提交版本")
         record.update(status="captured", ref=sha)
     except (OSError, KeyError, TypeError, git.ReviewContextError) as exc:
         record["reason"] = str(exc)

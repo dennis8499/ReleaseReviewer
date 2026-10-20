@@ -1,4 +1,4 @@
 interface:
   display_name: "Release Reviewer｜上版檢查"
   short_description: "檢查直接上版阻擋與相關功能鏈，產生含新增依賴 Checklist 的單一報告"
-  default_prompt: "使用 $release-reviewer，依指定 Repo、基礎分支與比較分支檢查上版風險、相關功能鏈與新增依賴，在 VSCode 工作區根目錄產生一份含 Checklist 的精簡 Release Report。"
+  default_prompt: "使用 $release-reviewer，依指定 Repo、基礎分支與比較分支檢查上版風險、相關功能鏈與新增依賴，在受審 Repo/review-reports 產生一份含 Checklist 的精簡 Release Report。"

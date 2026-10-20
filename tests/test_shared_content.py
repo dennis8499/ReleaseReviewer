@@ -42,9 +42,7 @@ class SharedContentTests(RepoTest):
         write(peer, "src/service.py", HEAD_FILES["src/service.py"])
         git(peer, "add", ".")
         git(peer, "commit", "-m", "same content")
-        context, manifest = self.capture()
-        manifest["repositories"].append({"id": "repo-001", "path": str(peer), "role": "supporting",
-                                          "status": "captured", "ref": git(peer, "rev-parse", "main")})
+        context, manifest = self.capture(workspace=self.root)
         requests = [
             {"action": "read", "source": "head", "path": "src/service.py"},
             {"action": "read", "source": "supporting", "repo": "repo-001", "path": "src/service.py"},

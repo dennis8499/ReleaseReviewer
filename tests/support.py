@@ -127,9 +127,14 @@ def baseline_search(context, manifest, query):
     return evidence.record_search(context, evidence.search(manifest, context, "base", query))
 
 
+def diff_anchor(manifest, path="src/service.py"):
+    return {"diff_roots": [root["id"] for root in manifest["diff_roots"] if root["path"] == path],
+            "diff_reason": "本次固定差異引入此行為，沿該變更追查依賴與消費端。"}
+
+
 def config_item(context, manifest, name="INVOICE_API_URL", status="external"):
     source = release_report.final_version(manifest)[0]
-    return {"id": "C-001", "kind": "environment-variable", "name": name,
+    return {"id": "C-001", "kind": "environment-variable", "name": name, **diff_anchor(manifest),
             "description": "新增讀取；未提供時有預設值。",
             "baseline_reason": "搜尋基礎版本全部檔案未找到此變數的執行程式使用。",
             "baseline_searches": [baseline_search(context, manifest, name)],
@@ -140,7 +145,7 @@ def config_item(context, manifest, name="INVOICE_API_URL", status="external"):
 
 def db_item(context, manifest, resolution="identified"):
     source = release_report.final_version(manifest)[0]
-    return {"id": "D-001", "kind": "table", "name": "BillingDb.dbo.InvoiceTax",
+    return {"id": "D-001", "kind": "table", "name": "BillingDb.dbo.InvoiceTax", **diff_anchor(manifest),
             "connection": "傳入的 DB 連線", "resolution": resolution,
             "description": "查詢發票稅率。",
             "baseline_reason": "基礎版本命中 schema 定義，沒有執行程式使用；這次首次查詢。",
@@ -156,6 +161,10 @@ def risk_item(manifest):
             "trigger": "以數量 0 計算平均金額。",
             "impact": "原本回傳零的流程改成除以零例外。",
             "recommendation": "開發恢復零數量的處理。",
+            "scenario": "沒有訂單的統計期間仍需要顯示平均金額零，查詢卻失敗。",
+            "technical_details": {"explanation": "移除 count == 0 防護後直接進行除法。",
+                                  "impact_scope": "所有 count 為零的平均金額呼叫。",
+                                  "engineering_fix": "在除法前處理零數量，保留既有回傳零的契約。"},
             "scenario_source": "code-derived",
             "evidence": [citation(manifest, source, "src/service.py", 7, 8),
                          citation(manifest, "base", "src/service.py", 1, 4)]}

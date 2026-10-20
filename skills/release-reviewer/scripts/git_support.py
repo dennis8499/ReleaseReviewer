@@ -132,6 +132,8 @@ def run_git(
         command_env.update(env)
     command_env["GIT_OPTIONAL_LOCKS"] = "0"
     command_env["GIT_TERMINAL_PROMPT"] = "0"
+    command_env["GIT_NO_LAZY_FETCH"] = "1"
+    command_env["GIT_NO_REPLACE_OBJECTS"] = "1"
     try:
         completed = subprocess.run(
             ["git", "-C", str(repo), *args],
@@ -167,6 +169,8 @@ def run_git_capture(
         command_env.update(env)
     command_env["GIT_OPTIONAL_LOCKS"] = "0"
     command_env["GIT_TERMINAL_PROMPT"] = "0"
+    command_env["GIT_NO_LAZY_FETCH"] = "1"
+    command_env["GIT_NO_REPLACE_OBJECTS"] = "1"
     try:
         completed = subprocess.run(
             ["git", "-C", str(repo), *args],
@@ -193,6 +197,8 @@ def git_ok(repo: Path, args: Sequence[str]) -> bool:
     command_env = os.environ.copy()
     command_env["GIT_OPTIONAL_LOCKS"] = "0"
     command_env["GIT_TERMINAL_PROMPT"] = "0"
+    command_env["GIT_NO_LAZY_FETCH"] = "1"
+    command_env["GIT_NO_REPLACE_OBJECTS"] = "1"
     try:
         completed = subprocess.run(
             ["git", "-C", str(repo), *args],
@@ -494,6 +500,7 @@ def remote_target_for_ref(repo: Path, ref: str) -> RemoteTarget | None:
 def fetch_inputs(repo: Path, refs: Iterable[str], enabled: bool) -> list[dict[str, str]]:
     actions: list[dict[str, str]] = []
     seen: set[tuple[str, str]] = set()
+    grouped: dict[str, list[RemoteTarget]] = {}
     for ref in refs:
         target = remote_target_for_ref(repo, ref)
         if not target:
@@ -506,27 +513,26 @@ def fetch_inputs(repo: Path, refs: Iterable[str], enabled: bool) -> list[dict[st
         if (target.remote, target.branch) in seen:
             continue
         seen.add((target.remote, target.branch))
+        grouped.setdefault(target.remote, []).append(target)
+    for remote, targets in grouped.items():
         try:
-            remote_ref = f"refs/heads/{target.branch}"
-            tracking_ref = f"refs/remotes/{target.remote}/{target.branch}"
             run_git(
                 repo,
                 [
                     "fetch",
                     "--no-tags",
                     "--no-prune",
-                    target.remote,
-                    f"{remote_ref}:{tracking_ref}",
+                    "--atomic",
+                    remote,
+                    *[f"refs/heads/{t.branch}:refs/remotes/{remote}/{t.branch}" for t in targets],
                 ],
             )
         except GitCommandError as exc:
             raise ReviewContextError(
-                f"fetch {target.remote}/{target.branch} 失敗（輸入 {target.input_ref}）：{exc.stderr}",
+                f"fetch {remote} 失敗（輸入 {', '.join(t.input_ref for t in targets)}）：{exc.stderr}",
                 hint="請確認網路、帳號權限，以及遠端是否有此分支；為避免審查過期內容，不會自動改用舊版本。",
             ) from exc
-        actions.append(
-            {"remote": target.remote, "branch": target.branch, "input_ref": target.input_ref}
-        )
+        actions.extend({"remote": remote, "branch": t.branch, "input_ref": t.input_ref} for t in targets)
     return actions
 
 

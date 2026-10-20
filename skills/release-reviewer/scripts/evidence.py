@@ -17,6 +17,7 @@ import sys
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import review_session
+import frozen_evidence
 
 SHA = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 _CACHE = ContextVar("release_evidence_operation", default=None)
@@ -70,8 +71,17 @@ def load_manifest(context: Path) -> dict:
     require(Path(manifest["context_dir"]).resolve() == context, "context 目錄與 manifest 不符。")
     report_root = manifest.get("report_root")
     require(isinstance(report_root, str) and Path(report_root).is_absolute(), "缺少工作區報告根目錄。")
-    require(Path(report_root).is_dir() and Path(report_root).resolve() == Path(report_root),
-            "工作區報告根目錄不存在或已改指其他位置。")
+    if manifest.get("snapshot_policy") is not None:
+        require(manifest["snapshot_policy"] == frozen_evidence.POLICY, "不支援的固定快照政策。")
+        expected_root = Path(manifest["repo"]) / "review-reports"
+        require(Path(report_root) == expected_root and expected_root.resolve() == expected_root,
+                "報告目錄必須位於受審 Repo/review-reports。")
+        require(Path(manifest["repo"]).is_absolute(), "受審 Repo 路徑無效。")
+        require(isinstance(manifest.get("capture_completed_at"), str), "缺少快照完成時間。")
+        frozen_evidence.validate_workspace_instructions(context, manifest.get("workspace_instructions", []))
+    else:
+        require(Path(report_root).is_dir() and Path(report_root).resolve() == Path(report_root),
+                "工作區報告根目錄不存在或已改指其他位置。")
     for field in ("base_sha", "head_sha", "diff_base"):
         require(isinstance(manifest.get(field), str) and SHA.fullmatch(manifest[field]), f"{field} 無效。")
     require(manifest.get("mode") == "merge", "只支援合併前審查。")
@@ -79,6 +89,9 @@ def load_manifest(context: Path) -> dict:
             "工作區身分無效。")
     repositories = manifest.get("repositories")
     require(isinstance(repositories, list) and bool(repositories), "Repo catalog 無效。")
+    require(manifest.get("snapshot_policy") is not None or not any(
+        isinstance(item, dict) and item.get("snapshot") is not None for item in repositories),
+        "自足快照不能移除固定政策而降級為舊來源。")
     identifiers = set()
     for item in repositories:
         require(isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"] not in identifiers,
@@ -95,6 +108,15 @@ def load_manifest(context: Path) -> dict:
                 require(isinstance(item.get("ref"), str) and SHA.fullmatch(item["ref"]), "關聯 SHA 無效。")
             else:
                 require(bool(item.get("reason")) and not manifest["context_complete"], "關聯版本缺口未保留。")
+        if manifest.get("snapshot_policy") is not None and item["status"] == "captured":
+            frozen_evidence.validate(context, item)
+            refs = ({manifest["base_sha"], manifest["head_sha"], manifest["diff_base"]}
+                    if item["id"] == "entry" else {item["ref"]})
+            if item["id"] == "entry":
+                refs.update(p for m in manifest["merge_commits"] for p in m["parents"])
+                if manifest["merge_preview"].get("tree_sha"):
+                    refs.add(manifest["merge_preview"]["tree_sha"])
+            require(refs <= set(item["snapshot"]["sources"]), "快照缺少必要固定版本。")
     require("entry" in identifiers, "缺少入口 Repo。")
     require(type(manifest.get("context_complete")) is bool, "context_complete 無效。")
     require(isinstance(manifest.get("context_gaps"), list), "context_gaps 無效。")
@@ -120,6 +142,8 @@ def repository(manifest: dict, identifier: str | None = None) -> dict:
 
 def source_version(manifest: dict, context: Path, source: str, ref: str | None = None, repo=None):
     selected = repository(manifest, repo)
+    require(manifest.get("snapshot_policy") is not None or selected.get("snapshot") is None,
+            "自足快照不能降級為可變來源。")
     require((selected["id"] == "entry") == (source != "supporting"), "證據來源與 Repo 角色不符。")
     env = {**os.environ, "GIT_OPTIONAL_LOCKS": "0", "GIT_TERMINAL_PROMPT": "0"}
     # Do not inherit an unrelated session's alternate Git object store.
@@ -136,9 +160,10 @@ def source_version(manifest: dict, context: Path, source: str, ref: str | None =
         require(preview.get("status") == "clean", "沒有可用的乾淨合併預覽。")
         reference = preview.get("tree_sha")
         require(preview.get("object_directory") == "objects", "預覽物件目錄無效。")
-        objects = context / "objects"
-        require(objects.is_dir() and not objects.is_symlink() and objects.resolve().is_relative_to(context),
-                "預覽物件目錄超出 context。")
+        if manifest.get("snapshot_policy") is None:
+            objects = context / "objects"
+            require(objects.is_dir() and not objects.is_symlink() and objects.resolve().is_relative_to(context),
+                    "預覽物件目錄超出 context。")
     elif source == "merge-parent":
         allowed = {p for m in manifest["merge_commits"] for p in m["parents"]}
         require(ref in allowed, "merge-parent 版本不在固定紀錄內。")
@@ -148,6 +173,11 @@ def source_version(manifest: dict, context: Path, source: str, ref: str | None =
         reference = fixed[source]
     require(isinstance(reference, str) and SHA.fullmatch(reference), "證據版本無效。")
     require(ref is None or ref == reference, "證據 SHA 與固定來源不符。")
+    if manifest.get("snapshot_policy") is not None:
+        require(manifest["snapshot_policy"] == frozen_evidence.POLICY, "不支援的固定快照政策。")
+        env = frozen_evidence.environment(context, selected)
+        require(reference in selected["snapshot"]["sources"], "證據版本不在自足快照內。")
+        return reference, env
     if objects is not None:
         state = _cache(manifest, context)
         key = (selected["id"], selected["path"], manifest["repo"], source, reference, str(objects))
@@ -168,7 +198,8 @@ def source_version(manifest: dict, context: Path, source: str, ref: str | None =
 def command(manifest: dict, args: list[str], *, env=None, acceptable=(0,)) -> bytes:
     timeout = manifest.get("git_timeout", 180.0)
     require(isinstance(timeout, (int, float)) and math.isfinite(timeout) and timeout > 0, "Git 逾時無效。")
-    result = subprocess.run(["git", "-C", manifest["repo"], *args], capture_output=True,
+    location = env["GIT_DIR"] if env and manifest.get("snapshot_policy") is not None else manifest["repo"]
+    result = subprocess.run(["git", "-C", str(location), *args], capture_output=True,
                             timeout=timeout, env=env or {**os.environ, "GIT_OPTIONAL_LOCKS": "0",
                                                        "GIT_TERMINAL_PROMPT": "0"})
     if result.returncode not in acceptable:
@@ -336,11 +367,30 @@ def text_lines(content: bytes) -> list[dict]:
             enumerate(content.decode("utf-8", errors="replace").splitlines(), 1)]
 
 
-def batch(manifest: dict, context: Path, requests: list, *, shared_content=False) -> dict:
+def compact_json(value) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _normal_batch(shared: dict) -> dict:
+    """Expand only read wrappers; keep bodies and search trees shared in memory."""
+    results = []
+    for item in shared["results"]:
+        result = item.get("result", {})
+        if item["ok"] and "content_id" in result:
+            identity = {key: value for key, value in result.items() if key != "content_id"}
+            results.append({**item, "result": {**identity, **shared["contents"][result["content_id"]]}})
+        else:
+            results.append(item)
+    return {"results": results, "complete": shared["complete"]}
+
+
+def batch(manifest: dict, context: Path, requests: list, *, shared_content=False,
+          auto_content=False) -> dict:
     """Keep input order and expose every failure while sharing operation-local data."""
     require(isinstance(requests, list), "batch requests 必須是 JSON 陣列。")
+    require(not (shared_content and auto_content), "shared_content 與 auto_content 不可同時使用。")
     results = []
-    contents = {} if shared_content else None
+    contents = {} if shared_content or auto_content else None
     with operation_cache(manifest, context):
         for index, request in enumerate(requests):
             try:
@@ -350,8 +400,13 @@ def batch(manifest: dict, context: Path, requests: list, *, shared_content=False
             else:
                 results.append({"index": index, "ok": True, "result": result})
     result = {"results": results, "complete": all(item["ok"] for item in results)}
-    if shared_content:
+    if shared_content or auto_content:
         result.update(schema="ReleaseReviewEvidenceBatch/v1", contents=contents)
+    if auto_content:
+        normal = _normal_batch(result)
+        # Compare the exact CLI wire encoding. A tie uses the original shape.
+        if len(compact_json(normal).encode("utf-8")) <= len(compact_json(result).encode("utf-8")):
+            return normal
     return result
 
 
@@ -378,16 +433,20 @@ def main(argv=None):
     parser.add_argument("--query")
     parser.add_argument("--ignore-case", action="store_true")
     parser.add_argument("--requests", help="JSON array or worklist file (inline JSON is also accepted)")
-    parser.add_argument("--shared-content", action="store_true",
-                        help="Batch only: emit a versioned wrapper with each unique read body once")
+    formats = parser.add_mutually_exclusive_group()
+    formats.add_argument("--shared-content", action="store_true",
+                         help="Batch only: emit a versioned wrapper with each unique read body once")
+    formats.add_argument("--auto-content", action="store_true",
+                         help="Batch only: choose the smaller compact UTF-8 normal/shared representation")
     args = parser.parse_args(argv)
-    if args.shared_content and args.action != "batch":
-        parser.error("--shared-content 僅適用於 batch。")
+    if (args.shared_content or args.auto_content) and args.action != "batch":
+        parser.error("--shared-content／--auto-content 僅適用於 batch。")
     try:
         context = review_session.validate_session(args.context_dir)
         manifest = load_manifest(context)
         if args.action == "batch":
-            result = batch(manifest, context, load_requests(args.requests), shared_content=args.shared_content)
+            result = batch(manifest, context, load_requests(args.requests),
+                           shared_content=args.shared_content, auto_content=args.auto_content)
         else:
             with operation_cache(manifest, context):
                 result = request_result(manifest, context,
@@ -395,8 +454,7 @@ def main(argv=None):
     except EVIDENCE_ERRORS as exc:
         print(f"release-evidence: {exc}", file=sys.stderr)
         return 2
-    print(json.dumps(result, ensure_ascii=False,
-                     **({"separators": (",", ":")} if args.action == "batch" else {"indent": 2})))
+    print(compact_json(result) if args.action == "batch" else json.dumps(result, ensure_ascii=False, indent=2))
     return 2 if args.action == "batch" and not result["complete"] else 0
 
 

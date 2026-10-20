@@ -47,9 +47,8 @@ class ReportTests(RepoTest):
         context, manifest = self.capture()
         md = release_report.publish_report(context, save_draft(context, draft_for(manifest)))
         self.assertTrue(md.is_file())
-        self.assertEqual(self.repo, md.parent)
-        self.assertEqual([md], list(self.repo.glob("release-review-*.md")))
-        self.assertFalse((self.repo / "review-reports").exists())
+        self.assertEqual(self.repo / "review-reports", md.parent)
+        self.assertEqual([md], list((self.repo / "review-reports").glob("release-review-*.md")))
         self.assertEqual(list(md.parent.glob("*.json")), [])
 
     def test_missing_coverage_rejected_and_session_cleaned(self):
@@ -182,7 +181,7 @@ class ReportTests(RepoTest):
         obstruction.write_text("keep", encoding="utf-8")
         manifest["report_root"] = str(obstruction)
         (context / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-        with self.assertRaisesRegex(ValueError, "報告根目錄"):
+        with self.assertRaisesRegex(ValueError, "報告目錄"):
             release_report.publish_report(context, save_draft(context, draft_for(manifest)))
         self.assertFalse(context.exists())
         self.assertEqual(obstruction.read_text(), "keep")
@@ -262,24 +261,24 @@ class ReportTests(RepoTest):
         report = release_report.publish_report(context, save_draft(context, draft))
         self.assertIn("M-001", report.read_text(encoding="utf-8"))
 
-    def test_folder_and_group_roots_are_preserved(self):
+    def test_folder_and_group_reports_stay_in_reviewed_repo(self):
         for workspace in (self.repo, self.root):
             with self.subTest(workspace=workspace):
                 context, manifest = self.capture(workspace=workspace)
-                self.assertEqual(str(workspace), manifest["report_root"])
+                self.assertEqual(str(self.repo / "review-reports"), manifest["report_root"])
                 report = release_report.publish_report(context, save_draft(context, draft_for(manifest)))
-                self.assertEqual(workspace, report.parent)
+                self.assertEqual(self.repo / "review-reports", report.parent)
 
-    def test_saved_workspace_file_parent_is_report_root(self):
+    def test_saved_workspace_does_not_override_reviewed_repo_destination(self):
         saved = self.root / "saved workspace"
         saved.mkdir()
         workspace_file = saved / "review.code-workspace"
         workspace_file.write_text(json.dumps({"folders": [{"path": str(self.repo)}]}), encoding="utf-8-sig")
         context, manifest = self.capture(workspace=self.root, workspace_file=workspace_file)
-        self.assertEqual(str(saved), manifest["report_root"])
+        self.assertEqual(str(self.repo / "review-reports"), manifest["report_root"])
         report = release_report.publish_report(context, save_draft(context, draft_for(manifest)))
-        self.assertEqual(saved, report.parent)
-        self.assertEqual([report], list(saved.glob("*.md")))
+        self.assertEqual(self.repo / "review-reports", report.parent)
+        self.assertEqual([], list(saved.glob("*.md")))
         self.assertEqual([], list(self.repo.glob("release-review-*.md")))
 
     def test_repeated_runs_do_not_overwrite_human_records(self):
@@ -294,7 +293,7 @@ class ReportTests(RepoTest):
         self.assertNotEqual(first, second)
         self.assertTrue(second.stem.endswith("-01"))
         self.assertEqual(manual, first.read_text(encoding="utf-8"))
-        self.assertEqual({first, second}, set(self.repo.glob("release-review-*.md")))
+        self.assertEqual({first, second}, set((self.repo / "review-reports").glob("release-review-*.md")))
         self.assertNotIn("已確認 |", second.read_text(encoding="utf-8"))
 
     def test_report_destination_and_json_overrides_are_rejected(self):

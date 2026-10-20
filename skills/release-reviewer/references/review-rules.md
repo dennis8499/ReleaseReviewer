@@ -31,6 +31,16 @@
 
 缺少必要設定只有在能證明觸發失敗時才列程式風險；新增設定／DB 清單仍保留上版準備資訊，兩者用途不同。同一根因風險合併列出。每個風險至少引用一個 reviewed 的變更路徑，並確認問題在最終受審版本仍存在；基礎或 parent 證據可補充因果。
 
+## 靜態缺口與環境核對
+
+以本次變更的必要判斷為界：已知需要的 caller／consumer 固定版本、欄位 mapping 或動態目的地無法取得／解析，影響行為或相容性判斷時，保留 coverage／chain_gaps 或設定、資源的 unknown，結果維持未完成。明確入口可作為功能鏈起點；不能只因未取得任意外部 caller，就推定本次必要鏈路缺失。
+
+已知程式使用、契約與目標足以判斷，僅無法查證實際部署、ACL、broker ACK／retry 或 provider 內部實作時，在 limitations 說明未查範圍，新增依賴仍用既有 Checklist 核對；這些未知本身不新增靜態 gap。若 provider 的必要回應／契約本身缺失，仍保留真正缺口。helper 原樣保留草稿 gap，由 Agent 根據證據判斷，不能為完成率刪掉真缺口。
+
+例如固定程式以 `Redis.from_url` 讀取部署注入的 URL，並操作明確的 `invoice:` key prefix：Redis provider、連線鍵與邏輯資源已辨識，`resolution` 為 `identified`。現場 URL、主機、DB index、ACL 與可用性留 Checklist／limitations，不因未連線現場而建立 `chain_gaps`。真正未知的動態表名、未取得的必要 mapping 或消費契約仍保留缺口。
+
+條件式設定在可證明的觸發條件下造成 P1 時，保留條件與風險；新增事件 Topic／payload schema 仍依[資源分類](resource-checks.md#外部類型與-provider-證據)提醒，不因 provider 未知省略已辨識的契約。
+
 ## 固定證據與覆蓋
 
 證據物件格式：
@@ -46,7 +56,7 @@ source 與 ref 必須相符：
 - merge-base：merge_base，僅供分支變更與歷史判斷。
 - merge-preview：乾淨預覽的 tree_sha，合併前模式的最終內容。
 - merge-parent：manifest 已記錄 merge commit 的 parent SHA。
-- supporting：catalog 指定關聯 Repo 的本機預設分支固定 SHA，不能引用該 Repo 的 checkout 或 remote-tracking 版本。
+- supporting：catalog 指定關聯 Repo 擷取時已提交 HEAD 的固定 SHA，包含 detached HEAD；不納入工作檔或其他 ref 的新版本。
 
 merge-preview 的文字證據由 helper 保存引用行的非機密片段與原始檔案 content_sha256，放入同一報告的可展開證據區，清理暫存合併物件後仍可閱讀。設定檔只記錄可解析鍵名，不保存設定值；認證、私鑰或完整連線設定行省略並明示。沒有行號時只保存摘要，不聲稱已保存完整來源。
 
@@ -96,7 +106,9 @@ merge-preview 的文字證據由 helper 保存引用行的非機密片段與原�
 
 ### code_risks 項目
 
-必要欄位為 id、priority、title、blocking_reason、trigger、impact、recommendation、scenario_source、evidence。
+新草稿保留骨架的 `report_layout=engineering-review/v1`。每項風險必要欄位為 id、priority、title、blocking_reason、trigger、impact、recommendation、scenario_source、evidence、scenario、technical_details；缺少面向讀者或工程師的說明須先完成，驗證器不讓新草稿用「未提供」發布。
+
+`scenario` 用讀者能理解的操作情境說明影響；`technical_details` 的 `explanation`、`impact_scope`、`engineering_fix` 分別說明程式原因、確切影響邊界與工程修正建議。`trigger` 是技術觸發條件，`impact`、`recommendation` 是面向讀者的影響與建議。只有沒有 report_layout 的歷史 v3 草稿，缺少新增欄位時才相容呈現「未提供」。
 
 - 編號從 R-001 連續排列，依 P0、P1 排序。
 - trigger 描述能實際觸發問題的輸入或操作；impact 描述使用者、資料或服務受到的影響。
@@ -104,9 +116,33 @@ merge-preview 的文字證據由 helper 保存引用行的非機密片段與原�
 - evidence 為上述固定證據陣列，不可只引用舊版而未確認最終行為。
 - 跨 Repo 風險仍須引用入口 Repo 的已審查變更及最終版本；關聯證據補充影響，不可將無關 Repo 的既有問題列為本次風險。
 
+### 完整風險示例
+
+以下只示範欄位與不同讀者所需的說明，來源路徑、行號及 SHA 必須替換為本次實際證據：
+
+~~~json
+{
+  "id":"R-001", "priority":"P1", "title":"新匯出流程可讀取其他租戶的資料",
+  "blocking_reason":"正式匯出端點可能跨租戶洩漏客戶資料，上版前必須修正。",
+  "impact":"使用者可能取得不屬於自己公司的匯出內容。",
+  "scenario":"A 公司員工以另一份匯出工作的編號下載檔案，系統卻交付 B 公司的內容。",
+  "recommendation":"先修正下載的租戶權限核對，再開放新匯出功能。",
+  "trigger":"已登入使用者呼叫新下載端點，job_id 指向另一個 tenant 的工作。",
+  "technical_details":{
+    "explanation":"新增查詢只以 job_id 取回工作；回傳檔案前沒有比對登入身分的 tenant_id。",
+    "impact_scope":"新下載端點可存取的跨租戶匯出工作；一般同租戶下載不受此差異影響。",
+    "engineering_fix":"以 job_id 與登入 tenant_id 共同限制查詢，拒絕跨租戶存取並驗證回應狀態。"
+  },
+  "scenario_source":"code-derived",
+  "evidence":[{"repo":"entry","source":"merge-preview","ref":"本次最終 tree 完整 SHA","path":"src/export.py","line_start":18,"line_end":24}]
+}
+~~~
+
 ### config_changes 項目
 
 必要欄位為 id、kind、name、description、baseline_reason、baseline_searches、recommendation、evidence、definition_status、definition_evidence。
+
+新擷取中的每筆 config／DB／external 新增依賴與每條 functional_chain 均須填 `diff_roots`（manifest 的 `DIFF-...` ID 陣列）及 `diff_reason`（與本次差異的因果說明）。完整 baseline 搜尋或未變更程式可作佐證，但不能讓無關既有依賴成為本次提醒。例：`"diff_roots":["DIFF-001"],"diff_reason":"本次新增發送呼叫，首次需要事件發布權限。"`。
 
 - 編號 C-001 起；kind 為 config-key、environment-variable 或 config-file。
 - name 是設定鍵／變數名／設定檔路徑，不放設定值；description 說明用途、必要性與預設值的行為。
@@ -137,12 +173,12 @@ external_changes 必要欄位與 db_changes 相同，編號 E-001 起，kind 為
 
 ## 發佈結果與判讀
 
-發佈使用 ReleaseReviewReport/v3；保留各類結果、coverage、依賴類型覆蓋、功能鏈與關聯覆蓋、搜尋摘要、所有 Repo 版本 identity、review_complete、chain_complete、context_gaps、限制及執行紀錄。只在 Context 的 report_root 輸出一份含 Checklist 的 Markdown；根目錄由 VSCode 工作區或已儲存 .code-workspace 所在目錄決定。內部 CLI 只回傳 markdown_report。
+發佈使用 ReleaseReviewReport/v3；保留各類結果、coverage、依賴類型覆蓋、功能鏈與關聯覆蓋、搜尋摘要、所有 Repo 版本 identity、review_complete、chain_complete、context_gaps、限制及執行紀錄。新 Context 的 report_root 固定為入口 Repo/review-reports，只輸出一份含 Checklist 的 Markdown。內部 CLI 只回傳 markdown_report；歷史報告保留。
 
 review_complete 只代表此靜態範圍的覆蓋完整。context／功能鏈缺口、未覆蓋路徑、未檢查依賴類型、設定或資源 unknown 使結果為「檢查未完成」；明確的 external 設定注入仍可完成靜態檢查。environment_status 與靜態完成分開，初始不宣告上版準備完成。沒有差異時明確說沒有差異。完成且沒有缺陷時說「已檢查範圍未發現有證據的程式缺陷」，不宣告保證安全上版。
 
 report 的 release_assessment 由 helper 推導，優先序為 blocked（有直接程式阻擋或 Git 合併衝突）、incomplete（靜態缺口）、pending-confirmation（有必要待核對項）、no-blockers-found。另保存 blocker_count、pending_count、gap_count 與 review_gaps。草稿不指定判斷或預填人工確認。
 
-報告含 release-review-report 中繼資料及 static_body_sha256，摘要排除唯一的 <!-- release-checklist:start --> 至 <!-- release-checklist:end --> 人工區塊（含邊界），仍涵蓋全部固定正文。只有此區塊可填寫，其他修改視為快照改變。v3 沒有 checklist_file／checklist_filename／body_sha256。報告首段結論優先，後接阻擋、依賴與 Checklist、限制，詳細證據放可展開區，避免重複摘要。
+報告含 release-review-report 中繼資料及 static_body_sha256，摘要排除唯一的 <!-- release-checklist:start --> 至 <!-- release-checklist:end --> 人工區塊（含邊界），仍涵蓋全部固定正文。只有此區塊可填寫，其他修改視為快照改變。v3 沒有 checklist_file／checklist_filename／body_sha256。版面依 report-style 的固定章節；依賴與 Checklist 放範圍與限制，版本、搜尋、鏈路與覆蓋紀錄放技術審查紀錄。搜尋字串留在 owned 搜尋紀錄，報告只顯示 ID 與命中數。
 
 本階段沒有 MR 身分，不冒用 MergeReviewReport/v1 或已有的 GitlabWorkSpace 匯入格式。發布預設成功或失敗後清理 owned context；技能使用 --retain-on-validation-error 時，只在可修正草稿錯誤保留同次來源，修正後完整重驗。來源完整性、搜尋紀錄竄改、Git／逾時與輸出失敗仍終止清理；中止或放棄修稿也清理。報告保留所有必要版本、路徑與搜尋摘要。

@@ -38,6 +38,6 @@ class PackageTests(RepoTest):
         self.assertEqual({"markdown_report"}, set(output))
         report = Path(output["markdown_report"])
         self.assertTrue(report.is_file())
-        self.assertEqual(self.repo, report.parent)
-        self.assertEqual([report], list(self.repo.glob("release-review-*.md")))
+        self.assertEqual(self.repo / "review-reports", report.parent)
+        self.assertEqual([report], list((self.repo / "review-reports").glob("release-review-*.md")))
         self.assertFalse(context.exists())

@@ -117,6 +117,16 @@ class ProofTests(unittest.TestCase):
         with self.assertRaises(ci.ProofError):
             ci.SafeRedirect().redirect_request(request, None, 302, "", {}, "http://storage.example.com/file")
 
+    def test_artifact_downloads_use_json_accept_and_release_assets_use_octet_stream(self):
+        api = ci.GitHub("owner/MergeReviewer", "never-sent")
+        cases = [("actions/artifacts/20/zip", "application/vnd.github+json"),
+                 ("releases/assets/30", "application/octet-stream"),
+                 ("https://api.github.com/repos/owner/MergeReviewer/releases/assets/30", "application/octet-stream")]
+        for path, accept in cases:
+            with self.subTest(path=path), mock.patch.object(api.opener, "open", return_value=io.BytesIO(b"exact binary bytes")) as opened:
+                self.assertEqual(api.request(path, raw=True), b"exact binary bytes")
+                self.assertEqual(opened.call_args.args[0].get_header("Accept"), accept)
+
     def test_five_product_specs_keep_required_matrix_and_canonical_versions(self):
         self.assertEqual([len(ci.SPECS[name]["cells"]) for name in ("GitlabWorkSpace", "MergeReviewer", "ReleaseReviewer", "Megin", "code-base-llm-wiki")], [4, 4, 4, 3, 2])
         for name, spec in ci.SPECS.items():

@@ -25,6 +25,8 @@ $release-reviewer Repo=C:\projects\OrderService 基礎分支=main 比較分支=f
 
 報告改放受審 Repo/review-reports，標題為「上版檢查: Repo」，五節依序為審查結論、問題總攬、問題詳情（工程師參考）、範圍與限制、技術審查紀錄（工程師參考）。Checklist 保留在範圍與限制中。舊草稿新增說明欄位缺值時標「未提供」。GPT-6 Luna MAX 僅用於獨立驗收，不是技能執行預設。
 
+正式發版使用 GitHub JSON media type 下載 Actions 附件，Release 二進位附件仍使用 octet-stream，避免完整 CI 已通過卻無法發布安裝包。
+
 ## 0.3.1 更新（歷史）
 
 精簡 Skill 入口與工作流程路由，統一進度、回答及文件的 Concise 規則，補上部署資源與審查範例。沿用 v3 context／draft／report 與單檔人工 Checklist。

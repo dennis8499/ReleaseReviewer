@@ -229,7 +229,9 @@ class GitHub:
         url = path if path.startswith("https://") else f"https://api.github.com/repos/{self.repository}/{path}"
         host = urllib.parse.urlparse(url).hostname
         require(host in {"api.github.com", "uploads.github.com"}, "Unexpected GitHub API host")
-        headers = {"Accept": "application/octet-stream" if raw else "application/vnd.github+json", "User-Agent": "release-ci-proof", "X-GitHub-Api-Version": "2022-11-28",
+        release_asset = re.fullmatch(r"/repos/[^/]+/[^/]+/releases/assets/\d+", urllib.parse.urlparse(url).path)
+        accept = "application/octet-stream" if raw and method == "GET" and release_asset else "application/vnd.github+json"
+        headers = {"Accept": accept, "User-Agent": "release-ci-proof", "X-GitHub-Api-Version": "2022-11-28",
                    "Authorization": "Bearer " + self.token}
         if data is not None and not isinstance(data, bytes):
             data = json.dumps(data).encode()

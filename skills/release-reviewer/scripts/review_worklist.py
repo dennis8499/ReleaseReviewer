@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import evidence as ev
+import merge_parent_coverage
 
 
 def comparison_scopes(manifest):
@@ -106,6 +107,7 @@ def prepare(manifest):
                 "metadata_only": metadata, "required_coverage": coverage,
                 "merge_parent_views": parent_views, "diff_roots": manifest.get("diff_roots", [])}
     draft = {"schema": "ReleaseReviewDraft/v3", "report_layout": "engineering-review/v1", "summary": "尚未完成本次審查。",
+             "merge_parent_review": merge_parent_coverage.unfinished(manifest.get("required_merge_views", [])),
              "coverage": coverage, "code_risks": [], "config_changes": [], "db_changes": [],
              "external_changes": [], "functional_chain": [], "chain_gaps": [],
              "supporting_coverage": [

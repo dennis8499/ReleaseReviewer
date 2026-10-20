@@ -18,6 +18,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import review_session
 import frozen_evidence
+import review_runtime
 
 SHA = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 _CACHE = ContextVar("release_evidence_operation", default=None)
@@ -195,13 +196,14 @@ def source_version(manifest: dict, context: Path, source: str, ref: str | None =
     return reference, env
 
 
-def command(manifest: dict, args: list[str], *, env=None, acceptable=(0,)) -> bytes:
+def command(manifest: dict, args: list[str], *, env=None, acceptable=(0,), input_bytes=None) -> bytes:
     timeout = manifest.get("git_timeout", 180.0)
     require(isinstance(timeout, (int, float)) and math.isfinite(timeout) and timeout > 0, "Git 逾時無效。")
     location = env["GIT_DIR"] if env and manifest.get("snapshot_policy") is not None else manifest["repo"]
-    result = subprocess.run(["git", "-C", str(location), *args], capture_output=True,
-                            timeout=timeout, env=env or {**os.environ, "GIT_OPTIONAL_LOCKS": "0",
-                                                       "GIT_TERMINAL_PROMPT": "0"})
+    command_env = dict(env) if env else {**os.environ, "GIT_OPTIONAL_LOCKS": "0", "GIT_TERMINAL_PROMPT": "0"}
+    command_env.update(GIT_NO_LAZY_FETCH="1", GIT_ALLOW_PROTOCOL="")
+    result = subprocess.run(["git", "-C", str(location), *args], capture_output=True, input=input_bytes,
+                            timeout=timeout, env=command_env)
     if result.returncode not in acceptable:
         raise ValueError("無法讀取固定 Git 證據：" + result.stderr.decode("utf-8", errors="replace").strip())
     return result.stdout
@@ -392,6 +394,7 @@ def batch(manifest: dict, context: Path, requests: list, *, shared_content=False
     results = []
     contents = {} if shared_content or auto_content else None
     with operation_cache(manifest, context):
+        _prefetch_reads(manifest, context, requests)
         for index, request in enumerate(requests):
             try:
                 result = request_result(manifest, context, request, contents=contents)
@@ -410,6 +413,44 @@ def batch(manifest: dict, context: Path, requests: list, *, shared_content=False
     return result
 
 
+def _prefetch_reads(manifest, context, requests):
+    """Batch frozen blob transport; per-request validation/errors remain intact."""
+    state = _cache(manifest, context)
+    if state is None or manifest.get("snapshot_policy") is None:
+        return
+    groups = {}
+    for request in requests:
+        if not isinstance(request, dict) or request.get("action") != "read":
+            continue
+        path = request.get("path")
+        if not safe_path(path) or "\n" in path or "\r" in path:
+            continue
+        try:
+            source = request.get("source", "base")
+            reference, env = source_version(manifest, context, source, request.get("ref"), request.get("repo"))
+            selected = repository(manifest, request.get("repo"))
+            entries = selected["snapshot"]["sources"][reference]["entries"]
+            found = [entry for entry in entries if entry["path"] == path and entry["kind"] == "blob"]
+            require(len(found) == 1, "path is not a fixed blob")
+            key = (selected["id"], selected["path"], reference, path,
+                   env.get("GIT_OBJECT_DIRECTORY"), env.get("GIT_ALTERNATE_OBJECT_DIRECTORIES"))
+            group = groups.setdefault(selected["id"], {"repo": selected, "env": env, "items": [], "keys": []})
+            expression = reference + ":" + path
+            group["items"].append((expression, found[0]["object"]))
+            group["keys"].append((key, expression))
+        except EVIDENCE_ERRORS:
+            continue  # The ordinary request path records this item's error.
+    for group in groups.values():
+        selected = group["repo"]
+        try:
+            bodies = review_runtime.batch_blobs(lambda data: command({**manifest, "repo": selected["path"]},
+                ["cat-file", "--batch"], env=group["env"], input_bytes=data), group["items"], selected["snapshot"]["object_format"])
+        except EVIDENCE_ERRORS:
+            continue
+        for key, expression in group["keys"]:
+            state["blobs"][key] = bodies[expression]
+
+
 def load_requests(value: str) -> list:
     require(isinstance(value, str) and bool(value.strip()), "batch 必須指定 --requests。")
     inline = value.lstrip("\ufeff \t\r\n")
@@ -424,7 +465,7 @@ def load_requests(value: str) -> list:
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("list", "read", "search", "batch"))
+    parser.add_argument("action", choices=("list", "read", "search", "batch", "view"))
     parser.add_argument("--context-dir", required=True)
     parser.add_argument("--source", choices=SOURCES, default="base")
     parser.add_argument("--ref")
@@ -433,6 +474,9 @@ def main(argv=None):
     parser.add_argument("--query")
     parser.add_argument("--ignore-case", action="store_true")
     parser.add_argument("--requests", help="JSON array or worklist file (inline JSON is also accepted)")
+    parser.add_argument("--page-size", type=int)
+    parser.add_argument("--offset", type=int, default=0)
+    parser.add_argument("--artifact")
     formats = parser.add_mutually_exclusive_group()
     formats.add_argument("--shared-content", action="store_true",
                          help="Batch only: emit a versioned wrapper with each unique read body once")
@@ -444,18 +488,25 @@ def main(argv=None):
     try:
         context = review_session.validate_session(args.context_dir)
         manifest = load_manifest(context)
-        if args.action == "batch":
+        if args.action == "view":
+            require(args.artifact and args.page_size, "view needs --artifact and --page-size")
+            result = review_runtime.page(review_runtime.load_view(context, args.artifact), context,
+                                         size=args.page_size, offset=args.offset, artifact=args.artifact)
+        elif args.action == "batch":
             result = batch(manifest, context, load_requests(args.requests),
                            shared_content=args.shared_content, auto_content=args.auto_content)
         else:
             with operation_cache(manifest, context):
                 result = request_result(manifest, context,
                                         {key: getattr(args, key) for key in REQUEST_FIELDS})
+        failed = args.action == "batch" and not result["complete"]
+        if args.page_size and args.action != "view":
+            result = review_runtime.page(result, context, size=args.page_size, offset=args.offset)
     except EVIDENCE_ERRORS as exc:
         print(f"release-evidence: {exc}", file=sys.stderr)
         return 2
-    print(compact_json(result) if args.action == "batch" else json.dumps(result, ensure_ascii=False, indent=2))
-    return 2 if args.action == "batch" and not result["complete"] else 0
+    print(compact_json(result) if args.action == "batch" or args.page_size else json.dumps(result, ensure_ascii=False, indent=2))
+    return 2 if failed else 0
 
 
 if __name__ == "__main__":

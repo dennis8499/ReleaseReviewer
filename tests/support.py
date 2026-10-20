@@ -113,7 +113,19 @@ def draft_for(manifest):
                                       for source, ref in sorted(pairs)]})
     final = "merge-preview" if (manifest.get("merge_preview") or {}).get("status") == "clean" else "head"
     dependency_evidence = [citation(manifest, final, "src/service.py")] if manifest["changed_files"] else []
-    return {"schema": "ReleaseReviewDraft/v3", "summary": "測試固定版本的上板檢查。",
+    final_ref = release_report.final_version(manifest)[1]
+    snapshots = manifest["repositories"][0].get("snapshot", {}).get("sources", {})
+    parent_reviews = []
+    for view in manifest.get("required_merge_views", []):
+        items = []
+        for source, reference in (("merge-parent", view["parent"]), (final, final_ref)):
+            available = {entry["path"] for entry in snapshots[reference]["entries"] if entry["kind"] == "blob"}
+            path = next((path for path in view["paths"] if path in available), None)
+            if path:
+                items.append(citation(manifest, source, path, ref=reference))
+        parent_reviews.append({"id": view["id"], "status": "reviewed", "reason": "測試作者已對照此固定parent及最終版本。",
+                               "evidence": items, "final_ref": final_ref})
+    return {"schema": "ReleaseReviewDraft/v3", "summary": "測試固定版本的上板檢查。", "merge_parent_review": parent_reviews,
             "coverage": coverage, "code_risks": [], "config_changes": [], "db_changes": [],
             "external_changes": [], "supporting_coverage": [], "functional_chain": [], "chain_gaps": [],
             "dependency_coverage": [{"kind": kind, "status": "reviewed", "reason": "已檢視固定變更與依賴使用。",

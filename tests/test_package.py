@@ -9,6 +9,18 @@ spec.loader.exec_module(packaging)
 
 
 class PackageTests(RepoTest):
+    def test_crlf_text_payload_is_canonical_and_binary_is_exact(self):
+        import shutil
+        copied = self.root / "crlf-skill"
+        shutil.copytree(SKILL, copied)
+        original = (copied / "SKILL.md").read_bytes().replace(b"\r\n", b"\n")
+        (copied / "SKILL.md").write_bytes(original.replace(b"\n", b"\r\n"))
+        (copied / "fixture.bin").write_bytes(b"\x00\r\n\xff")
+        archive = packaging.build_release(copied, self.root / "canonical")
+        with ZipFile(archive) as packaged:
+            self.assertEqual(original, packaged.read("release-reviewer/SKILL.md"))
+            self.assertEqual(b"\x00\r\n\xff", packaged.read("release-reviewer/fixture.bin"))
+
     def test_deterministic_zip_contains_only_installable_skill(self):
         first = packaging.build_release(SKILL, self.root / "one")
         second = packaging.build_release(SKILL, self.root / "two")

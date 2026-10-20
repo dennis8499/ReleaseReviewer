@@ -8,6 +8,7 @@ from contextlib import contextmanager, redirect_stderr, redirect_stdout
 import copy
 import hashlib
 import importlib
+import inspect
 import io
 import json
 import os
@@ -32,7 +33,9 @@ def normalize(value, replacements=()):
     """Remove run-specific locations/times while retaining review semantics."""
     if isinstance(value, dict):
         return {key: normalize(item, replacements) for key, item in value.items()
-                if key not in {"generated_at", "captured_at", "capture_completed_at"}}
+                if key not in {"generated_at", "captured_at", "capture_completed_at", "generation"}
+                and not (key in {"required_merge_views", "merge_parent_review"} and item == [])
+                and not (key == "merge_parent_policy" and not value.get("required_merge_views"))}
     if isinstance(value, list):
         return [normalize(item, replacements) for item in value]
     if isinstance(value, str):
@@ -51,6 +54,11 @@ def semantic_digest(value, replacements=()):
 
 def expand_shared_batch(output):
     """Restore the legacy shape before comparing opt-in transport savings."""
+    if output.get("schema") == "ReviewEvidenceView/v1":
+        raw = Path(output["artifact_path"]).read_bytes()
+        if hashlib.sha256(raw).hexdigest() != output["artifact"]:
+            raise ValueError("Evidence view checksum mismatch")
+        output = json.loads(raw)
     if "schema" not in output:
         return output
     if output["schema"] != "ReleaseReviewEvidenceBatch/v1":
@@ -229,9 +237,11 @@ def create_fixture(scenario, support, source_fixture=None):
 
 def run_evidence(measurements, evidence, context, requests, shared_content=False):
     if hasattr(evidence, "batch"):
+        auto = "auto_content" in inspect.signature(evidence.batch).parameters
         output = measurements.command(evidence.main, ["batch", "--context-dir", str(context),
                                        "--requests", json.dumps(requests, ensure_ascii=False),
-                                       *(["--shared-content"] if shared_content else [])])
+                                       *(["--auto-content"] if auto else ["--shared-content"] if shared_content else []),
+                                       *(["--page-size", "100"] if hasattr(evidence, "review_runtime") else [])])
         with measurements.exclude_oracle():
             output = expand_shared_batch(output)
         if not output.get("complete") or not all(item.get("ok") for item in output["results"]):
@@ -284,9 +294,13 @@ def worker(skill_dir, scenario, shared_content=False, artifact_path=None, source
                     args += ["--workspace-context-json", json.dumps(case.hints)]
                 elif scenario == "large":
                     args += ["--workspace-context-json", json.dumps(case.job["workspace_context"])]
-                manifest = measured.command(capture.main, args)
-                context = Path(manifest["context_dir"])
+                if hasattr(capture, "capture_summary"):
+                    args += ["--summary-v2" if hasattr(capture, "capture_summary_v2") else "--summary"]
+                captured = measured.command(capture.main, args)
+                context = Path(captured["context_dir"])
                 case.contexts.append(context)
+                with measured.exclude_oracle():
+                    manifest = json.loads((context / "manifest.json").read_text(encoding="utf-8"))
             with measured.stage("evidence"):
                 if authored is not None:
                     draft = copy.deepcopy(authored["draft"])

@@ -2,6 +2,8 @@
 
 對照入口 base_sha 整個 Repo 與最終預覽，辨識 first-use、resource-definition、target-change、access-change。搜尋需沿設定載入、環境變數、包裝 client、ORM mapping、SQL fragment、部署 manifest／IaC、呼叫與帳號用途查證。只有定義、測試、註解或範例不等於既有正式程式使用；此次新增會套用的部署定義本身仍需提醒。
 
+先核對實際使用或確切部署 binding：未使用定義及其值變更本身不建立新依賴，找不到 loader 時交代查證邊界。定義已有而本次新增實際讀取，仍列 first-use；此次會套用的部署定義列 resource-definition。判斷與正反例見[新增使用的判斷](review-rules.md#新增使用的判斷)。
+
 既有設定鍵改指新 DB／主機、同表多用新欄位、新 Topic／Consumer Group、新 Redis DB／prefix／command、新 FTP 目錄或存取操作，皆可能引入新上版準備。等價搬檔、改名、其他檔案已使用同一資源且同一存取需求不重複提醒。不同 DB／schema、服務身分或目標不可錯誤合併。
 
 ## 外部類型與 provider 證據

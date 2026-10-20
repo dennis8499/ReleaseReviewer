@@ -55,7 +55,7 @@ def environment(context: Path, record: dict) -> dict:
         result.pop(key, None)
     result.update(GIT_DIR=str(path), GIT_COMMON_DIR=str(path), GIT_OBJECT_DIRECTORY=str(path / "objects"),
                   GIT_ALTERNATE_OBJECT_DIRECTORIES="", GIT_NO_REPLACE_OBJECTS="1", GIT_NO_LAZY_FETCH="1",
-                  GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0")
+                  GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0", GIT_ALLOW_PROTOCOL="")
     return result
 
 
@@ -81,17 +81,21 @@ def seal(context: Path, record: dict, refs: list[str], *, env=None):
     object_format = str(git.run_git(source, ["rev-parse", "--show-object-format"])).strip()
     require(object_format in {"sha1", "sha256"}, "不支援的 Git 物件格式。")
     git.run_git(context, ["init", "--bare", f"--object-format={object_format}", str(destination)])
-    objects, sources, instructions = set(), {}, []
+    objects, sources, instructions, trees, instruction_content = set(), {}, [], {}, {}
     for reference in dict.fromkeys(refs):
         require(isinstance(reference, str) and re.fullmatch(r"[a-f0-9]{40}|[a-f0-9]{64}", reference), "固定 ref 無效。")
         tree = str(git.run_git(source, ["rev-parse", f"{reference}^{{tree}}"], env=env)).strip()
-        entries, closure = inventory(source, tree, env)
+        if tree not in trees:
+            trees[tree] = inventory(source, tree, env)
+        entries, closure = trees[tree]
         sources[reference] = {"tree": tree, "entries": entries}
         objects.update(closure)
         objects.add(reference)
         for item in entries:
             if item["kind"] == "blob" and PurePosixPath(item["path"]).name == "AGENTS.md":
-                content = git.run_git(source, ["cat-file", "blob", item["object"]], binary=True, env=env)
+                if item["object"] not in instruction_content:
+                    instruction_content[item["object"]] = git.run_git(source, ["cat-file", "blob", item["object"]], binary=True, env=env)
+                content = instruction_content[item["object"]]
                 instructions.append({"ref": reference, "path": item["path"],
                                      "sha256": hashlib.sha256(content).hexdigest()})
     git.run_git(source, ["pack-objects", str(destination / "objects/pack/snapshot")],

@@ -35,6 +35,7 @@ class FrozenReviewTests(RepoTest):
                 self.assertTrue(Path(command[2]).is_relative_to(context))
                 self.assertFalse({"fetch", "pull", "clone", "ls-remote"} & set(command))
                 self.assertEqual("1", call.kwargs["env"]["GIT_NO_LAZY_FETCH"])
+                self.assertEqual("", call.kwargs["env"]["GIT_ALLOW_PROTOCOL"])
                 self.assertEqual("", call.kwargs["env"]["GIT_ALTERNATE_OBJECT_DIRECTORIES"])
 
     def test_workspace_and_tracked_instructions_are_frozen_and_verified(self):

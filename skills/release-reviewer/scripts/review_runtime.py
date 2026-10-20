@@ -1,0 +1,163 @@
+"""Owned-context generation checks and optional compact evidence transport."""
+from __future__ import annotations
+
+from contextlib import contextmanager
+from contextvars import ContextVar
+import hashlib
+import json
+import os
+from pathlib import Path
+import uuid
+
+from git_network_lease import DirectoryLease
+
+_WRITERS = ContextVar("review_context_writers", default=frozenset())
+
+
+@contextmanager
+def writer(context, timeout=180.0):
+    context = Path(context).resolve()
+    key = str(context)
+    if key in _WRITERS.get():
+        yield
+        return
+    lease = DirectoryLease(context, name="manifest-writer.lock", kind="manifest", timeout=timeout).acquire()
+    token = _WRITERS.set(_WRITERS.get() | {key})
+    try:
+        yield
+    finally:
+        _WRITERS.reset(token)
+        lease.release()
+
+
+def save_manifest(context, manifest):
+    context = Path(context).resolve()
+    with writer(context):
+        target = context / "manifest.json"
+        if target.is_symlink():
+            raise ValueError("Manifest cannot be a link")
+        expected = manifest.get("generation", 0)
+        if type(expected) is not int or expected < 0:
+            raise ValueError("Invalid manifest generation")
+        actual = json.loads(target.read_text(encoding="utf-8-sig")).get("generation", 0) if target.exists() else 0
+        if actual != expected:
+            raise ValueError("Manifest generation changed; reload before writing")
+        updated = {**manifest, "generation": expected + 1}
+        temporary = context / (".manifest-" + uuid.uuid4().hex + ".json")
+        try:
+            temporary.write_text(json.dumps(updated, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
+        manifest["generation"] = expected + 1
+
+
+def canonical(value):
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
+def batch_blobs(run, items, object_format):
+    """One raw cat-file process; validate every expression, OID and byte body."""
+    if object_format not in ("sha1", "sha256"):
+        raise ValueError("Unsupported object format")
+    unique = {}
+    for expression, expected in items:
+        if expression in unique and unique[expression] != expected:
+            raise ValueError("Conflicting fixed batch blob identity")
+        unique[expression] = expected
+    if any("\n" in expression or "\r" in expression for expression in unique):
+        raise ValueError("Line-delimited batch cannot represent this Git path")
+    raw = run(("\n".join(unique) + "\n").encode("utf-8"))
+    offset, result = 0, {}
+    for expression, expected in unique.items():
+        boundary = raw.find(b"\n", offset)
+        if boundary < 0:
+            raise ValueError("Incomplete cat-file batch header")
+        header = raw[offset:boundary].split()
+        if len(header) != 3 or header[1] != b"blob" or header[0].decode("ascii") != expected:
+            raise ValueError("Fixed batch blob identity differs")
+        size = int(header[2])
+        offset = boundary + 1
+        content = raw[offset:offset + size]
+        offset += size
+        if len(content) != size or raw[offset:offset + 1] != b"\n":
+            raise ValueError("Incomplete cat-file batch body")
+        offset += 1
+        digest = hashlib.new(object_format, b"blob " + str(size).encode("ascii") + b"\0" + content).hexdigest()
+        if digest != expected:
+            raise ValueError("Fixed batch blob checksum differs")
+        result[expression] = content
+    if offset != len(raw):
+        raise ValueError("Unexpected cat-file batch trailing data")
+    return result
+
+
+def shared_reads(value):
+    contents, reads = {}, []
+    for item in value["reads"]:
+        identifier = item["sha256"]
+        contents.setdefault(identifier, {"lines": item["lines"]})
+        reads.append({**{key: content for key, content in item.items() if key != "lines"}, "content_id": identifier})
+    return {"schema": "MergeReviewEvidenceBatch/v1", "reads": reads, "contents": contents}
+
+
+def _views(context):
+    root = Path(context).resolve()
+    directory = root / "views"
+    if directory.is_symlink() or (directory.exists() and directory.resolve() != directory):
+        raise ValueError("Evidence view directory cannot be a link")
+    directory.mkdir(exist_ok=True)
+    return directory
+
+
+def store_view(context, value):
+    raw = canonical(value)
+    identifier = hashlib.sha256(raw).hexdigest()
+    target = _views(context) / (identifier + ".json")
+    if target.is_symlink():
+        raise ValueError("Evidence view cannot be a link")
+    temporary = target.with_name(".view-" + uuid.uuid4().hex)
+    try:
+        temporary.write_bytes(raw)
+        try:
+            os.link(temporary, target)
+        except FileExistsError:
+            if target.read_bytes() != raw:
+                raise ValueError("Evidence view identity mismatch")
+    finally:
+        temporary.unlink(missing_ok=True)
+    return identifier
+
+
+def load_view(context, identifier):
+    if not isinstance(identifier, str) or len(identifier) != 64 or any(c not in "0123456789abcdef" for c in identifier):
+        raise ValueError("Invalid evidence artifact ID")
+    path = _views(context) / (identifier + ".json")
+    if path.is_symlink():
+        raise ValueError("Evidence view cannot be a link")
+    raw = path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != identifier:
+        raise ValueError("Evidence view checksum mismatch")
+    return json.loads(raw)
+
+
+def page(value, context, *, size, offset=0, artifact=None):
+    if type(size) is not int or size < 1 or type(offset) is not int or offset < 0:
+        raise ValueError("Page size must be positive and offset nonnegative")
+    identifier = artifact or store_view(context, value)
+    def visit(item):
+        if isinstance(item, list):
+            return [visit(child) for child in item]
+        if not isinstance(item, dict):
+            return item
+        result = {key: visit(child) for key, child in item.items() if key != "output" or "matches" not in item}
+        if isinstance(item.get("matches"), list):
+            total = len(item["matches"])
+            result["matches"] = item["matches"][offset:offset + size]
+            result["view"] = {"total_matches": total, "offset": offset,
+                              "next_offset": offset + size if offset + size < total else None,
+                              "view_complete": offset == 0 and size >= total,
+                              "evidence_complete": True}
+        return result
+    return {"schema": "ReviewEvidenceView/v1", "artifact": identifier,
+            "artifact_path": str(_views(context) / (identifier + ".json")), "result": visit(value)}

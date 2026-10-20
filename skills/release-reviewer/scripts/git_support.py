@@ -36,6 +36,7 @@ import stat
 
 
 import subprocess
+import git_network_lease
 
 
 import sys
@@ -134,8 +135,12 @@ def run_git(
     command_env["GIT_TERMINAL_PROMPT"] = "0"
     command_env["GIT_NO_LAZY_FETCH"] = "1"
     command_env["GIT_NO_REPLACE_OBJECTS"] = "1"
+    if not (args and args[0] == "fetch"):
+        # Older Git ignores GIT_NO_LAZY_FETCH; deny implicit transports too.
+        command_env["GIT_ALLOW_PROTOCOL"] = ""
     try:
-        completed = subprocess.run(
+        runner = git_network_lease.run if args and args[0] == "fetch" else subprocess.run
+        completed = runner(
             ["git", "-C", str(repo), *args],
             input=input_bytes,
             stdout=subprocess.PIPE,
@@ -171,6 +176,7 @@ def run_git_capture(
     command_env["GIT_TERMINAL_PROMPT"] = "0"
     command_env["GIT_NO_LAZY_FETCH"] = "1"
     command_env["GIT_NO_REPLACE_OBJECTS"] = "1"
+    command_env["GIT_ALLOW_PROTOCOL"] = ""
     try:
         completed = subprocess.run(
             ["git", "-C", str(repo), *args],
@@ -199,6 +205,7 @@ def git_ok(repo: Path, args: Sequence[str]) -> bool:
     command_env["GIT_TERMINAL_PROMPT"] = "0"
     command_env["GIT_NO_LAZY_FETCH"] = "1"
     command_env["GIT_NO_REPLACE_OBJECTS"] = "1"
+    command_env["GIT_ALLOW_PROTOCOL"] = ""
     try:
         completed = subprocess.run(
             ["git", "-C", str(repo), *args],
@@ -523,6 +530,10 @@ def fetch_inputs(repo: Path, refs: Iterable[str], enabled: bool) -> list[dict[st
                     "--no-tags",
                     "--no-prune",
                     "--atomic",
+                    "--no-recurse-submodules",
+                    "--no-auto-maintenance",
+                    "--no-write-fetch-head",
+                    "--jobs=1",
                     remote,
                     *[f"refs/heads/{t.branch}:refs/remotes/{remote}/{t.branch}" for t in targets],
                 ],

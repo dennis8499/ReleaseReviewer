@@ -18,6 +18,8 @@ import group_context
 import review_session
 import review_worklist
 import frozen_evidence
+import review_runtime
+import merge_parent_coverage
 
 SCHEMA = "ReleaseReviewContext/v3"
 SUMMARY_SCHEMA = "ReleaseReviewCaptureSummary/v1"
@@ -54,6 +56,22 @@ def capture_summary(manifest: dict) -> dict:
                    "merge_parent_views": len(worklist["merge_parent_views"])},
         "files": {key: str(context / value) for key, value in files.items()},
     }
+
+
+def capture_summary_v2(manifest: dict) -> dict:
+    """Compact catalog; complete tree inventories remain in the manifest."""
+    result = capture_summary(manifest)
+    result["schema"] = "ReleaseReviewCaptureSummary/v2"
+    result["repositories"] = []
+    for record in manifest["repositories"]:
+        projected = {key: value for key, value in record.items() if key != "snapshot"}
+        snapshot = record.get("snapshot")
+        if snapshot:
+            projected["snapshot"] = {key: value for key, value in snapshot.items() if key != "sources"}
+            projected["sources"] = {ref: {"tree": source["tree"], "file_count": len(source["entries"])}
+                                    for ref, source in snapshot["sources"].items()}
+        result["repositories"].append(projected)
+    return result
 
 
 def worktree_fingerprint(repo: Path) -> str:
@@ -108,6 +126,11 @@ def build_manifest(args: argparse.Namespace) -> dict:
         # Validate both namespaces before any remote operation. Tags/revisions never fetch.
         base_ref = group_context.branch_ref(repo, args.base)
         head_ref = group_context.branch_ref(repo, args.head)
+        if git.is_shallow_repository(repo):
+            raise git.ReviewContextError("合併前審查需要完整歷史；請先取得完整歷史。")
+        for label, raw, reference in (("基礎版本", args.base, base_ref), ("比較版本", args.head, head_ref)):
+            if git.remote_target_for_ref(repo, raw) is None and not git.verified_commit(repo, reference):
+                raise git.ReviewContextError(f"找不到{label}（本機分支）：{raw}；不會連線或改用其他同名版本。")
         session = review_session.create_session(args.context_dir)
         workspace_instructions = frozen_evidence.capture_workspace_instructions(
             session, git.workspace_roots(workspace, workspace_file), repositories)
@@ -191,8 +214,11 @@ def build_manifest(args: argparse.Namespace) -> dict:
             "workspace_instructions": workspace_instructions,
         }
         manifest["diff_roots"] = review_worklist.diff_roots(manifest)
-        (session / "manifest.json").write_text(
-            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        manifest["merge_parent_policy"] = merge_parent_coverage.POLICY
+        manifest["required_merge_views"] = merge_parent_coverage.required(
+            release_changes if preview["status"] == "clean" else changes, merge_commits,
+            {entry["path"] for entry in catalog[0]["snapshot"]["sources"][preview["tree_sha"] if preview["status"] == "clean" else head]["entries"] if entry["kind"] == "blob"})
+        review_runtime.save_manifest(session, manifest)
         review_worklist.write_worklist(session, manifest)
         succeeded = True
         return manifest
@@ -213,6 +239,7 @@ def parse_args(argv=None):
     parser.add_argument("--context-dir")
     parser.add_argument("--git-timeout", type=float, default=180.0)
     parser.add_argument("--pretty", action="store_true")
+    parser.add_argument("--summary-v2", action="store_true", help="Compact catalog without full tree inventories")
     parser.add_argument("--summary", action="store_true",
                         help="Return capture identity, scope counts and saved evidence paths; keep the full manifest on disk")
     return parser.parse_args(argv)
@@ -225,9 +252,9 @@ def main(argv=None):
     except (OSError, ValueError, git.ReviewContextError) as exc:
         print(f"release-reviewer: {exc}", file=sys.stderr)
         return 2
-    if args.summary:
+    if args.summary or args.summary_v2:
         try:
-            result = capture_summary(result)
+            result = capture_summary_v2(result) if args.summary_v2 else capture_summary(result)
         except (OSError, ValueError, KeyError, TypeError) as exc:
             review_session.cleanup_session(Path(result["context_dir"]))
             print(f"release-reviewer: {exc}", file=sys.stderr)

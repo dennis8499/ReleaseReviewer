@@ -7,6 +7,7 @@
 | 情境 | 判斷 |
 | --- | --- |
 | 新檔案使用原本其他執行程式已用的設定／同一 DB 物件 | 不列新增提醒 |
+| 只有未使用的設定定義，或該既有定義的值變更；沒有本次實際讀取、部署 binding 或套用定義證據 | 交代已查範圍；不列 first-use／必要外部 consumer／靜態缺口 |
 | base 有設定或 schema 定義，但此次才有程式使用 | 列首次使用提醒；說明定義已存在 |
 | 同一連線鍵的目標由 DB A 改成 DB B | 列 DB B 新增使用提醒；不能只用連線鍵相同而略過 |
 | 既有資料表此次多用一個欄位 | 列新欄位，既有資料表不重複列 |
@@ -17,6 +18,8 @@
 | 設定來自環境變數或部署平台 | 標需確認外部注入；不聲稱環境缺少 |
 | 新 DB 物件只有程式使用證據 | 提醒核對上版準備；不聲稱尚未建立 |
 | 動態 SQL 或 DB 目標由外部決定 | 列已知部分、待確認原因與核對方式 |
+
+設定是否被使用與設定值是否改變分開判斷。正例：base 只有 `worker_count` 定義，head 新增固定 loader 並以該鍵建立工作池，列首次使用提醒且引用實際讀取與 base 全 Repo 搜尋。反例：定義檔的 `worker_count` 從 4 改 8，固定範圍沒有讀取或部署 binding，搜尋 loader 零命中只表示未找到使用，不證明存在必要外部 consumer；不新增提醒或 gap。若固定部署 manifest 明確綁定該檔／鍵，或此次新增會套用的部署資源定義，即使讀取者在外仍按該確切證據判定提醒與必要缺口。
 
 搜尋即使命中，也可能只有定義或註解；零命中也可能有別名或 ORM mapping。baseline_reason 必須記錄具體推論，baseline_searches 保存實際全 Repo 搜尋的 search_id。沒有搜尋紀錄不得發佈新增提醒。
 
@@ -40,6 +43,16 @@
 例如固定程式以 `Redis.from_url` 讀取部署注入的 URL，並操作明確的 `invoice:` key prefix：Redis provider、連線鍵與邏輯資源已辨識，`resolution` 為 `identified`。現場 URL、主機、DB index、ACL 與可用性留 Checklist／limitations，不因未連線現場而建立 `chain_gaps`。真正未知的動態表名、未取得的必要 mapping 或消費契約仍保留缺口。
 
 條件式設定在可證明的觸發條件下造成 P1 時，保留條件與風險；新增事件 Topic／payload schema 仍依[資源分類](resource-checks.md#外部類型與-provider-證據)提醒，不因 provider 未知省略已辨識的契約。
+
+## 搜尋引用對帳
+
+每次引用搜尋結論時，從同一筆真實 helper 紀錄取得 `search_id`、Repo、source、完整 ref、query 與命中數；先比對該筆紀錄，再將 ID 帶入 `baseline_searches` 或必要的正文引用。零命中與有命中都按此規則，不能把另一個查詢的 ID 套在同一段推論。優先保留發布器自動產生的搜尋摘要，不另手寫第二份 ID／命中數對照表。若正文需要提搜尋 ID，發布前逐筆對帳；搜尋 query 留在 owned 紀錄，不將機密值或命中內容複製到報告。
+
+## 確切 Repo 的 ownership 修復
+
+修復限首次完整快照及語意分析以前的本機查核。先對使用者明確宣告的候選 Git 根目錄執行本機唯讀 ownership preflight，保存首次 `dubious ownership` 原始診斷並核對報錯 Repo 確在授權範圍，再把所有實際報錯的候選確切路徑一次列入同一 helper 子程序的 `GIT_CONFIG_COUNT`／`GIT_CONFIG_KEY_n=safe.directory`／`GIT_CONFIG_VALUE_n=<exact-path>`，讓 capture 一次完成；原環境已有 count 時在其後追加並保留既有值。設定只限該 helper 及其 Git 子程序；不得修改全域、使用萬用路徑或擴張工作區。單次直接 Git 查詢可用 `git -c safe.directory=<exact-path>`。語意分析已開始或遠端已完成同步時，維持固定 SHA 與缺口，不為 ownership 自動再 fetch、重取或切換快照；真正缺失的必要 HEAD／物件仍是缺口。獨立審查原有的自行同步政策不變。
+
+發布 helper 的 stdout 接回呼叫者或寫到本次 run 的交接位置，不重新導向進 owned context；發布器驗證、寫檔及清理時，避免 context 內開啟的輸出句柄阻擋清理。
 
 ## 固定證據與覆蓋
 

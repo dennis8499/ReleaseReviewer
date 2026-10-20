@@ -19,6 +19,7 @@ import chain_review
 import resource_rules
 import review_session
 import review_worklist
+import merge_parent_coverage
 from review_worklist import expected_coverage
 
 PRIORITIES = ("P0", "P1")
@@ -232,6 +233,17 @@ def _validate_result(draft, manifest, context):
         covered[path] = entry
     draft_require(set(covered) == set(expected), "coverage 未列出所有變更路徑及改名前的路徑。")
     result["coverage"] = list(covered.values())
+    parents_complete = True
+    if manifest.get("merge_parent_policy") is not None:
+        ev.require(manifest["merge_parent_policy"] == merge_parent_coverage.POLICY, "unsupported merge-parent policy")
+        views = merge_parent_coverage.required(manifest["release_changes"] if manifest["merge_preview"]["status"] == "clean"
+                                              else manifest["changed_files"], manifest["merge_commits"],
+            {entry["path"] for entry in manifest["repositories"][0]["snapshot"]["sources"][final_version(manifest)[1]]["entries"] if entry["kind"] == "blob"})
+        ev.require(manifest.get("required_merge_views") == views, "necessary merge-parent views differ")
+        parents_complete = merge_parent_coverage.validate(views, draft.get("merge_parent_review", []),
+            lambda items: cached_citations(items, manifest, context), final_ref=final_version(manifest)[1],
+            parent_repo="entry", require=draft_require)
+    result["merge_parent_review"] = draft.get("merge_parent_review", [])
     reviewed = {p for p, item in covered.items() if item["status"] == "reviewed"}
     previous_priority = -1
     final_pair = final_version(manifest)
@@ -348,7 +360,7 @@ def _validate_result(draft, manifest, context):
     unresolved |= any(d["resolution"] == "unknown" for d in result["db_changes"])
     unresolved |= any(d["resolution"] == "unknown" for d in result["external_changes"])
     complete = manifest["context_complete"] and all(v["status"] == "reviewed" for v in covered.values())
-    complete = complete and not unresolved and result["chain_complete"] and resource_complete
+    complete = complete and not unresolved and result["chain_complete"] and resource_complete and parents_complete
     result["review_complete"] = complete
     result["status"] = "靜態檢查完成" if complete else "檢查未完成"
     if complete and not expected:
@@ -365,7 +377,9 @@ def _validate_result(draft, manifest, context):
     result["identity"].update({"scope": manifest["scope"], "entry_repo": "entry", "repositories": catalog})
     result["identity"].update({key: manifest.get(key) for key in
                                ("snapshot_policy", "capture_completed_at", "workspace_instructions", "diff_roots")})
-    result["context_gaps"] = manifest["context_gaps"]
+    result["context_gaps"] = list(manifest["context_gaps"])
+    if not parents_complete:
+        result["context_gaps"].append("必要 merge-parent 尚未對照最終版本。")
     result["merge_status"] = (manifest.get("merge_preview") or {}).get("status")
     result["merge_detail"] = (manifest.get("merge_preview") or {}).get("detail", "")
     result["review_gaps"] = review_gaps(result)
@@ -387,7 +401,9 @@ def redact(value):
         return {k: redact(v) for k, v in value.items()}
     if not isinstance(value, str):
         return value
-    value = re.sub(r"(?i)(\b(?:password|pwd|token|api[_-]?key|secret|access[_-]?key)\b"
+    value = re.sub(r"(?is)-----BEGIN[^\r\n]*PRIVATE KEY-----.*?-----END[^\r\n]*PRIVATE KEY-----",
+                   "[私鑰內容已省略]", value)
+    value = re.sub(r"(?i)(\b(?:password|passwd|pwd|token|api[_-]?key|secret|access[_-]?key)\b"
                    r"\s*[=:]\s*)(?:\"[^\"]*\"|'[^']*'|[^;,\s&]+)",
                    r"\1[已遮蔽]", value)
     value = re.sub(r"(?i)([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^/\s@]+@", r"\1[已遮蔽]@", value)
@@ -587,6 +603,9 @@ def render_markdown(result):
         lines.append(f"| {cell(coverage['path'])} | {coverage['status']} | {cell(coverage.get('reason', ''))} |")
     if not result["coverage"]:
         lines.append("| — | 沒有變更路徑 | — |")
+    if result.get("merge_parent_review"):
+        lines += ["", "**必要合併父版本對照**：", "",
+                  *[f"- {row['id']}：{row['status']}；{row['reason']}" for row in result["merge_parent_review"]]]
     lines += ["", "**依賴類型覆蓋**：", "",
               *[f"- {c['kind']}：{c['status']}；{c['reason']}" for c in result["dependency_coverage"]]]
     for title, values in (("已執行檢查", result["tests_executed"]),

@@ -1,12 +1,12 @@
 # Release Reviewer｜上版檢查
 
-獨立 Codex Skill **0.5.0**。只接受 Repo、基礎分支、比較分支，固定合併前審查。檢查直接阻止上版的 P0／P1、相關功能鏈與新增部署依賴，在 VSCode 受審 Repo/review-reports 產生**一份含可填寫 Checklist 的繁體中文 Release Report**。
+獨立 Codex Skill **0.6.0**。只接受 Repo、基礎分支、比較分支，固定合併前審查。檢查直接阻止上版的 P0／P1、相關功能鏈與新增部署依賴，在 VSCode 受審 Repo/review-reports 產生**一份含可填寫 Checklist 的繁體中文 Release Report**。
 
 ## 安裝與使用
 
 需要 Python 3.10+、Git 及可使用本機 Skills 的 Codex。Git 須支援 merge-tree --write-tree 與 --merge-base；缺少乾淨預覽時保留缺口，不改用直接比較。
 
-將 skills/release-reviewer 複製到 Codex Skills 目錄，或解壓 dist/release-reviewer-0.5.0.zip。CODEX_HOME 有設定時使用其 skills 子目錄，否則使用使用者的 .codex/skills。
+將 skills/release-reviewer 複製到 Codex Skills 目錄，或解壓 dist/release-reviewer-0.6.0.zip。CODEX_HOME 有設定時使用其 skills 子目錄，否則使用使用者的 .codex/skills。
 
 ~~~text
 $release-reviewer Repo=OrderService 基礎分支=origin/main 比較分支=origin/feature/payment
@@ -19,7 +19,7 @@ $release-reviewer Repo=C:\projects\OrderService 基礎分支=main 比較分支=f
 
 透過 GitlabWorkSpace 使用時，請同步更新包含本版原生 Skill 的離線套件；專案內另行安裝的技能也須更新。歷史報告保留。
 
-## 0.5.0 更新
+## 0.6.0 更新
 
 一次只審查指定 Repo/base/head。由同一 Skill Agent 採 Code Review 方法審查，延伸項目連回固定 Diff；執行時沿用所選模型。擷取先封存入口版本、關聯 Repo 目前已提交 HEAD 與適用指示，後續閱讀及驗證只使用 owned Git 快照。明確遠端分支依 remote 批次同步一次；本機分支與關聯 Repo 不連線。
 
@@ -118,7 +118,7 @@ python -X utf8 -B scripts/build_demo.py
 python -X utf8 -B scripts/package_release.py
 ~~~
 
-打包輸出 0.5.0 ZIP 與 SHA-256，ZIP 只有可安裝的 release-reviewer 目錄，不覆寫舊發行包。測試不需要第三方套件；CI 在 Linux／Windows 的 Python 3.10、3.14 執行測試與打包。
+打包輸出 0.6.0 ZIP 與 SHA-256，ZIP 只有可安裝的 release-reviewer 目錄，不覆寫舊發行包。測試不需要第三方套件；CI 在 Linux／Windows 的 Python 3.10、3.14 執行測試與打包。
 
 main 與手動驗證會保存完整矩陣證據及 Linux／Python 3.14 的正式 ZIP／SHA-256，附件保留十四天。推送版本 tag 時，只重用七天內且最終 commit、工作流程、依賴及矩陣識別相同的 main 證據；證據或附件缺漏就重跑完整矩陣。發布直接使用已驗證的附件，已有相同 tag／附件可重試，內容不同則停止；PR 與本機測試紀錄不能取代正式 CI 證據。
 
@@ -143,3 +143,5 @@ Git 與 owned-session 程式內附，無 MergeReviewer 執行期依賴；預設�
 技能發布命令增加 `--retain-on-validation-error`：可修正草稿錯誤以 exit 3 保留同次 context，修正後完整重驗；來源／搜尋完整性、Git、逾時及輸出失敗仍終止清理。成功路徑只驗證一次，舊呼叫的失敗清理行為不變；中止或放棄修稿須清理保留的 context。
 
 可重跑的效能比較與驗證界線見[效能驗證](docs/performance.md)。0.4.0 提供獨立 ZIP 與 SHA-256，並由 GitlabWorkSpace 0.24.4 整合正式附件；量測界線及歷史樣本保留於該文件。
+
+????????????????????[????](skills/release-reviewer/references/runtime-controls.md)?[????](docs/runtime-optimization.md)??????? ZIP ???????

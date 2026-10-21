@@ -97,6 +97,7 @@ def normalized_report(markdown, report, replacements, expected_context_sha256=No
     metadata.pop("static_body_sha256")
     metadata.pop("context_sha256")
     body = re.sub(r"(?m)^- (擷取時間|擷取開始|快照完成)（UTC）：.*$", r"- \1（UTC）：<capture-time>", body)
+    body = re.sub(r"(?m)^- 快照擷取：.*（UTC）。$", "- 快照擷取：<capture-time>（UTC）。", body)
     return normalize({"body": body, "metadata": metadata}, replacements)
 
 

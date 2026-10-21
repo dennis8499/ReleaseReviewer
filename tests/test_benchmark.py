@@ -18,7 +18,7 @@ SPEC.loader.exec_module(benchmark)
 
 class BenchmarkTests(unittest.TestCase):
     def test_report_normalization_checks_both_hashes_before_ignoring_run_fields(self):
-        body = "fixed evidence\n- 擷取時間（UTC）：now\n"
+        body = "fixed evidence\n- 擷取時間（UTC）：now\n- 快照擷取：now → later（UTC）。\n- 適用版本：fixed\n"
         metadata = {"generated_at": "now", "context_sha256": "context-hash", "head_sha": "commit",
                     "static_body_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest()}
         marker = base64.b64encode(json.dumps(metadata).encode("utf-8")).decode("ascii")
@@ -26,7 +26,8 @@ class BenchmarkTests(unittest.TestCase):
         report = SimpleNamespace(static_body=lambda content: content)
         result = benchmark.normalized_report(markdown, report, (), "context-hash")
         self.assertEqual(result["metadata"], {"head_sha": "commit"})
-        self.assertIn("<capture-time>", result["body"])
+        self.assertEqual(2, result["body"].count("<capture-time>"))
+        self.assertIn("- 適用版本：fixed", result["body"])
         with self.assertRaisesRegex(ValueError, "context hash"):
             benchmark.normalized_report(markdown, report, (), "wrong")
         with self.assertRaisesRegex(ValueError, "static body hash"):

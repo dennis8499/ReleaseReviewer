@@ -24,7 +24,7 @@ class ReportPerformanceTests(RepoTest):
                      if call.args[1][0] == "cat-file"]
             self.assertEqual(5, len(reads))
             self.assertEqual(len(reads), len(set(reads)))
-            self.assertEqual(5, snapshots.call_count)
+            self.assertEqual(6, snapshots.call_count)
             self.assertEqual(2, sum(call.args[0] == HEAD_FILES["src/service.py"].encode()
                                     for call in hashes.call_args_list))
             commands.reset_mock()
@@ -33,7 +33,7 @@ class ReportPerformanceTests(RepoTest):
             second = release_report.validate_result(draft, manifest, context)
             self.assertEqual(first, second)
             self.assertEqual(5, sum(call.args[1][0] == "cat-file" for call in commands.call_args_list))
-            self.assertEqual(5, snapshots.call_count)
+            self.assertEqual(6, snapshots.call_count)
             self.assertEqual(2, sum(call.args[0] == HEAD_FILES["src/service.py"].encode()
                                     for call in hashes.call_args_list))
 

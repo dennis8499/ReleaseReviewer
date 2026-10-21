@@ -74,6 +74,10 @@ class GroupTests(RepoTest):
         result = release_report.validate_result(draft, manifest, context)
         self.assertTrue(result["review_complete"])
         self.assertEqual(len(result["code_risks"]), 1)
+        supporting = next(item for item in result["code_risks"][0]["evidence"] if item["source"] == "supporting")
+        self.assertTrue(supporting["excerpt"])
+        self.assertTrue(all("excerpt" not in item for link in result["functional_chain"]
+                            for item in link["evidence"] if item["source"] == "supporting"))
         self.assertNotIn(refs["unrelated"]["repo"], {e["repo"] for e in result["code_risks"][0]["evidence"]})
         namespaces = {}
         for name in ("relay", "consumer"):

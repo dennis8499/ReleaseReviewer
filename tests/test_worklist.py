@@ -9,6 +9,7 @@ class WorklistTests(RepoTest):
         context, manifest = self.capture()
         worklist = json.loads((context / "review-worklist.json").read_text(encoding="utf-8"))
         draft = json.loads((context / "review-result-draft.json").read_text(encoding="utf-8"))
+        self.assertEqual("engineering-review/v2", draft["report_layout"])
         keys = [(r["repo"], r["source"], r["ref"], r["path"]) for r in worklist["requests"]]
         self.assertEqual(len(keys), len(set(keys)))
         self.assertIn(("entry", "base", manifest["base_sha"], "src/service.py"), keys)

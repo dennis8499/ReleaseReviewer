@@ -12,11 +12,11 @@ class PreviewAnalysisTests(RepoTest):
         draft["db_changes"] = [db_item(context, manifest)]
         with patch.object(release_report, "preview_analysis", wraps=release_report.preview_analysis) as analyse:
             first = release_report.validate_result(draft, manifest, context)
-            self.assertEqual(2, analyse.call_count)
+            self.assertEqual(3, analyse.call_count)
             first["coverage"][0]["evidence"][0]["path"] = "changed-by-consumer"
             analyse.reset_mock()
             second = release_report.validate_result(draft, manifest, context)
-            self.assertEqual(2, analyse.call_count)
+            self.assertEqual(3, analyse.call_count)
         self.assertNotEqual(first, second)
         self.assertNotIn("changed-by-consumer", str(second))
 
@@ -78,6 +78,30 @@ class PreviewAnalysisTests(RepoTest):
         first["configuration_keys"].append("consumer mutation")
         second = release_report.preview_snapshot(content, "config.json", 1, 1, analysis=analysis)
         self.assertEqual(["nested", "root"], second["configuration_keys"])
+
+    def test_all_source_problem_snapshots_share_sanitization_and_safe_fences(self):
+        write(self.repo, "src/credentials.py", 'PASSWORD = "HiddenHeadPassword"\n~~~\n\nreturn_value = 1\n')
+        write(self.repo, "src/config.json", '{"public_key": "HiddenConfigValue"}\n')
+        write(self.repo, "src/private.py", 'ordinary line\n-----BEGIN PRIVATE KEY-----\nHiddenPrivateValue\n')
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-m", "all-source safe excerpts")
+        context, manifest = self.capture()
+        proofs = [citation(manifest, "head", "src/credentials.py", 1, 4),
+                  citation(manifest, "head", "src/config.json", 1),
+                  citation(manifest, "head", "src/private.py", 1),
+                  citation(manifest, "base", "src/service.py", 1, 4)]
+        ordinary = release_report.validate_citations(proofs, manifest, context)
+        self.assertTrue(all("excerpt" not in item for item in ordinary))
+        problems = release_report.validate_citations(proofs, manifest, context, all_sources=True, require_ranges=True)
+        self.assertEqual("1: [含認證或連線設定的行已省略]", problems[0]["excerpt"][0])
+        self.assertIn("3: ", problems[0]["excerpt"])
+        self.assertTrue(problems[-1]["excerpt"])
+        rendered = "\n".join(release_report.citations(problems))
+        self.assertIn("~~~~text\n", rendered)
+        self.assertIn("2: ~~~\n3: \n4: return_value = 1", rendered)
+        for secret in ("HiddenHeadPassword", "HiddenConfigValue", "HiddenPrivateValue"):
+            self.assertNotIn(secret, rendered)
+        self.assertIn("public_key", rendered)
 
 
 if __name__ == "__main__":

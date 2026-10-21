@@ -172,6 +172,8 @@ def risk_item(manifest):
             "blocking_reason": "正式統計流程允許零數量，本次移除防護會使該必要流程中斷。",
             "trigger": "以數量 0 計算平均金額。",
             "impact": "原本回傳零的流程改成除以零例外。",
+            "expected": "數量為零時仍依既有契約回傳平均金額零。",
+            "actual": "count 為零時直接除法，產生 ZeroDivisionError 並中斷統計。",
             "recommendation": "開發恢復零數量的處理。",
             "scenario": "沒有訂單的統計期間仍需要顯示平均金額零，查詢卻失敗。",
             "technical_details": {"explanation": "移除 count == 0 防護後直接進行除法。",

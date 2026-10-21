@@ -60,9 +60,9 @@ JSON 請求與草稿用 UTF-8 檔案傳遞，讀檔明示 UTF-8。PowerShell 若
 
 完成 context 內 `ReleaseReviewDraft/v3` 的 `review-result-draft.json`，逐項對帳覆蓋、阻擋、功能鏈與新增依賴。骨架只預填身分與所需來源；逐項審查後才改 reviewed，七類依賴與 supporting Repo 也要對帳。只記錄非機密鍵名和邏輯識別；機密值、密碼、Token、金鑰與完整連線字串留在原來源。
 
-發佈前逐項核對以下完成條件，保留骨架的 `report_layout=engineering-review/v1`：
+發佈前逐項核對以下完成條件，保留骨架的 `report_layout=engineering-review/v2`：
 
-- 每項新寫的 `code_risks` 都有具體 `scenario`，以及 `technical_details.explanation`、`impact_scope`、`engineering_fix`；分別寫操作情境、程式原因、影響邊界與工程修正。參照[完整風險示例](references/review-rules.md#完整風險示例)。新審查以證據完成這些說明；「未提供」只用於讀取歷史草稿的相容呈現。
+- 每項新寫的 `code_risks` 都有依證據撰寫的 `expected`、`actual`、具體 `scenario`，以及 `technical_details.explanation`、`impact_scope`、`engineering_fix`；分別寫預期／實際結果、操作情境、程式原因、影響邊界與工程修正。參照[完整風險示例](references/review-rules.md#完整風險示例)；「未提供」只用於歷史草稿相容呈現。
 - 每項新增依賴及每條 `functional_chain` 都有 `diff_roots` 與 `diff_reason`，連回 manifest 的實際變更 ID 並說明因果關係。
 - 全部變更、七類依賴及候選 Repo 都有語意判斷或明確缺口；固定證據來源、行號及 baseline 搜尋紀錄完整。
 
@@ -70,7 +70,7 @@ JSON 請求與草稿用 UTF-8 檔案傳遞，讀檔明示 UTF-8。PowerShell 若
 python -X utf8 -B "<skill-dir>/scripts/release_report.py" --context-dir "<context_dir>" --result "<context_dir>/review-result-draft.json" --retain-on-validation-error
 ~~~
 
-只在入口 Repo 的 `review-reports/` 產生一份 `release-review-<UTC時間>-<base8>-<head8>.md`，重名續號並保留歷史。標題為 `上版檢查: {Repo}`，五節依序為「審查結論、問題總攬、問題詳情（工程師參考）、範圍與限制、技術審查紀錄（工程師參考）」。問題先說名稱、影響、操作情境與處理方式，再給技術觸發條件、原因、影響範圍、工程修正建議與固定證據；新草稿完整填 `scenario`、`technical_details`，舊草稿缺項明列「未提供」。新增部署依賴及 Checklist 放在範圍與限制，與程式阻擋分開。沒有獨立 Checklist 或 JSON 報告。發布器依[判斷與快照規則](references/review-rules.md#發佈結果與判讀)推導結論；缺口維持「檢查未完成」。
+只在入口 Repo 的 `review-reports/` 產生一份 `release-review-<UTC時間>-<base8>-<head8>.md`，重名續號並保留歷史。版面依[報告風格](references/report-style.md)：判斷與數量置頂，依序為「比較資訊、問題、範圍與限制、下一步、技術審查紀錄」；問題採六個粗體區塊，技術紀錄置底收合，新增部署依賴與 Checklist 保持展開。沒有獨立 Checklist 或 JSON 報告。發布器依[判斷與快照規則](references/review-rules.md#發佈結果與判讀)推導結論；缺口維持「檢查未完成」。
 
 Checklist 初始全為待確認。人工只編輯 `release-checklist:start`／`end` 區塊；確認須核對人、日期與開通／套用後證據，不適用須理由。固定正文／metadata 保留產生時判斷；版本變更重新審查並重設核對項。
 

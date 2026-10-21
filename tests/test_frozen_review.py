@@ -84,18 +84,27 @@ class FrozenReviewTests(RepoTest):
         risk = risk_item(manifest)
         risk.pop("scenario")
         risk.pop("technical_details")
+        risk.pop("expected")
+        risk.pop("actual")
         draft["code_risks"] = [risk]
         draft["config_changes"] = [config_item(context, manifest)]
         report = release_report.publish_report(context, save_draft(context, draft))
         body = report.read_text(encoding="utf-8")
-        self.assertTrue(body.startswith(f"# 上版檢查: {self.repo.name}\n"))
+        self.assertTrue(body.startswith("**存在已確認阻擋**｜靜態檢查完成。"))
         self.assertEqual([line for line in body.splitlines() if line.startswith("## ")], [
-            "## 審查結論", "## 問題總攬", "## 問題詳情（工程師參考）", "## 範圍與限制", "## 技術審查紀錄（工程師參考）"])
-        for label in ("問題名稱", "影響說明", "操作情境", "建議處理", "技術證據", "觸發條件", "證據說明", "影響範圍", "工程修正建議"):
-            self.assertIn(label, body)
-        self.assertIn("操作情境**：未提供", body)
+            "## 比較資訊", "## 問題", "## 範圍與限制", "## 下一步", "## 技術審查紀錄"])
+        problem = body.split("## 問題\n", 1)[1].split("## 範圍與限制", 1)[0]
+        self.assertEqual([line for line in problem.splitlines() if line.startswith("**")], [
+            "**問題描述**", "**重現原因**", "**預期結果**", "**實際結果**", "**證據**", "**建議改善方式**"])
+        self.assertIn("**預期結果**\n\n未提供", problem)
+        self.assertIn("**實際結果**\n\n未提供", problem)
         self.assertLess(body.index("## 範圍與限制"), body.index(release_report.CHECKLIST_START))
         self.assertLess(body.index(release_report.CHECKLIST_END), body.index("## 技術審查紀錄"))
+        self.assertLess(body.index("## 技術審查紀錄"), body.index("<details>"))
+        self.assertLess(body.index("**已執行檢查**"), body.index("<details>"))
+        self.assertEqual(1, body.count("<details>"))
+        self.assertIn("refs/heads/main", body)
+        self.assertIn("refs/heads/feature", body)
 
     def test_explicit_remote_branches_share_one_atomic_fetch(self):
         remote = self.root / "remote.git"
@@ -127,3 +136,59 @@ class FrozenReviewTests(RepoTest):
         report = release_report.publish_report(context, save_draft(context, draft), retain_on_validation_error=True)
         self.assertTrue(report.is_file())
         self.assertFalse(context.exists())
+
+    def test_v2_requires_authored_results_and_keeps_v1_compatible(self):
+        context, manifest = self.capture()
+        draft = draft_for(manifest)
+        draft["report_layout"] = "engineering-review/v2"
+        draft["code_risks"] = [risk_item(manifest)]
+        for field in ("expected", "actual"):
+            for bad in (None, "", " ", "未提供", "依程式推導，未實際重現。"):
+                changed = copy.deepcopy(draft)
+                if bad is None:
+                    changed["code_risks"][0].pop(field)
+                else:
+                    changed["code_risks"][0][field] = bad
+                with self.subTest(field=field, bad=bad), self.assertRaises(release_report.DraftValidationError):
+                    release_report.validate_result(changed, manifest, context)
+        draft["code_risks"][0].pop("expected")
+        draft["code_risks"][0].pop("actual")
+        draft["report_layout"] = "engineering-review/v1"
+        result = release_report.validate_result(draft, manifest, context)
+        self.assertEqual("ReleaseReviewReport/v3", result["schema"])
+        self.assertEqual("未提供", result["code_risks"][0]["expected"])
+        self.assertEqual("未提供", result["code_risks"][0]["actual"])
+
+    def test_v2_risk_ranges_do_not_change_other_evidence_requirements(self):
+        write(self.repo, "src/empty.py", "")
+        write(self.repo, "src/payload.bin", b"\0binary")
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-m", "metadata-only evidence")
+        context, manifest = self.capture()
+        draft = draft_for(manifest)
+        draft["report_layout"] = "engineering-review/v2"
+        binary = next(item for item in draft["coverage"] if item["path"] == "src/payload.bin")
+        binary.update(status="metadata-only", reason="二進位內容僅核對中繼資料。", evidence=[])
+        draft["code_risks"] = [risk_item(manifest)]
+        source = release_report.final_version(manifest)[0]
+        risk = draft["code_risks"][0]
+        risk["evidence"] += [citation(manifest, source, "src/settings.json", 1),
+                              citation(manifest, source, "src/empty.py"),
+                              citation(manifest, source, "src/payload.bin")]
+        result = release_report.validate_result(draft, manifest, context)
+        self.assertTrue(any("0 行" in item.get("snapshot_note", "") for item in result["code_risks"][0]["evidence"]))
+        self.assertTrue(any("二進位" in item.get("snapshot_note", "") for item in result["code_risks"][0]["evidence"]))
+        self.assertTrue(all("excerpt" not in item for item in result["code_risks"][0]["evidence"][2:]))
+        config = risk["evidence"][2]
+        config.pop("line_start")
+        config.pop("line_end")
+        with self.assertRaisesRegex(release_report.DraftValidationError, "line_start／line_end"):
+            release_report.validate_result(draft, manifest, context)
+        config.update(line_start=1, line_end=1)
+        risk["evidence"][0].pop("line_start")
+        risk["evidence"][0].pop("line_end")
+        with self.assertRaisesRegex(release_report.DraftValidationError, "line_start／line_end"):
+            release_report.validate_result(draft, manifest, context)
+        draft["report_layout"] = "engineering-review/v1"
+        legacy = release_report.validate_result(draft, manifest, context)
+        self.assertIn("未指定行號範圍", legacy["code_risks"][0]["evidence"][0]["snapshot_note"])

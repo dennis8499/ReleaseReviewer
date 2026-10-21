@@ -77,6 +77,7 @@ def main():
         else:
             raise AssertionError("missing-config fixture was not reproduced")
         draft = draft_for(manifest)
+        draft["report_layout"] = "engineering-review/v2"
         draft["summary"] = "發現兩項會讓流程失敗的程式風險；另有三項設定、三項 DB 及 FTP／SFTP／Redis／Kafka 新增依賴需人工核對。"
         first = risk_item(manifest)
         first["scenario_source"] = "reproduced"
@@ -85,6 +86,8 @@ def main():
             "blocking_reason": "本次新增的正式發票準備流程必然讀取不存在的必要鍵，流程無法完成。",
             "trigger": "發票準備流程讀取檔案內的必要逾時設定。",
             "impact": "設定檔沒有該鍵，讀取時發生例外，發票準備流程中斷。",
+            "expected": "發票準備流程可取得必要逾時設定，或依明確的預設行為完成。",
+            "actual": "billing_timeout 直接索引未定義的 billing_timeout_seconds，發生 KeyError。",
             "recommendation": "開發補齊必要設定，或依產品需求提供可用的預設行為。",
             "scenario": "使用者準備發票時，流程讀取未提供的逾時設定而中止。",
             "technical_details": {"explanation": "billing_timeout 直接索引缺少的必要鍵而產生 KeyError。",
@@ -155,8 +158,9 @@ def main():
         generated = release_report.publish_report(context, save_draft(context, draft))
         md = destination / generated.name
         shutil.copyfile(generated, md)
+        version = (ROOT / "skills/release-reviewer/VERSION").read_text(encoding="utf-8").strip()
         (destination / "README.md").write_text(
-            "# ReleaseReviewer 0.5.0 示範\n\n" + f"[Release Report（含 Checklist）]({md.name})。\n\n" +
+            f"# ReleaseReviewer {version} 示範\n\n" + f"[Release Report（含 Checklist）]({md.name})。\n\n" +
             "本案例保留 base／head 原始來源，重現兩項程式失敗，並列出設定、DB、FTP、SFTP、Redis、Kafka 的核對事項。\n" +
             "報告原先產生於 fixture Repo/review-reports，再複製至此供閱讀；環境未連線查證，所有 Checklist 初始待確認。舊版 v1／v2 示範保留。\n", encoding="utf-8")
         print(json.dumps({"report": str(md), "code_risks": 2,

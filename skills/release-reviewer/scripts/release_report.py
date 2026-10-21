@@ -57,7 +57,8 @@ def strings(value, label):
     return value
 
 
-def validate_citations(items, manifest, context, *, snapshots=None, analyses=None):
+def validate_citations(items, manifest, context, *, snapshots=None, analyses=None, all_sources=False,
+                       require_ranges=False):
     draft_require(isinstance(items, list), "evidence 必須是陣列。")
     snapshots = {} if snapshots is None else snapshots
     analyses = {} if analyses is None else analyses
@@ -103,10 +104,13 @@ def validate_citations(items, manifest, context, *, snapshots=None, analyses=Non
                        "證據行號必須為有效的正整數區間。")
             draft_require(not metadata["binary"], "二進位證據不能引用文字行號。")
             draft_require(end <= metadata["line_count"], f"證據行號超出固定檔案：{path}")
+        if require_ranges and not metadata["binary"] and metadata["line_count"]:
+            draft_require(start is not None and end is not None,
+                          "新草稿的非空文字問題證據須指定 line_start／line_end。")
         citation = {"repo": repo, "source": source, "ref": ref, "path": path,
                     "content_sha256": metadata["content_sha256"],
                     **({"line_start": start, "line_end": end} if start is not None else {})}
-        if source == "merge-preview" and not metadata["binary"]:
+        if (source == "merge-preview" or all_sources) and not metadata["binary"]:
             key = (repo, source, ref, path, start, end)
             if key not in snapshots:
                 analysis_key = (metadata["content_sha256"], preview_classification(path))
@@ -114,6 +118,14 @@ def validate_citations(items, manifest, context, *, snapshots=None, analyses=Non
                     analyses[analysis_key] = preview_analysis(content, path)
                 snapshots[key] = preview_snapshot(content, path, start, end, analysis=analyses[analysis_key])
             citation.update(snapshots[key])
+            if all_sources and "excerpt" not in citation and "snapshot_note" not in citation:
+                if not metadata["line_count"]:
+                    citation["snapshot_note"] = "固定檔案為空檔（0 行），未擷取程式片段。"
+                else:
+                    draft_require(not require_ranges, "新草稿的非空文字問題證據須指定 line_start／line_end。")
+                    citation["snapshot_note"] = "未指定行號範圍，未擷取程式片段。"
+        elif all_sources and metadata["binary"]:
+            citation["snapshot_note"] = "二進位檔案，僅保留中繼資料及內容 SHA-256。"
         cleaned.append(citation)
     return cleaned
 
@@ -156,7 +168,7 @@ def preview_analysis(content, path):
 
 
 def preview_snapshot(content, path, start, end, *, analysis=None):
-    """Keep cited final code after owned objects are cleaned; omit configuration values."""
+    """Keep cited code after owned objects are cleaned; omit configuration values."""
     analysis = preview_analysis(content, path) if analysis is None else analysis
     if analysis["kind"] == "private":
         return {"snapshot_note": "認證／私鑰內容已省略，保留原始內容 SHA-256。"}
@@ -194,14 +206,15 @@ def _validate_result(draft, manifest, context):
     snapshots = {}
     analyses = {}
 
-    def cached_citations(items, manifest, context):
-        return validate_citations(items, manifest, context, snapshots=snapshots, analyses=analyses)
+    def cached_citations(items, manifest, context, *, all_sources=False, require_ranges=False):
+        return validate_citations(items, manifest, context, snapshots=snapshots, analyses=analyses,
+                                  all_sources=all_sources, require_ranges=require_ranges)
 
     draft_require(isinstance(draft, dict) and draft.get("schema") == "ReleaseReviewDraft/v3",
                "結果須使用 ReleaseReviewDraft/v3。")
     draft_require(not draft.get("checklist"), "初始 Checklist 由 helper 產生，不能預填已確認。")
     layout = draft.get("report_layout")
-    draft_require(layout in (None, "engineering-review/v1"), "不支援的 report_layout。")
+    draft_require(layout in (None, "engineering-review/v1", "engineering-review/v2"), "不支援的 report_layout。")
     result = {"schema": "ReleaseReviewReport/v3", "summary": text(draft.get("summary"), "summary")}
     for field in ("coverage", "code_risks", "config_changes", "db_changes", "external_changes", "dependency_coverage"):
         draft_require(isinstance(draft.get(field), list), f"{field} 必須是陣列。")
@@ -262,14 +275,23 @@ def _validate_result(draft, manifest, context):
         draft_require(isinstance(technical, dict), "technical_details 必須為物件。")
         risk["technical_details"] = {key: text(technical.get(key, "未提供"), f"technical_details.{key}")
                                      for key in ("explanation", "impact_scope", "engineering_fix")}
-        if layout == "engineering-review/v1":
+        for key in ("expected", "actual"):
+            risk[key] = text(item.get(key, "未提供"), key)
+        if layout in ("engineering-review/v1", "engineering-review/v2"):
             draft_require("scenario" in item and risk["scenario"] != "未提供" and
                           all(key in technical and value != "未提供" for key, value in risk["technical_details"].items()),
                           "新草稿須完整填 scenario 與 technical_details.explanation／impact_scope／engineering_fix；未提供僅供舊草稿相容。")
+        if layout == "engineering-review/v2":
+            draft_require(all(key in item and risk[key] != "未提供" for key in ("expected", "actual")),
+                          "新草稿須完整填 expected／actual；未提供僅供舊草稿相容。")
+            prose = [risk[key] for key in ("blocking_reason", "trigger", "impact", "recommendation", "scenario", "expected", "actual")]
+            draft_require(all(risk_prose(value) for value in prose + list(risk["technical_details"].values())),
+                          "新草稿的問題說明須含實質內容，不能只有未重現標記。")
         draft_require(risk["scenario_source"] in {"code-derived", "reproduced"}, "情境來源無效。")
         draft_require(risk["scenario_source"] != "reproduced" or bool(result["tests_executed"]),
                    "標示已重現時須記錄實際執行的檢查。")
-        risk["evidence"] = cached_citations(item.get("evidence", []), manifest, context)
+        risk["evidence"] = cached_citations(item.get("evidence", []), manifest, context, all_sources=True,
+                                            require_ranges=layout == "engineering-review/v2")
         draft_require(any(e["repo"] == "entry" and e["path"] in reviewed for e in risk["evidence"]),
                    "程式風險至少須引用一個已審查的變更路徑。")
         draft_require(any(e["repo"] == "entry" and (e["source"], e["ref"]) == final_pair for e in risk["evidence"]),
@@ -366,7 +388,7 @@ def _validate_result(draft, manifest, context):
     if complete and not expected:
         result["status"] = "沒有差異"
     result["identity"] = {key: manifest.get(key) for key in
-                          ("project", "repo", "base_input", "head_input", "base_sha", "head_sha",
+                          ("project", "repo", "base_input", "head_input", "base_resolved_ref", "head_resolved_ref", "base_sha", "head_sha",
                            "merge_base", "diff_base", "mode", "generated_at", "working_tree_unchanged", "report_root")}
     result["identity"].update({"final_source": final_pair[0], "final_ref": final_pair[1]})
     catalog = [{key: value for key, value in record.items() if key != "snapshot"}
@@ -414,23 +436,48 @@ def cell(value):
     return str(value).replace("|", r"\|").replace("\r", " ").replace("\n", " ")
 
 
-def citations(items):
+def code_span(value):
+    value = str(value).replace("\r", " ").replace("\n", " ")
+    longest = max((len(match.group()) for match in re.finditer(r"`+", value)), default=0)
+    fence = "`" * (longest + 1)
+    padding = " " if value.startswith("`") or value.endswith("`") else ""
+    return fence + padding + value + padding + fence
+
+
+def risk_prose(value):
+    """The renderer owns the single canonical inference note for each finding."""
+    return value.replace("依程式推導，未實際重現。", "").strip()
+
+
+def paragraphs(*values):
+    lines, seen = [], set()
+    for item in values:
+        label, value = item if isinstance(item, tuple) else (None, item)
+        for paragraph in re.split(r"\n\s*\n", risk_prose(value)):
+            paragraph = paragraph.strip()
+            if paragraph and paragraph not in seen:
+                seen.add(paragraph)
+                lines += [f"{label}：{paragraph}" if label else paragraph, ""]
+    return lines
+
+
+def citations(items, repo_names=None):
     lines = []
     for item in items:
-        location = item["repo"] + "/" + item["path"]
+        location = (repo_names or {}).get(item["repo"], item["repo"]) + "/" + item["path"]
         if "line_start" in item:
             location += f":{item['line_start']}-{item['line_end']}"
-        lines.append(f"- {location}；來源 {item['source']}；版本 {item['ref']}")
+        lines += [f"{code_span(location)}（來源：{code_span(item['source'])}；固定版本：{code_span(item['ref'])}）", ""]
         if item.get("content_sha256"):
-            lines.append(f"  內容 SHA-256：{item['content_sha256']}")
+            lines += [f"內容 SHA-256：{code_span(item['content_sha256'])}", ""]
         if item.get("excerpt"):
             longest = max((len(m.group()) for line in item["excerpt"] for m in re.finditer(r"~+", line)), default=0)
             fence = "~" * max(3, longest + 1)
-            lines += ["", fence + "text", *item["excerpt"], fence, ""]
+            lines += [fence + "text", *item["excerpt"], fence, ""]
         if "configuration_keys" in item:
-            lines.append("  設定鍵：" + ("、".join(item["configuration_keys"]) or "未取得可解析鍵名"))
+            lines += ["設定鍵：" + ("、".join(item["configuration_keys"]) or "未取得可解析鍵名"), ""]
         if item.get("snapshot_note"):
-            lines.append("  " + item["snapshot_note"])
+            lines += [item["snapshot_note"], ""]
     return lines
 
 
@@ -483,49 +530,48 @@ def render_checklist(result):
 
 def render_markdown(result):
     identity = result["identity"]
-    lines = [f"# 上版檢查: {identity['project']}", "", "## 審查結論", "",
-             f"**產生時上版判斷：{ASSESSMENTS[result['release_assessment']]}**", "",
-             result["summary"], "",
-             f"阻擋 {result['blocker_count']} 項｜待確認 {result['pending_count']} 項｜檢查缺口 {result['gap_count']} 項。",
-             f"靜態範圍：{result['status']}。判斷固定於產生時；人工填寫 Checklist 不會自動核准上版。",
-             "", "## 問題總攬", "",
-             "| 問題 | 等級 | 影響 | 建議處理 |", "| --- | --- | --- | --- |"]
-    if result["merge_status"] == "conflicts":
-        lines.append("| [M-001 合併衝突](#M-001) | 阻擋 | 無法產生乾淨上版版本 | 解決衝突後重新審查 |")
-    for risk in result["code_risks"]:
-        lines.append(f"| [{cell(risk['id'] + ' ' + risk['title'])}](#{risk['id']}) | {risk['priority']} | {cell(risk['impact'])} | {cell(risk['recommendation'])} |")
-    if not result["blocker_count"]:
-        lines.append("| — | — | 已檢查範圍未發現有證據的直接阻擋 | 核對下方範圍、限制與上版前置條件 |")
-    lines += ["", "新增部署依賴是待人工核對的上版前置條件，見「範圍與限制」。", "",
-              "## 問題詳情（工程師參考）", ""]
+    repo_names = {repo["id"]: repo["name"] for repo in identity["repositories"]}
+    counts = {priority: sum(risk["priority"] == priority for risk in result["code_risks"])
+              for priority in PRIORITIES}
+    lines = [f"**{ASSESSMENTS[result['release_assessment']]}**｜{result['status']}。{result['summary']}", "",
+             f"問題數量：P0 {counts['P0']}／P1 {counts['P1']}（僅列直接阻擋上版的程式風險）。", "",
+             f"阻擋 {result['blocker_count']} 項｜合併衝突 {int(result['merge_status'] == 'conflicts')} 項｜待確認 {result['pending_count']} 項｜檢查缺口 {result['gap_count']} 項。",
+             "判斷固定於產生時；人工填寫 Checklist 不會自動核准上版。",
+             "", "## 比較資訊", "",
+             f"- Repo：{code_span(identity['project'])}",
+             f"- 本機路徑：{code_span(identity['repo'])}", "",
+             "| 角色 | 輸入分支 | 實際 ref | Commit（前 8 碼） |", "| --- | --- | --- | --- |"]
+    for role, prefix in (("基礎分支", "base"), ("比較分支", "head")):
+        lines.append(f"| {role} | {cell(code_span(identity[prefix + '_input']))} | "
+                     f"{cell(code_span(identity.get(prefix + '_resolved_ref') or '未提供'))} | "
+                     f"{code_span(identity[prefix + '_sha'][:8])} |")
+    diff_base = identity.get("diff_base") or identity.get("merge_base")
+    lines += ["", f"- 合併方向：{code_span(identity['head_input'])} → {code_span(identity['base_input'])}",
+              f"- 主要差異範圍（共同祖先 → 比較分支）：{code_span(diff_base[:8] if diff_base else '未取得')} → {code_span(identity['head_sha'][:8])}",
+              f"- 最終受審版本：{code_span(identity['final_source'])}；{code_span(identity['final_ref'])}",
+              f"- 快照擷取：{identity.get('generated_at')} → {identity.get('capture_completed_at')}（UTC）。",
+              "- 適用版本：本報告僅適用上述固定 SHA 及本次擷取的相關 Repo；後續分支更新不改變本次結論。", "",
+              "## 問題", ""]
     if result["merge_status"] == "conflicts":
         lines += ['<a id="M-001"></a>', "", "### M-001｜合併衝突", "",
-                  "**問題名稱**：合併衝突", "",
-                  "**影響說明**：本次分支無法直接整合為乾淨的上版版本。", "",
-                  "**操作情境**：將比較分支合入基礎分支時，Git 要求人工處理衝突。", "",
-                  "**建議處理**：解決衝突並提交後，重新執行審查。", "",
-                  "**技術證據**：", "",
-                  "- 觸發條件：對本次固定 base/head 執行 merge-tree。",
-                  "- 證據說明：Git 回報衝突，無法取得乾淨的最終合併內容。",
-                  "- 影響範圍：本次受審分支的合併與上版版本。",
-                  "- 工程修正建議：逐一處理固定版本紀錄中的衝突，建立新提交後重新擷取。", "",
-                  "Git 原始結果與固定 SHA 見技術審查紀錄。", ""]
+                  "**問題描述**", "", "本次分支無法直接整合為乾淨的上版版本。", "",
+                  "**重現原因**", "", "對本次固定 base/head 執行 merge-tree 時，Git 要求人工處理衝突。", "",
+                  "**預期結果**", "", "指定分支可整合為乾淨、可審查的上版版本。", "",
+                  "**實際結果**", "", "Git 回報衝突，無法取得乾淨的最終合併內容。", "",
+                  "**證據**", "", "Git 原始結果與固定 SHA 見技術審查紀錄。", "",
+                  "**建議改善方式**", "", "逐一解決固定版本紀錄中的衝突，提交後重新擷取與審查。", ""]
     for risk in result["code_risks"]:
         technical = risk["technical_details"]
-        lines += [f'<a id="{risk["id"]}"></a>', "", f"### {risk['id']}｜{risk['priority']}｜{risk['title']}", "",
-                  f"**問題名稱**：{risk['title']}", "",
-                  f"**影響說明**：{risk['impact']}", "",
-                  f"**操作情境**：{risk['scenario']}", "",
-                  f"**建議處理**：{risk['recommendation']}", "",
-                  "**技術證據**：", "",
-                  f"- 觸發條件：{risk['trigger']}",
-                  f"- 證據說明：{technical['explanation']}",
-                  f"- 影響範圍：{technical['impact_scope']}",
-                  f"- 工程修正建議：{technical['engineering_fix']}", "",
-                  f"**上版阻擋依據**：{risk['blocking_reason']}", "",
-                  *citations(risk["evidence"]),
-                  "**情境**：" + ("程式推導，未實際執行。" if risk["scenario_source"] == "code-derived"
-                                else "已實際重現，執行紀錄見後文。"), ""]
+        lines += [f'<a id="{risk["id"]}"></a>', "", f"### {risk['id']}｜[{risk['priority']}] {risk['title']}", "",
+                  "**問題描述**", "", *paragraphs(risk["impact"], ("影響範圍", technical["impact_scope"]),
+                                                       ("上版阻擋依據", risk["blocking_reason"])),
+                  "**重現原因**", "", *paragraphs(risk["scenario"], ("觸發條件", risk["trigger"])),
+                  ("依程式推導，未實際重現。" if risk["scenario_source"] == "code-derived"
+                   else "已實際重現，執行紀錄見技術審查紀錄。"), "",
+                  "**預期結果**", "", risk_prose(risk["expected"]), "",
+                  "**實際結果**", "", risk_prose(risk["actual"]), "",
+                  "**證據**", "", *paragraphs(technical["explanation"]), *citations(risk["evidence"], repo_names),
+                  "**建議改善方式**", "", *paragraphs(risk["recommendation"], technical["engineering_fix"])]
     if not result["blocker_count"]:
         lines += ["已檢查範圍未發現有證據的直接阻擋；待確認條件與缺口見後文。", ""]
     lines += ["## 範圍與限制", "",
@@ -535,8 +581,9 @@ def render_markdown(result):
     lines += [f"- {limit}" for limit in result["limitations"]]
     if not result["review_gaps"] and not result["limitations"]:
         lines += ["本次沒有另外列出的靜態缺口或限制。"]
-    if result["next_steps"]:
-        lines += ["", "**後續處理**：", "", *[f"- {step}" for step in result["next_steps"]]]
+    for title, values in (("已執行檢查", result["tests_executed"]),
+                          ("未執行檢查", result["tests_not_executed"])):
+        lines += ["", f"**{title}**", "", *([f"- {value}" for value in values] or ["- 無紀錄。"])]
     lines += ["", "### 新增部署依賴與人工核對", ""]
     dependencies = result["config_changes"] + result["db_changes"] + result["external_changes"]
     for dependency in dependencies:
@@ -554,7 +601,9 @@ def render_markdown(result):
               "僅有申請工單仍為待確認，不適用需具體理由。必要項目待確認或未通過時，上版準備未完成。",
               "本段核對紀錄可人工更新；固定正文與產生時判斷保留原始快照。", "",
                render_checklist(result), ""]
-    lines += ["", "## 技術審查紀錄（工程師參考）", "", "<details>",
+    lines += ["## 下一步", "",
+              *([f"- {step}" for step in result["next_steps"]] or ["本次沒有另外列出的下一步。"]), "",
+              "## 技術審查紀錄", "", "<details>",
               "<summary>固定版本、搜尋、功能鏈與覆蓋紀錄</summary>", ""]
     for label, key in (("Repo", "repo"), ("報告目錄", "report_root"),
                        ("基礎分支", "base_input"), ("比較分支", "head_input"),
@@ -576,9 +625,9 @@ def render_markdown(result):
         lines += [f"### {dependency['id']} 新增判定與證據", "",
                   f"新增類型：{dependency['introduction']}；{dependency['baseline_reason']}", "",
                   f"Diff 起點：{'、'.join(dependency['diff_roots'])}；{dependency['diff_reason']}", "",
-                  *citations(dependency["evidence"]), ""]
+                  *citations(dependency["evidence"], repo_names)]
         if dependency.get("definition_evidence"):
-            lines += ["設定定義：", "", *citations(dependency["definition_evidence"]), ""]
+            lines += ["設定定義：", "", *citations(dependency["definition_evidence"], repo_names)]
         for identifier in dependency["baseline_searches"]:
             record = records[identifier]
             lines.append(f"- 基礎全 Repo 搜尋：命中 {record['match_count']}；紀錄 {identifier}")
@@ -589,11 +638,11 @@ def render_markdown(result):
         lines.append(f"| {cell(repo['id'] + ' / ' + repo['name'])} | {cell(repo.get('branch') or ('detached HEAD' if repo['role'] == 'supporting' else '入口指定分支'))} | {repo.get('ref') or '見入口版本／未取得'} | {repo['status']} |")
     for coverage in result["supporting_coverage"]:
         lines += ["", f"**{coverage['repo']}：{coverage['status']}**；{coverage['reason']}", "",
-                  *citations(coverage["evidence"])]
+                  *citations(coverage["evidence"], repo_names)]
     for link in result["functional_chain"]:
         lines += ["", f"**{link['id']}｜{link['from_repo']} → {link['to_repo']}｜{link['kind']}**",
                   f"{link['status']}：{link['description']}",
-                  f"Diff 起點：{'、'.join(link['diff_roots'])}；{link['diff_reason']}", "", *citations(link["evidence"])]
+                  f"Diff 起點：{'、'.join(link['diff_roots'])}；{link['diff_reason']}", "", *citations(link["evidence"], repo_names)]
         if link.get("reason"):
             lines += ["", link["reason"]]
     for record in result["supporting_searches"]:
@@ -608,11 +657,9 @@ def render_markdown(result):
                   *[f"- {row['id']}：{row['status']}；{row['reason']}" for row in result["merge_parent_review"]]]
     lines += ["", "**依賴類型覆蓋**：", "",
               *[f"- {c['kind']}：{c['status']}；{c['reason']}" for c in result["dependency_coverage"]]]
-    for title, values in (("已執行檢查", result["tests_executed"]),
-                          ("未執行檢查", result["tests_not_executed"])):
-        lines += ["", f"**{title}**：", "", *([f"- {v}" for v in values] or ["- 無紀錄。"])]
     lines += ["", "</details>", ""]
-    return "\n".join(lines)
+    return "\n".join(line for index, line in enumerate(lines)
+                     if line or not index or lines[index - 1])
 
 
 def publish_report(context, draft_path, *, retain_on_validation_error=False):

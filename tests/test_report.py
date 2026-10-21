@@ -51,6 +51,38 @@ class ReportTests(RepoTest):
         self.assertEqual([md], list((self.repo / "review-reports").glob("release-review-*.md")))
         self.assertEqual(list(md.parent.glob("*.json")), [])
 
+    def test_reference_layout_keeps_authored_results_and_deduplicates_merged_prose(self):
+        context, manifest, draft = self.valid_draft()
+        draft["report_layout"] = "engineering-review/v2"
+        draft["next_steps"] = []
+        draft["tests_executed"] = ["執行固定案例檢查並通過。"]
+        risk = draft["code_risks"][0]
+        note = "依程式推導，未實際重現。"
+        risk["scenario"] = risk["trigger"] + "\n\n" + note
+        risk["technical_details"]["explanation"] += note
+        risk["technical_details"]["impact_scope"] = risk["impact"] + "\n\n零數量統計呼叫。"
+        risk["recommendation"] = "恢復零數量處理。\n\n補回傳值驗證。"
+        risk["technical_details"]["engineering_fix"] = "恢復零數量處理。\n\n保留既有函式契約。"
+        result = release_report.validate_result(draft, manifest, context)
+        body = release_report.render_markdown(result)
+        problem = body.split("## 問題\n", 1)[1].split("## 範圍與限制", 1)[0]
+        self.assertEqual(1, problem.count(note))
+        for repeated in (risk["trigger"], risk["impact"], "恢復零數量處理。"):
+            self.assertEqual(1, problem.count(repeated))
+        for unique in ("影響範圍：零數量統計呼叫。", "補回傳值驗證。", "保留既有函式契約。", risk["expected"], risk["actual"]):
+            self.assertIn(unique, problem)
+        self.assertLess(problem.index("**證據**"), problem.index("移除 count == 0 防護"))
+        self.assertIn(f"`{self.repo.name}/src/service.py:7-8`", problem)
+        self.assertNotIn("entry/src/service.py", problem)
+        self.assertIn("1: def average(total, count):", problem)
+        self.assertIn("8:     return total / count", problem)
+        self.assertIn("問題數量：P0 0／P1 1", body)
+        self.assertIn("合併衝突 0 項", body)
+        self.assertIn("## 下一步\n\n本次沒有另外列出的下一步。", body)
+        self.assertLess(body.index(draft["tests_executed"][0]), body.index("<details>"))
+        self.assertLess(body.index(draft["tests_not_executed"][0]), body.index("<details>"))
+        self.assertNotIn("\n\n\n", body)
+
     def test_missing_coverage_rejected_and_session_cleaned(self):
         context, manifest, draft = self.valid_draft()
         draft["coverage"] = draft["coverage"][:1]

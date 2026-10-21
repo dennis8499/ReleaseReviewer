@@ -23,7 +23,7 @@ $release-reviewer Repo=C:\projects\OrderService 基礎分支=main 比較分支=f
 
 一次只審查指定 Repo/base/head。由同一 Skill Agent 採 Code Review 方法審查，延伸項目連回固定 Diff；執行時沿用所選模型。擷取先封存入口版本、關聯 Repo 目前已提交 HEAD 與適用指示，後續閱讀及驗證只使用 owned Git 快照。明確遠端分支依 remote 批次同步一次；本機分支與關聯 Repo 不連線。
 
-報告改放受審 Repo/review-reports，標題為「上版檢查: Repo」，五節依序為審查結論、問題總攬、問題詳情（工程師參考）、範圍與限制、技術審查紀錄（工程師參考）。Checklist 保留在範圍與限制中。舊草稿新增說明欄位缺值時標「未提供」。GPT-6 Luna MAX 僅用於獨立驗收，不是技能執行預設。
+報告放在受審 Repo/review-reports，判斷與問題數量置頂，五節依序為比較資訊、問題、範圍與限制、下一步、技術審查紀錄。問題採六個粗體區塊，末尾技術紀錄收合，範圍與限制中的部署依賴及 Checklist 保持展開。新草稿使用 engineering-review/v2，完整填 expected／actual；歷史草稿缺值時標「未提供」。GPT-6 Luna MAX 僅用於獨立驗收，不是技能執行預設。
 
 正式發版使用 GitHub JSON media type 下載 Actions 附件，Release 二進位附件仍使用 octet-stream，避免完整 CI 已通過卻無法發布安裝包。
 
@@ -95,7 +95,7 @@ Multi-root：先儲存 .code-workspace，再使用相同三項輸入。工作區
 - 未儲存 multi-root 或根目錄不明：先釐清，不推測位置。
 - 每次只產生 release-review-<UTC時間>-<base8>-<head8>.md；重名續號，保留歷史與人工紀錄。
 
-進度、問答及文件共用[報告風格](skills/release-reviewer/references/report-style.md)：首句給結果，保留必要證據、缺口及錯誤資訊。固定報告章節先呈現結論與問題，再交代範圍、依賴 Checklist 及工程技術紀錄。
+進度、問答及文件共用[報告風格](skills/release-reviewer/references/report-style.md)：首句給判斷、靜態檢查狀態及摘要，接問題數量；比較資訊表列輸入分支、實際 ref 及短 SHA，問題依序使用「問題描述、重現原因、預期結果、實際結果、證據、建議改善方式」。範圍、已執行／未執行檢查及依賴 Checklist 展開顯示，下一步獨立成節，完整技術審查紀錄於末尾收合。
 
 | 產生時判斷 | 條件 |
 | --- | --- |
@@ -106,7 +106,7 @@ Multi-root：先儲存 .code-workspace，再使用相同三項輸入。工作區
 
 Checklist 包含設定、DB、FTP、SFTP、Redis、Kafka 與其他資源的防火牆、權限、建立／套用及相容性核對。初始全部待確認；已確認需核對人、日期及開通／套用後證據，不適用需理由，僅有申請工單不算完成。只在 release-checklist:start／end 邊界內填寫紀錄，固定正文摘要及產生時判斷保持不變；新版本重新核對。
 
-預設靜態檢查，不連 GitLab API、DB 或實際環境；靜態完成不等於部署核准。語意由執行技能的 agent 審查，helpers 驗證固定來源、證據、覆蓋與核對結構。報告保留有引用行號的最終預覽非機密程式片段及內容摘要，暫存物件清理後仍可閱讀；設定值與認證內容省略。
+預設靜態檢查，不連 GitLab API、DB 或實際環境；靜態完成不等於部署核准。語意由執行技能的 agent 審查，helpers 驗證固定來源、證據、覆蓋與核對結構。問題證據保留各固定來源有引用行號的安全程式片段及內容摘要，暫存物件清理後仍可閱讀；設定值與認證內容省略。v2 的非空文字問題證據（含設定／私鑰）必須指定行號；只有二進位及空檔可無行號。歷史草稿的一般文字證據無行號時顯示未擷取說明。
 
 參考 [v3 單檔示範](docs/demo/v3/README.md)、[0.3.0 驗證](docs/verification-v3.md)；[歷史 v2](docs/demo/v2/README.md)與 v1 報告保留。
 

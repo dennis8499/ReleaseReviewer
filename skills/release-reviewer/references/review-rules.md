@@ -119,14 +119,15 @@ merge-preview 的文字證據由 helper 保存引用行的非機密片段與原�
 
 ### code_risks 項目
 
-新草稿保留骨架的 `report_layout=engineering-review/v1`。每項風險必要欄位為 id、priority、title、blocking_reason、trigger、impact、recommendation、scenario_source、evidence、scenario、technical_details；缺少面向讀者或工程師的說明須先完成，驗證器不讓新草稿用「未提供」發布。
+新草稿保留骨架的 `report_layout=engineering-review/v2`。每項風險必要欄位為 id、priority、title、blocking_reason、trigger、impact、expected、actual、recommendation、scenario_source、evidence、scenario、technical_details；缺少面向讀者或工程師的說明須先完成，驗證器不讓新草稿用「未提供」發布。
 
-`scenario` 用讀者能理解的操作情境說明影響；`technical_details` 的 `explanation`、`impact_scope`、`engineering_fix` 分別說明程式原因、確切影響邊界與工程修正建議。`trigger` 是技術觸發條件，`impact`、`recommendation` 是面向讀者的影響與建議。只有沒有 report_layout 的歷史 v3 草稿，缺少新增欄位時才相容呈現「未提供」。
+`expected`、`actual` 由審查者依證據分別撰寫預期行為與固定版本的實際行為；靜態推導仍標未重現。`scenario` 是操作情境，`trigger` 是技術觸發條件；`technical_details` 的 `explanation`、`impact_scope`、`engineering_fix` 分別說明程式原因、確切影響邊界與工程修正。`impact`、`recommendation` 是面向讀者的影響與建議。歷史 v1／無 layout 的 v3 草稿仍可讀取，缺少 expected／actual 時顯示「未提供」；v1 仍要求原有 scenario／technical_details 完整。
 
 - 編號從 R-001 連續排列，依 P0、P1 排序。
 - trigger 描述能實際觸發問題的輸入或操作；impact 描述使用者、資料或服務受到的影響。
 - scenario_source 為 code-derived 或 reproduced；後者必須在 tests_executed 記錄實際執行及結果。
 - evidence 為上述固定證據陣列，不可只引用舊版而未確認最終行為。
+- v2 問題證據的非空文字檔須附 line_start／line_end（含設定／私鑰），保留所有來源的安全程式片段；設定／私鑰內容仍依原有規則省略。只有二進位及空檔可無行號並保留明確說明。歷史未指定行號的一般文字證據標「未指定行號範圍，未擷取程式片段」。此要求不套用至覆蓋或依賴證據。
 - 跨 Repo 風險仍須引用入口 Repo 的已審查變更及最終版本；關聯證據補充影響，不可將無關 Repo 的既有問題列為本次風險。
 
 ### 完整風險示例
@@ -138,6 +139,8 @@ merge-preview 的文字證據由 helper 保存引用行的非機密片段與原�
   "id":"R-001", "priority":"P1", "title":"新匯出流程可讀取其他租戶的資料",
   "blocking_reason":"正式匯出端點可能跨租戶洩漏客戶資料，上版前必須修正。",
   "impact":"使用者可能取得不屬於自己公司的匯出內容。",
+  "expected":"下載端點只交付登入租戶擁有的工作，拒絕其他租戶的工作編號。",
+  "actual":"端點只依 job_id 取回檔案，未比對 tenant_id，可能交付其他公司的內容。",
   "scenario":"A 公司員工以另一份匯出工作的編號下載檔案，系統卻交付 B 公司的內容。",
   "recommendation":"先修正下載的租戶權限核對，再開放新匯出功能。",
   "trigger":"已登入使用者呼叫新下載端點，job_id 指向另一個 tenant 的工作。",
@@ -192,6 +195,6 @@ review_complete 只代表此靜態範圍的覆蓋完整。context／功能鏈缺
 
 report 的 release_assessment 由 helper 推導，優先序為 blocked（有直接程式阻擋或 Git 合併衝突）、incomplete（靜態缺口）、pending-confirmation（有必要待核對項）、no-blockers-found。另保存 blocker_count、pending_count、gap_count 與 review_gaps。草稿不指定判斷或預填人工確認。
 
-報告含 release-review-report 中繼資料及 static_body_sha256，摘要排除唯一的 <!-- release-checklist:start --> 至 <!-- release-checklist:end --> 人工區塊（含邊界），仍涵蓋全部固定正文。只有此區塊可填寫，其他修改視為快照改變。v3 沒有 checklist_file／checklist_filename／body_sha256。版面依 report-style 的固定章節；依賴與 Checklist 放範圍與限制，版本、搜尋、鏈路與覆蓋紀錄放技術審查紀錄。搜尋字串留在 owned 搜尋紀錄，報告只顯示 ID 與命中數。
+報告含 release-review-report 中繼資料及 static_body_sha256，摘要排除唯一的 <!-- release-checklist:start --> 至 <!-- release-checklist:end --> 人工區塊（含邊界），仍涵蓋全部固定正文。只有此區塊可填寫，其他修改視為快照改變。v3 沒有 checklist_file／checklist_filename／body_sha256。版面依 report-style：結論與數量置頂，先比較資訊與六區塊問題，再範圍與限制、下一步，技術審查紀錄於末尾收合。依賴、Checklist、已執行／未執行檢查保持展開。搜尋字串留在 owned 搜尋紀錄，報告只顯示 ID 與命中數。
 
 本階段沒有 MR 身分，不冒用 MergeReviewReport/v1 或已有的 GitlabWorkSpace 匯入格式。發布預設成功或失敗後清理 owned context；技能使用 --retain-on-validation-error 時，只在可修正草稿錯誤保留同次來源，修正後完整重驗。來源完整性、搜尋紀錄竄改、Git／逾時與輸出失敗仍終止清理；中止或放棄修稿也清理。報告保留所有必要版本、路徑與搜尋摘要。

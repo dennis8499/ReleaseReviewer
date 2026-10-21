@@ -29,6 +29,8 @@ class AncestorNoopTests(RepoTest):
         write(self.repo, "new.py", "new = True\n")
         git(self.repo, "rm", "gone.py")
         git(self.repo, "mv", "old.py", "renamed.py")
+        mode_file = self.repo / "mode.py"
+        mode_file.chmod(mode_file.stat().st_mode | 0o111)
         git(self.repo, "add", "-A")
         git(self.repo, "update-index", "--chmod=+x", "mode.py")
         git(self.repo, "commit", "-m", "advance base with file changes")

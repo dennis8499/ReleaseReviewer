@@ -131,6 +131,8 @@ def load_manifest(context: Path) -> dict:
     require(isinstance(preview.get("changed_files"), list), "合併預覽檔案清單無效。")
     require(preview["status"] == "clean" or not manifest["context_complete"],
             "有合併衝突或缺口時不能標為完整。")
+    import coverage_policy
+    coverage_policy.validate(manifest, context)
     return manifest
 
 
@@ -329,7 +331,7 @@ def validate_baseline_search(context: Path, manifest: dict, identifier: str) -> 
 
 
 SOURCES = ("base", "head", "merge-base", "merge-preview", "merge-parent", "supporting")
-REQUEST_FIELDS = {"action", "source", "ref", "repo", "path", "query", "ignore_case"}
+REQUEST_FIELDS = {"action", "source", "ref", "repo", "path", "query", "ignore_case", "line_start", "line_end"}
 EVIDENCE_ERRORS = (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired)
 
 
@@ -339,6 +341,13 @@ def request_result(manifest: dict, context: Path, request: dict, *, contents=Non
     require(not request.keys() - REQUEST_FIELDS, "batch request 含未知欄位。")
     action = request.get("action")
     require(action in ("list", "read", "search"), "未知的證據操作。")
+    bounded = "line_start" in request or "line_end" in request
+    if bounded:
+        require(action == "read", "line_start／line_end 僅適用於 read。")
+        start, end = request.get("line_start"), request.get("line_end")
+        require(type(start) is int and type(end) is int,
+                "line_start／line_end 須成對提供，且必須是整數。")
+        require(1 <= start <= end, "行段須符合 1 <= line_start <= line_end。")
     source, repo = request.get("source", "base"), request.get("repo", "entry")
     require(source in SOURCES, "未知的證據來源。")
     require(isinstance(repo, str) and bool(repo), "證據 Repo 必須是非空白身分。")
@@ -352,6 +361,12 @@ def request_result(manifest: dict, context: Path, request: dict, *, contents=Non
         reference, _, content = _read_blob(manifest, context, source, path, ref, repo)
         require(b"\0" not in content, "二進位內容請列為 metadata-only，不能當作文字讀取。")
         identity = {"repo": repo, "source": source, "ref": reference, "path": path}
+        if bounded:
+            lines = text_lines(content)
+            require(end <= len(lines), f"line_end 超過固定檔案總行數：{len(lines)}。")
+            return {**identity, "content_sha256": hashlib.sha256(content).hexdigest(),
+                    "line_start": start, "line_end": end, "total_lines": len(lines),
+                    "lines": lines[start - 1:end]}
         if contents is not None:
             content_id = hashlib.sha256(content).hexdigest()
             if content_id not in contents:
@@ -471,12 +486,15 @@ def main(argv=None):
     parser.add_argument("--ref")
     parser.add_argument("--repo", default="entry")
     parser.add_argument("--path")
+    parser.add_argument("--line-start", type=int, help="First fixed line (1-based; requires --line-end)")
+    parser.add_argument("--line-end", type=int, help="Last fixed line (inclusive; requires --line-start)")
     parser.add_argument("--query")
     parser.add_argument("--ignore-case", action="store_true")
     parser.add_argument("--requests", help="JSON array or worklist file (inline JSON is also accepted)")
     parser.add_argument("--page-size", type=int)
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--artifact")
+    parser.add_argument("--search-id", action="append", help="Select a saved 64-hex search hash for view; repeatable")
     formats = parser.add_mutually_exclusive_group()
     formats.add_argument("--shared-content", action="store_true",
                          help="Batch only: emit a versioned wrapper with each unique read body once")
@@ -485,12 +503,19 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if (args.shared_content or args.auto_content) and args.action != "batch":
         parser.error("--shared-content／--auto-content 僅適用於 batch。")
+    if (args.line_start is not None or args.line_end is not None) and args.action != "read":
+        parser.error("--line-start／--line-end 僅適用於 read；batch 請使用 JSON 欄位。")
+    if args.search_id is not None and args.action != "view":
+        parser.error("--search-id 僅適用於 view。")
     try:
         context = review_session.validate_session(args.context_dir)
         manifest = load_manifest(context)
         if args.action == "view":
             require(args.artifact and args.page_size, "view needs --artifact and --page-size")
-            result = review_runtime.page(review_runtime.load_view(context, args.artifact), context,
+            saved = review_runtime.load_view(context, args.artifact)
+            if args.search_id is not None:
+                saved = review_runtime.select_searches(saved, args.search_id)
+            result = review_runtime.page(saved, context,
                                          size=args.page_size, offset=args.offset, artifact=args.artifact)
         elif args.action == "batch":
             result = batch(manifest, context, load_requests(args.requests),
@@ -498,7 +523,8 @@ def main(argv=None):
         else:
             with operation_cache(manifest, context):
                 result = request_result(manifest, context,
-                                        {key: getattr(args, key) for key in REQUEST_FIELDS})
+                                         {key: getattr(args, key) for key in REQUEST_FIELDS
+                                          if key not in {"line_start", "line_end"} or getattr(args, key) is not None})
         failed = args.action == "batch" and not result["complete"]
         if args.page_size and args.action != "view":
             result = review_runtime.page(result, context, size=args.page_size, offset=args.offset)

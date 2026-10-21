@@ -26,6 +26,7 @@ def build_release(skill: Path, destination: Path) -> Path:
                 "scripts/group_context.py", "scripts/chain_review.py", "scripts/resource_rules.py",
                 "scripts/review_worklist.py", "references/evidence-workflow.md",
                 "scripts/frozen_evidence.py",
+                "scripts/coverage_policy.py",
                 "scripts/git_network_lease.py", "scripts/review_runtime.py", "scripts/merge_parent_coverage.py",
                 "references/group-review.md", "references/resource-checks.md")
     for relative in required:

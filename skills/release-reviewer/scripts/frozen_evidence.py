@@ -74,7 +74,7 @@ def inventory(repo: Path, tree: str, env=None) -> tuple[list, set]:
     return entries, objects
 
 
-def seal(context: Path, record: dict, refs: list[str], *, env=None):
+def seal(context: Path, record: dict, refs: list[str], *, env=None, extra_commit_objects=()):
     source = Path(record["path"])
     relative = f"repos/{record['id']}/snapshot.git"
     destination = owned_path(context, relative)
@@ -98,6 +98,16 @@ def seal(context: Path, record: dict, refs: list[str], *, env=None):
                 content = instruction_content[item["object"]]
                 instructions.append({"ref": reference, "path": item["path"],
                                      "sha256": hashlib.sha256(content).hexdigest()})
+    extra = list(dict.fromkeys(extra_commit_objects))
+    require(all(isinstance(reference, str) and re.fullmatch(r"[a-f0-9]{40}|[a-f0-9]{64}", reference)
+                for reference in extra), "祖先證明 commit 身分無效。")
+    if extra:
+        checked = str(git.run_git(source, ["cat-file", "--batch-check"],
+                                 input_bytes=("\n".join(extra) + "\n").encode("ascii"), env=env)).splitlines()
+        require(len(checked) == len(extra) and all(len(row.split()) == 3 and row.split()[0] == reference
+                and row.split()[1] == "commit" and row.split()[2].isdigit()
+                for reference, row in zip(extra, checked)), "祖先證明只能封存 commit 物件。")
+        objects.update(extra)  # Commit bodies only; their historical trees are not captured.
     git.run_git(source, ["pack-objects", str(destination / "objects/pack/snapshot")],
                 input_bytes=("\n".join(sorted(objects)) + "\n").encode("ascii"), env=env)
     record["snapshot"] = {"policy": POLICY, "git_dir": relative, "object_format": object_format,

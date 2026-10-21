@@ -2,7 +2,7 @@
 
 ## 新增使用的判斷
 
-先理解變更用途與最終受審版本，再搜尋 base_sha 的整個 Repo。比對的是執行程式的使用語意，不能只比較字串或檔名。必要時搜尋別名、實體 mapping、SQL fragment、連線鍵及其解析結果。
+先理解變更用途與最終受審版本；若下方祖先無新增內容條件不成立，搜尋 base_sha 的整個 Repo。新增依賴的 baseline 仍是入口 base 全 Repo，沒有改成 head、變更檔或 Group 全域。比對的是執行程式的使用語意，不能只比較字串或檔名。必要時搜尋別名、實體 mapping、SQL fragment、連線鍵及其解析結果。
 
 | 情境 | 判斷 |
 | --- | --- |
@@ -83,6 +83,32 @@ merge-preview 的文字證據由 helper 保存引用行的非機密片段與原�
 
 每個新舊路徑恰有一個 coverage 項目。status 可為 reviewed、metadata-only、not-reviewed；後兩者要有 reason，結果維持未完成。二進位或 gitlink 不用文字行號假裝內容已查證。不要將 context_complete（證據備妥）視為語意審查已完成。
 
+## 祖先分支無新增內容
+
+所有新 context 記錄 `coverage_policy="ancestor-noop/v1"`，表示使用這套判定規則。免追查須同時證實：`head` 等於唯一 merge-base、head 的主要 diff 空白、merge-preview 為 clean 且 exit 0、預覽 tree 等於 base tree、`release_changes` 為空、沒有任何必要缺口，且全部 catalog Repo 都成功 captured。政策標記本身不代表成立；單看 diff 空白、head 等於 base 或預覽 clean 均不足。
+
+祖先關係由 capture 產生的 manifest `ancestor_path` 證明：從 base 開始，沿 commit parent 連線到 head，兩者相同時為單一提交。seal 只額外封存路徑上的 commit bodies，不帶入歷史 trees。發布器重新核對 owned commit 的 hash、類型、相鄰 parent 連線及首尾身分，獨立證明 head 為祖先及唯一 merge-base；不能由草稿自填或只修改 manifest 的 merge-base 宣稱取得豁免。這條路徑是結構證據，不是須語意逐檔閱讀的新 source，不擴張 worklist／coverage。新政策取得豁免必須有合法路徑；缺少政策標記的舊 v3 context 不要求此路徑。
+
+完整條件成立時，不把 base 已有內容另建 coverage、契約搜尋或功能鏈；全部固定 snapshots、原始 patches 與 catalog 保留。七類 `dependency_coverage` 與每個 `supporting_coverage` 仍需由 agent 逐項確認，改為 `status="not-applicable"` 並填非空 `reason`。依賴項的 `evidence` 必須空；supporting 項的 `searches`／`evidence` 必須空。初始草稿仍是 `not-reviewed`，helper 不自動替 agent 完成判定。
+
+此無新增內容結果的 `code_risks`、`config_changes`、`db_changes`、`external_changes`、`functional_chain` 均保持空，不混入既有問題或新增依賴。任何 catalog 擷取失敗或必要 gap 均不適用；保留缺口並按原規則追查。
+
+例如完整判定後的七類依賴覆蓋如下；這是 `dependency_coverage` 的值，不是預先完成的草稿：
+
+~~~json
+[
+  {"kind":"config","status":"not-applicable","reason":"比較分支已含於基礎版本，乾淨合併不新增設定使用或定義。","evidence":[]},
+  {"kind":"db","status":"not-applicable","reason":"比較分支已含於基礎版本，乾淨合併不新增 DB 使用或權限。","evidence":[]},
+  {"kind":"ftp","status":"not-applicable","reason":"比較分支已含於基礎版本，乾淨合併不新增 FTP 依賴。","evidence":[]},
+  {"kind":"sftp","status":"not-applicable","reason":"比較分支已含於基礎版本，乾淨合併不新增 SFTP 依賴。","evidence":[]},
+  {"kind":"redis","status":"not-applicable","reason":"比較分支已含於基礎版本，乾淨合併不新增 Redis 依賴。","evidence":[]},
+  {"kind":"kafka","status":"not-applicable","reason":"比較分支已含於基礎版本，乾淨合併不新增 Kafka 依賴。","evidence":[]},
+  {"kind":"other","status":"not-applicable","reason":"比較分支已含於基礎版本，乾淨合併不新增其他部署依賴。","evidence":[]}
+]
+~~~
+
+Context／Draft／Report 維持 v3。缺少 `coverage_policy` 的舊 v3 context 沿用原覆蓋規則，不能使用新 `not-applicable` 狀態；未知 policy 明確拒絕。報告將此狀態顯示為「本次不適用」；Checklist 空時寫「無本次新增核對項」，實際環境仍是「未驗證實際環境」，不表示環境已就緒或核准上版。
+
 ## 草稿格式
 
 頂層 schema 固定為 ReleaseReviewDraft/v3，必要欄位：
@@ -107,7 +133,7 @@ merge-preview 的文字證據由 helper 保存引用行的非機密片段與原�
 }
 ~~~
 
-以上是欄位示意，不能原樣當成完成草稿。擷取產生的草稿骨架與待讀清單共用相同覆蓋計算；預填引用只表示必要來源，status 初始為 not-reviewed。coverage 只有沒有變更時可空白；dependency_coverage 必須逐類列 config、db、ftp、sftp、redis、kafka、other，欄位 kind、status（reviewed／not-reviewed）、reason、evidence。reason 說明已查範圍與沒有新增項目的依據；有變更時 reviewed 必須引用最終入口版本。未完成類型阻止完整狀態。Group 欄位依 group-review.md 填列。
+以上是欄位示意，不能原樣當成完成草稿。擷取產生的草稿骨架與待讀清單共用相同覆蓋計算；預填引用只表示必要來源，status 初始為 not-reviewed。coverage 依必要清單逐項填列；dependency_coverage 必須逐類列 config、db、ftp、sftp、redis、kafka、other，欄位 kind、status（reviewed／not-reviewed）、reason、evidence。只有上方祖先無新增內容完整條件成立才可使用 not-applicable，不能把整份清單刪空。reason 說明已查範圍與沒有新增項目的依據；有變更時 reviewed 必須引用最終入口版本。未完成類型阻止完整狀態。Group 欄位依 group-review.md 填列。
 
 ### coverage 項目
 
@@ -197,4 +223,4 @@ report 的 release_assessment 由 helper 推導，優先序為 blocked（有直�
 
 報告含 release-review-report 中繼資料及 static_body_sha256，摘要排除唯一的 <!-- release-checklist:start --> 至 <!-- release-checklist:end --> 人工區塊（含邊界），仍涵蓋全部固定正文。只有此區塊可填寫，其他修改視為快照改變。v3 沒有 checklist_file／checklist_filename／body_sha256。版面依 report-style：結論與數量置頂，先比較資訊與六區塊問題，再範圍與限制、下一步，技術審查紀錄於末尾收合。依賴、Checklist、已執行／未執行檢查保持展開。搜尋字串留在 owned 搜尋紀錄，報告只顯示 ID 與命中數。
 
-本階段沒有 MR 身分，不冒用 MergeReviewReport/v1 或已有的 GitlabWorkSpace 匯入格式。發布預設成功或失敗後清理 owned context；技能使用 --retain-on-validation-error 時，只在可修正草稿錯誤保留同次來源，修正後完整重驗。來源完整性、搜尋紀錄竄改、Git／逾時與輸出失敗仍終止清理；中止或放棄修稿也清理。報告保留所有必要版本、路徑與搜尋摘要。
+本階段沒有 MR 身分，不冒用 MergeReviewReport/v1 或已有的 GitlabWorkSpace 匯入格式。發布預設成功或失敗後清理 owned context；技能使用 --retain-on-validation-error 時，可修正草稿錯誤 exit 3 保留同次來源，修正後沿原 context 完整重驗。來源完整性、搜尋紀錄竄改、Git／逾時與輸出失敗仍以終止錯誤清理並回報，停止本次審查，不自動 capture 重跑；中止或放棄修稿也清理。報告保留所有必要版本、路徑與搜尋摘要。

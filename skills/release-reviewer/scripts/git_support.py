@@ -117,6 +117,27 @@ DEFAULT_GIT_TIMEOUT_SECONDS = 180.0
 GIT_TIMEOUT_SECONDS = contextvars.ContextVar(
     "release_reviewer_git_timeout", default=DEFAULT_GIT_TIMEOUT_SECONDS
 )
+NETWORK_ACTIVITY = contextvars.ContextVar("release_reviewer_network_activity", default=None)
+CAPTURE_PHASE = contextvars.ContextVar("release_reviewer_capture_phase", default="local-preflight")
+
+
+def empty_network_activity() -> dict[str, int]:
+    return {"fetch_attempt_count": 0, "fetch_success_count": 0,
+            "requested_ref_count": 0, "synced_ref_count": 0}
+
+
+def network_activity() -> dict[str, int]:
+    """Capture-scoped fetch command counts; these are not connection counts."""
+    return dict(NETWORK_ACTIVITY.get() or empty_network_activity())
+
+
+def capture_phase(value: str) -> None:
+    CAPTURE_PHASE.set(value)
+
+
+def capture_diagnostic(exc: Exception) -> dict[str, Any]:
+    return {"phase": getattr(exc, "phase", CAPTURE_PHASE.get()),
+            "network_activity": getattr(exc, "network_activity", network_activity())}
 
 
 def run_git(
@@ -512,17 +533,24 @@ def fetch_inputs(repo: Path, refs: Iterable[str], enabled: bool) -> list[dict[st
         target = remote_target_for_ref(repo, ref)
         if not target:
             continue
-        if not enabled:
-            raise ReviewContextError(
-                f"遠端 ref「{target.input_ref}」需要連線確認，不能搭配 --no-fetch。",
-                hint="若要離線審查，請改用明確本機分支。",
-            )
         if (target.remote, target.branch) in seen:
             continue
         seen.add((target.remote, target.branch))
         grouped.setdefault(target.remote, []).append(target)
+    activity = NETWORK_ACTIVITY.get()
+    if activity is not None:
+        activity["requested_ref_count"] += len(seen)
+    if grouped and not enabled:
+        target = next(iter(grouped.values()))[0]
+        raise ReviewContextError(
+            f"遠端 ref「{target.input_ref}」需要連線確認，不能搭配 --no-fetch。",
+            hint="若要離線審查，請改用明確本機分支。",
+        )
     for remote, targets in grouped.items():
         try:
+            capture_phase("fetch")
+            if activity is not None:
+                activity["fetch_attempt_count"] += 1
             run_git(
                 repo,
                 [
@@ -538,6 +566,9 @@ def fetch_inputs(repo: Path, refs: Iterable[str], enabled: bool) -> list[dict[st
                     *[f"refs/heads/{t.branch}:refs/remotes/{remote}/{t.branch}" for t in targets],
                 ],
             )
+            if activity is not None:
+                activity["fetch_success_count"] += 1
+                activity["synced_ref_count"] += len(targets)
         except GitCommandError as exc:
             raise ReviewContextError(
                 f"fetch {remote} 失敗（輸入 {', '.join(t.input_ref for t in targets)}）：{exc.stderr}",

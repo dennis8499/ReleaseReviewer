@@ -20,6 +20,7 @@ import resource_rules
 import review_session
 import review_worklist
 import merge_parent_coverage
+import coverage_policy
 from review_worklist import expected_coverage
 
 PRIORITIES = ("P0", "P1")
@@ -198,6 +199,7 @@ def final_version(manifest):
 
 def validate_result(draft, manifest, context):
     """Validate once with caches scoped to this frozen-source operation."""
+    coverage_policy.validate(manifest, context)
     with ev.operation_cache(manifest, context):
         return _validate_result(draft, manifest, context)
 
@@ -218,6 +220,10 @@ def _validate_result(draft, manifest, context):
     result = {"schema": "ReleaseReviewReport/v3", "summary": text(draft.get("summary"), "summary")}
     for field in ("coverage", "code_risks", "config_changes", "db_changes", "external_changes", "dependency_coverage"):
         draft_require(isinstance(draft.get(field), list), f"{field} 必須是陣列。")
+    noop = coverage_policy.ancestor_noop(manifest)
+    if noop:
+        for field in ("code_risks", "config_changes", "db_changes", "external_changes", "functional_chain"):
+            draft_require(not draft.get(field), "祖先無差異範圍不能新增風險、部署依賴或功能鏈。")
     for field in ("next_steps", "tests_executed", "tests_not_executed", "limitations"):
         result[field] = strings(draft.get(field), field)
     expected = expected_coverage(manifest)
@@ -363,13 +369,16 @@ def _validate_result(draft, manifest, context):
         draft_require(isinstance(kind, str) and kind in {"config", "db", *EXTERNAL_KINDS} and kind not in categories,
                       "依賴覆蓋類型重複或無效。")
         status = item.get("status")
-        draft_require(isinstance(status, str) and status in {"reviewed", "not-reviewed"}, "依賴覆蓋狀態無效。")
+        draft_require(isinstance(status, str) and status in {"reviewed", "not-reviewed", "not-applicable"}, "依賴覆蓋狀態無效。")
         citations = cached_citations(item.get("evidence", []), manifest, context)
+        if status == "not-applicable":
+            draft_require(noop and not citations and not item.get("searches") and not item.get("baseline_searches"),
+                          "本次不適用須有已驗證的祖先無差異範圍且不能附搜尋或內容證據。")
         if status == "reviewed" and expected:
             draft_require(any(e["repo"] == "entry" and (e["source"], e["ref"]) == final_pair for e in citations),
                        "依賴覆蓋須有最終受審版本證據。")
         categories[kind] = {"kind": kind, "status": status, "reason": text(item.get("reason"), "依賴覆蓋說明"), "evidence": citations}
-        resource_complete = resource_complete and status == "reviewed"
+        resource_complete = resource_complete and status in {"reviewed", "not-applicable"}
     draft_require(set(categories) == {"config", "db", *EXTERNAL_KINDS}, "缺少設定、DB 或外部資源類型覆蓋。")
     result["dependency_coverage"] = list(categories.values())
     result["checklist"] = resource_rules.build_checklist(result)
@@ -399,6 +408,8 @@ def _validate_result(draft, manifest, context):
     result["identity"].update({"scope": manifest["scope"], "entry_repo": "entry", "repositories": catalog})
     result["identity"].update({key: manifest.get(key) for key in
                                ("snapshot_policy", "capture_completed_at", "workspace_instructions", "diff_roots")})
+    if "coverage_policy" in manifest:
+        result["identity"]["coverage_policy"] = manifest["coverage_policy"]
     result["context_gaps"] = list(manifest["context_gaps"])
     if not parents_complete:
         result["context_gaps"].append("必要 merge-parent 尚未對照最終版本。")
@@ -637,7 +648,8 @@ def render_markdown(result):
     for repo in identity["repositories"]:
         lines.append(f"| {cell(repo['id'] + ' / ' + repo['name'])} | {cell(repo.get('branch') or ('detached HEAD' if repo['role'] == 'supporting' else '入口指定分支'))} | {repo.get('ref') or '見入口版本／未取得'} | {repo['status']} |")
     for coverage in result["supporting_coverage"]:
-        lines += ["", f"**{coverage['repo']}：{coverage['status']}**；{coverage['reason']}", "",
+        label = "本次不適用" if coverage["status"] == "not-applicable" else coverage["status"]
+        lines += ["", f"**{coverage['repo']}：{label}**；{coverage['reason']}", "",
                   *citations(coverage["evidence"], repo_names)]
     for link in result["functional_chain"]:
         lines += ["", f"**{link['id']}｜{link['from_repo']} → {link['to_repo']}｜{link['kind']}**",
@@ -656,7 +668,7 @@ def render_markdown(result):
         lines += ["", "**必要合併父版本對照**：", "",
                   *[f"- {row['id']}：{row['status']}；{row['reason']}" for row in result["merge_parent_review"]]]
     lines += ["", "**依賴類型覆蓋**：", "",
-              *[f"- {c['kind']}：{c['status']}；{c['reason']}" for c in result["dependency_coverage"]]]
+              *[f"- {c['kind']}：{'本次不適用' if c['status'] == 'not-applicable' else c['status']}；{c['reason']}" for c in result["dependency_coverage"]]]
     lines += ["", "</details>", ""]
     return "\n".join(line for index, line in enumerate(lines)
                      if line or not index or lines[index - 1])
@@ -677,6 +689,8 @@ def publish_report(context, draft_path, *, retain_on_validation_error=False):
                 raise DraftValidationError(f"草稿 JSON 無效：{exc}") from exc
             result = redact(validate_result(draft, manifest, context))
         except DraftValidationError:
+            if retain_on_validation_error:
+                coverage_policy.validate(manifest, context)
             retain_context = bool(retain_on_validation_error)
             raise
         destination = Path(manifest["report_root"])

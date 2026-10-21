@@ -141,6 +141,47 @@ def load_view(context, identifier):
     return json.loads(raw)
 
 
+def select_searches(value, identifiers):
+    """Select saved searches, retaining batch failures and original item indexes."""
+    if not identifiers or any(not isinstance(item, str) or len(item) != 64 or
+            any(char not in "0123456789abcdef" for char in item) for item in identifiers):
+        raise ValueError("--search-id must be a 64-hex search hash")
+    if not isinstance(value, dict):
+        raise ValueError("--search-id requires a search artifact")
+    selected = set(identifiers)
+    if "results" not in value:
+        available = {value["search_id"]} if isinstance(value.get("search_id"), str) and isinstance(value.get("matches"), list) else set()
+        if not available:
+            raise ValueError("--search-id requires a search artifact")
+        unknown = selected - available
+        if unknown:
+            raise ValueError("Unknown search ID in artifact: " + ", ".join(sorted(unknown)))
+        return value
+    rows = value["results"]
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise ValueError("Search artifact results must be an array of objects")
+
+    def search_id(row):
+        result = row.get("result")
+        if row.get("ok") is True and isinstance(result, dict) and isinstance(result.get("matches"), list):
+            identifier = result.get("search_id")
+            return identifier if isinstance(identifier, str) else None
+        return None
+
+    available = {search_id(row) for row in rows if isinstance(search_id(row), str)}
+    if not available:
+        raise ValueError("--search-id requires an artifact containing successful searches")
+    unknown = selected - available
+    if unknown:
+        raise ValueError("Unknown search ID in artifact: " + ", ".join(sorted(unknown)))
+    result = {**value, "results": [row for row in rows if row.get("ok") is False or search_id(row) in selected]}
+    if "contents" in result:
+        referenced = {row["result"]["content_id"] for row in result["results"]
+                      if row.get("ok") is True and "content_id" in row.get("result", {})}
+        result["contents"] = {key: content for key, content in value["contents"].items() if key in referenced}
+    return result
+
+
 def page(value, context, *, size, offset=0, artifact=None):
     if type(size) is not int or size < 1 or type(offset) is not int or offset < 0:
         raise ValueError("Page size must be positive and offset nonnegative")

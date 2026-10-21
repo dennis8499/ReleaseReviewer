@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import evidence as ev
 import review_worklist
+import coverage_policy
 
 KINDS = {"api", "event", "contract", "database", "cache", "other"}
 
@@ -13,6 +14,7 @@ def nonempty(value, label, require=ev.require):
 
 
 def validate(draft, manifest, context, citations, *, require=ev.require):
+    noop = coverage_policy.ancestor_noop(manifest)
     catalog = {r["id"]: r for r in manifest["repositories"]}
     for field in ("supporting_coverage", "functional_chain", "chain_gaps"):
         require(isinstance(draft.get(field), list), f"{field} 必須是陣列。")
@@ -25,13 +27,16 @@ def validate(draft, manifest, context, citations, *, require=ev.require):
         require(isinstance(repo, str) and repo in catalog and repo != "entry" and repo not in coverage,
                 "關聯覆蓋 Repo 重複或無效。")
         status = item.get("status")
-        require(isinstance(status, str) and status in {"reviewed", "unrelated", "not-reviewed"}, "關聯覆蓋狀態無效。")
+        require(isinstance(status, str) and status in {"reviewed", "unrelated", "not-reviewed", "not-applicable"}, "關聯覆蓋狀態無效。")
         reason = nonempty(item.get("reason"), "關聯判定", require)
         evidence = citations(item.get("evidence", []), manifest, context)
         require(all(e["repo"] == repo and e["source"] == "supporting" for e in evidence), "關聯覆蓋證據 Repo 不符。")
         ids = item.get("searches", [])
         require(isinstance(ids, list), "關聯搜尋必須是陣列。")
-        if status != "not-reviewed":
+        if status == "not-applicable":
+            require(noop and catalog[repo]["status"] == "captured", "本次不適用須有已驗證的祖先無差異範圍。")
+            require(not evidence and not ids, "本次不適用不能附關聯搜尋或內容證據。")
+        elif status != "not-reviewed":
             require(catalog[repo]["status"] == "captured" and bool(ids), "完整關聯判定須有固定全 Repo 搜尋紀錄。")
             require(status != "reviewed" or bool(evidence), "已審查的功能鏈 Repo 須有內容證據。")
         else:
@@ -42,6 +47,7 @@ def validate(draft, manifest, context, citations, *, require=ev.require):
             searches[identifier] = ev.validate_search(context, manifest, identifier, source="supporting", repo=repo)
         coverage[repo] = {"repo": repo, "status": status, "reason": reason, "evidence": evidence, "searches": ids}
     require(set(coverage) == set(catalog) - {"entry"}, "未列出所有關聯 Repo 的功能鏈判定。")
+    require(not noop or not draft["functional_chain"], "祖先無差異範圍不能新增功能鏈。")
     links, graph = [], {r: set() for r in catalog}
     preview = manifest.get("merge_preview") or {}
     final = ("merge-preview", preview["tree_sha"]) if preview.get("status") == "clean" else ("head", manifest["head_sha"])

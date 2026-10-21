@@ -6,9 +6,12 @@ from pathlib import Path
 
 import evidence as ev
 import merge_parent_coverage
+import coverage_policy
 
 
 def comparison_scopes(manifest):
+    if coverage_policy.ancestor_noop(manifest):
+        return []
     head = ("head", manifest["head_sha"])
     scopes = [(manifest["changed_files"], ("merge-base", manifest["diff_base"]), head)]
     preview = manifest.get("merge_preview") or {}

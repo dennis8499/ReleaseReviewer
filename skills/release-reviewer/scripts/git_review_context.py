@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+from collections import deque
 import hashlib
 import json
 import math
 import os
 from pathlib import Path
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -20,6 +22,7 @@ import review_worklist
 import frozen_evidence
 import review_runtime
 import merge_parent_coverage
+import coverage_policy
 
 SCHEMA = "ReleaseReviewContext/v3"
 SUMMARY_SCHEMA = "ReleaseReviewCaptureSummary/v1"
@@ -44,6 +47,7 @@ def capture_summary(manifest: dict) -> dict:
         "schema": SUMMARY_SCHEMA, "context_schema": manifest["schema"],
         "skill_version": (Path(__file__).resolve().parents[1] / "VERSION").read_text(encoding="utf-8").strip(),
         **{key: manifest[key] for key in identity},
+        **{key: manifest[key] for key in ("coverage_policy", "network_activity") if key in manifest},
         "merge_preview": {key: preview[key] for key in ("status", "tree_sha")},
         "counts": {"repositories": len(manifest["repositories"]),
                    "changed_files": len(manifest["changed_files"]),
@@ -101,7 +105,78 @@ def worktree_fingerprint(repo: Path) -> str:
     return digest.hexdigest()
 
 
+def preflight_sources(session: Path, catalog: list[dict]) -> list[str]:
+    """Check predictable local source/output failures before any explicit fetch."""
+    gaps = []
+    for record in catalog:
+        if record["status"] != "captured":
+            continue
+        try:
+            source = Path(record["path"])
+            object_format = str(git.run_git(source, ["rev-parse", "--show-object-format"])).strip()
+            frozen_evidence.require(object_format in {"sha1", "sha256"}, "不支援的 Git 物件格式。")
+            objects = git.git_path(source, "objects")
+            with os.scandir(objects) as entries:
+                next(entries, None)
+            if record.get("ref"):
+                git.run_git(source, ["cat-file", "-e", record["ref"] + "^{tree}"])
+            frozen_evidence.owned_path(session, f"repos/{record['id']}/snapshot.git").mkdir(parents=True)
+        except (OSError, ValueError, git.ReviewContextError) as exc:
+            if record["role"] == "entry":
+                raise
+            record.update(status="unavailable", reason=str(exc), ref=None)
+            gaps.append(f"{record['name']} 關聯快照未完成：{exc}")
+    frozen_evidence.owned_path(session, "objects").mkdir()
+    return gaps
+
+
+def capture_ancestor_path(repo: Path, base: str, head: str) -> list[str]:
+    """Find one local parent path, then check the original commit bodies."""
+    if base == head:
+        return [base]
+    raw = str(git.run_git(repo, ["rev-list", "--ancestry-path", "--parents", f"{head}..{base}"]))
+    graph = {}
+    for line in raw.splitlines():
+        row = line.split()
+        frozen_evidence.require(row and all(re.fullmatch(r"[a-f0-9]{40}|[a-f0-9]{64}", item) for item in row),
+                                "無法取得可靠的祖先 commit 路徑。")
+        frozen_evidence.require(row[0] not in graph, "祖先 commit 圖包含重複節點。")
+        graph[row[0]] = row[1:]
+    queue, child = deque([base]), {base: None}
+    while queue and head not in child:
+        current = queue.popleft()
+        for parent in graph.get(current, []):
+            if parent not in child and (parent == head or parent in graph):
+                child[parent] = current
+                queue.append(parent)
+    frozen_evidence.require(head in child, "無法取得從基礎版本到比較版本的祖先 commit 路徑。")
+    path, current = [], head
+    while current is not None:
+        path.append(current)
+        current = child[current]
+    path.reverse()
+    # rev-list can simplify parents; verify original bodies in one local process.
+    bodies = git.run_git(repo, ["cat-file", "--batch"], binary=True,
+                         input_bytes=("\n".join(path) + "\n").encode("ascii"))
+    coverage_policy.validate_commit_path(bodies, path, "sha1" if len(base) == 40 else "sha256")
+    return path
+
+
 def build_manifest(args: argparse.Namespace) -> dict:
+    activity_token = git.NETWORK_ACTIVITY.set(git.empty_network_activity())
+    phase_token = git.CAPTURE_PHASE.set("local-preflight")
+    try:
+        return _build_manifest(args)
+    except (OSError, ValueError, git.ReviewContextError) as exc:
+        exc.phase = git.CAPTURE_PHASE.get()
+        exc.network_activity = git.network_activity()
+        raise
+    finally:
+        git.NETWORK_ACTIVITY.reset(activity_token)
+        git.CAPTURE_PHASE.reset(phase_token)
+
+
+def _build_manifest(args: argparse.Namespace) -> dict:
     capture_started_at = datetime.now(timezone.utc).isoformat()
     timeout = args.git_timeout
     if not math.isfinite(timeout) or timeout <= 0:
@@ -131,11 +206,17 @@ def build_manifest(args: argparse.Namespace) -> dict:
         for label, raw, reference in (("基礎版本", args.base, base_ref), ("比較版本", args.head, head_ref)):
             if git.remote_target_for_ref(repo, raw) is None and not git.verified_commit(repo, reference):
                 raise git.ReviewContextError(f"找不到{label}（本機分支）：{raw}；不會連線或改用其他同名版本。")
+        git.capture_phase("session-preflight")
         session = review_session.create_session(args.context_dir)
+        git.capture_phase("output-preflight")
+        frozen_evidence.require(not any(session.resolve().is_relative_to(path.resolve()) for path in repositories),
+                                "--context-dir 必須位於所有 repository 外。")
         workspace_instructions = frozen_evidence.capture_workspace_instructions(
             session, git.workspace_roots(workspace, workspace_file), repositories)
+        catalog_gaps.extend(preflight_sources(session, catalog))
         before = worktree_fingerprint(repo)
         fetches = git.fetch_inputs(repo, [args.base, args.head], True)
+        git.capture_phase("ref-pinning")
         base, head = git.verified_commit(repo, base_ref), git.verified_commit(repo, head_ref)
         for label, sha, raw in (("基礎版本", base, args.base), ("比較版本", head, args.head)):
             if not sha:
@@ -150,6 +231,7 @@ def build_manifest(args: argparse.Namespace) -> dict:
             raise git.ReviewContextError("合併前審查需要唯一共同起點；不會自動改用直接比較。")
         merge_base = ancestors[0] if len(ancestors) == 1 else None
         diff_base = merge_base
+        git.capture_phase("snapshot-capture")
         changes = git.collect_changes(repo, diff_base, head)
         (session / "diff.patch").write_bytes(git.run_git(
             repo, ["diff", *git.DIFF_FLAGS, "--binary", "--find-renames",
@@ -181,7 +263,18 @@ def build_manifest(args: argparse.Namespace) -> dict:
         entry_refs = [base, head, merge_base] + [p for m in merge_commits for p in m["parents"]]
         if preview.get("tree_sha"):
             entry_refs.append(preview["tree_sha"])
-        frozen_evidence.seal(session, catalog[0], entry_refs, env=preview_env)
+        ancestor_path = None
+        if head == merge_base and not changes and not release_changes and preview["status"] == "clean":
+            git.capture_phase("ancestor-proof")
+            base_tree = str(git.run_git(repo, ["rev-parse", f"{base}^{{tree}}"])).strip()
+            if preview["tree_sha"] == base_tree:
+                ancestor_path = capture_ancestor_path(repo, base, head)
+            git.capture_phase("snapshot-capture")
+        if ancestor_path is None:
+            frozen_evidence.seal(session, catalog[0], entry_refs, env=preview_env)
+        else:
+            frozen_evidence.seal(session, catalog[0], entry_refs, env=preview_env,
+                                 extra_commit_objects=ancestor_path)
         for item in catalog[1:]:
             if item["status"] != "captured":
                 continue
@@ -205,6 +298,7 @@ def build_manifest(args: argparse.Namespace) -> dict:
             "entry_repo": "entry", "repositories": catalog,
             "review_scope": "committed", "working_tree_unchanged": unchanged,
             "fetches": fetches, "changed_files": changes,
+            "network_activity": git.network_activity(), "coverage_policy": "ancestor-noop/v1",
             "release_changes": release_changes, "merge_preview": preview,
             "merge_commits": merge_commits,
             "context_gaps": sorted(set(gaps)), "context_complete": not gaps,
@@ -213,6 +307,9 @@ def build_manifest(args: argparse.Namespace) -> dict:
             "capture_completed_at": datetime.now(timezone.utc).isoformat(),
             "workspace_instructions": workspace_instructions,
         }
+        if ancestor_path is not None:
+            manifest["ancestor_path"] = ancestor_path
+        git.capture_phase("manifest-finalize")
         manifest["diff_roots"] = review_worklist.diff_roots(manifest)
         manifest["merge_parent_policy"] = merge_parent_coverage.POLICY
         manifest["required_merge_views"] = merge_parent_coverage.required(
@@ -251,6 +348,11 @@ def main(argv=None):
         result = build_manifest(args)
     except (OSError, ValueError, git.ReviewContextError) as exc:
         print(f"release-reviewer: {exc}", file=sys.stderr)
+        hint = getattr(exc, "hint", None)
+        if hint:
+            print(f"release-reviewer: 建議：{hint}", file=sys.stderr)
+        print("release-reviewer: diagnostic: " + json.dumps(git.capture_diagnostic(exc), ensure_ascii=False),
+              file=sys.stderr)
         return 2
     if args.summary or args.summary_v2:
         try:
@@ -258,6 +360,9 @@ def main(argv=None):
         except (OSError, ValueError, KeyError, TypeError) as exc:
             review_session.cleanup_session(Path(result["context_dir"]))
             print(f"release-reviewer: {exc}", file=sys.stderr)
+            print("release-reviewer: diagnostic: " + json.dumps(
+                {"phase": "capture-summary", "network_activity": result["network_activity"]}, ensure_ascii=False),
+                file=sys.stderr)
             return 2
     print(json.dumps(result, ensure_ascii=False, indent=2 if args.pretty else None))
     return 0

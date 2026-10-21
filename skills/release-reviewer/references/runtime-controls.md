@@ -2,15 +2,25 @@
 
 `--summary-v2` 回傳 `ReleaseReviewCaptureSummary/v2`，以固定 ref、tree 及檔案數取代完整 catalog inventories；完整 manifest／樹清單留在 owned context。舊 `--summary` 與預設輸出保持原格式。
 
+一次請求由主 agent capture 一次，子 agent 共用固定 context；搜尋與草稿寫入保持單一主流程依序處理。只有明確遠端 base／head 按 remote 批次同步一次，supporting Repo 使用本機 HEAD。發布 exit 3 沿保留的 context 修稿，exit 2 回報後停止，不自動重新 capture。
+
+`network_activity` 的四項整數為 `fetch_attempt_count`（helper 嘗試呼叫 Git fetch 次數）、`fetch_success_count`（成功次數）、`requested_ref_count`（去重後要求同步的遠端分支數）、`synced_ref_count`（成功同步分支數）。同 remote 的兩個不同分支成功批次同步一次，四值依序為 `1/1/2/2`。`fetches` 是分支項目，長度不是連線次數；以上計數也不是 Git 傳輸內部的 HTTP／SSH 請求數。本機分支沒有遠端同步時四值均為 0。
+
 既有 `batch --auto-content` 保留逐來源身分、完整全文及錯誤。搜尋批次加 `--page-size 100` 得 `ReviewEvidenceView/v1`：`artifact` 是完整輸出的 SHA-256；每筆 `matches` 的 `view` 提供 `total_matches`、`next_offset`、`view_complete`。以固定 artifact 續讀，不重新搜尋：
 
 ```powershell
 python -X utf8 -B "<skill-dir>/scripts/evidence.py" view --context-dir "<context>" --artifact "<artifact>" --page-size 100 --offset 100
 ```
 
+`read --line-start/--line-end` 及批次同名底線欄位提供成對行段，保留全文 hash 與原始行號；切片在 shared／auto 模式也直接回傳 `lines`。`view --search-id` 可重複指定 64 位小寫 hex 搜尋 ID，先篩選再按 matches offset 分頁；保留 batch 的錯誤與原 `complete`。精確請求、stdout wrapper 與磁碟 artifact 範例見[證據操作](evidence-workflow.md)。
+
 `evidence_complete=true` 表示完整輸出已保存，不能視為語意審查完成。`searches/<id>.json` 仍保存全量命中；發布仍核對固定版本及搜尋紀錄。必要命中尚未判斷時維持未完成。
 
 新 context 的 `merge_parent_policy=necessary-merge-parents/v1` 只要求與有效最終差異路徑相關的 parent views。草稿 `merge_parent_review` 每筆含 `id`、`status`、`reason`、`evidence`；reviewed 引用最終固定版本，parent 有文字內容時另引用該 parent。not-reviewed 保留原因並維持未完成。無有效差異可空集合；最終已修復的歷史問題不列阻擋。
+
+所有新 context 另記 `coverage_policy=ancestor-noop/v1`。只有完整祖先無新增內容條件成立，agent 才能將七類依賴與全部 supporting 覆蓋明確判為「本次不適用」；保留 snapshots、原始 patches 與七類／catalog 清單，草稿不自動完成。判定、舊 context 相容及實際環境界線見[審查規則](review-rules.md#祖先分支無新增內容)。
+
+capture 的 `ancestor_path` 由 base 沿 parent 連至 head；seal 僅附帶路徑 commit bodies，發布器從 owned objects 重驗 hash／類型／parent 連線，不讀取遠端或封存額外歷史 trees。這是新 no-op 豁免必備的結構證據，不是草稿可填的語意覆蓋來源；無政策標記的舊 v3 不要求此路徑。
 
 初始 manifest 使用 writer lease 與 `generation`，不可直接改寫固定 ledger。Git 網路同步則與工作台／另一 Reviewer 共用 `git-network.lock`，格式為 `GitLabWorkspaceLease/v1`。Runtime 使用 `GITLAB_WORKSPACE_RUNTIME_DIR`，否則 Windows `%LOCALAPPDATA%/GitLabWorkspace/runtime-v1`；POSIX 為 `$XDG_RUNTIME_DIR/gitlab-workspace/runtime-v1` 或 `~/.cache/gitlab-workspace/runtime-v1`。
 

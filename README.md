@@ -1,12 +1,12 @@
 # Release Reviewer｜上版檢查
 
-獨立 Codex Skill **0.6.0**。只接受 Repo、基礎分支、比較分支，固定合併前審查。檢查直接阻止上版的 P0／P1、相關功能鏈與新增部署依賴，在 VSCode 受審 Repo/review-reports 產生**一份含可填寫 Checklist 的繁體中文 Release Report**。
+獨立 Codex Skill **0.7.0**。只接受 Repo、基礎分支、比較分支，固定合併前審查。檢查直接阻止上版的 P0／P1、相關功能鏈與新增部署依賴，在 VSCode 受審 Repo/review-reports 產生**一份含可填寫 Checklist 的繁體中文 Release Report**。
 
 ## 安裝與使用
 
 需要 Python 3.10+、Git 及可使用本機 Skills 的 Codex。Git 須支援 merge-tree --write-tree 與 --merge-base；缺少乾淨預覽時保留缺口，不改用直接比較。
 
-將 skills/release-reviewer 複製到 Codex Skills 目錄，或解壓 dist/release-reviewer-0.6.0.zip。CODEX_HOME 有設定時使用其 skills 子目錄，否則使用使用者的 .codex/skills。
+將 skills/release-reviewer 複製到 Codex Skills 目錄，或解壓 dist/release-reviewer-0.7.0.zip。CODEX_HOME 有設定時使用其 skills 子目錄，否則使用使用者的 .codex/skills。
 
 ~~~text
 $release-reviewer Repo=OrderService 基礎分支=origin/main 比較分支=origin/feature/payment
@@ -19,7 +19,19 @@ $release-reviewer Repo=C:\projects\OrderService 基礎分支=main 比較分支=f
 
 透過 GitlabWorkSpace 使用時，請同步更新包含本版原生 Skill 的離線套件；專案內另行安裝的技能也須更新。歷史報告保留。
 
-## 0.6.0 更新
+同次審查只由主 agent 擷取一次，子 agent 共用固定 context；修稿沿保留的同一份快照完成。明確遠端 base/head 每個 remote 批次同步一次，關聯 Repo 使用本機 HEAD；終止錯誤回報後停止，不自動重跑。新增 `network_activity` 分別列 fetch 嘗試／成功與分支要求／同步數，不代表 HTTP 請求數。
+
+新 context 使用 `coverage_policy=ancestor-noop/v1`。只有完整證明比較分支已含於基礎版本、乾淨合併不新增內容、全部 catalog 已擷取且沒有必要缺口時，agent 才將七類依賴與關聯 Repo 覆蓋明確判為「本次不適用」，保留理由與清單；初始草稿仍未審查。報告無新增 Checklist 時顯示「無本次新增核對項」，實際環境仍未驗證。其餘新增依賴判斷繼續以入口 base 整個 Repo 為基準。完整條件見[審查規則](skills/release-reviewer/references/review-rules.md#祖先分支無新增內容)。
+
+祖先豁免另需 capture 封存的 `ancestor_path` commit 證據，由發布器驗證 hash 與 parent 連線；草稿不能自行宣告祖先關係。
+
+## 0.7.0 更新
+
+祖先分支確認沒有新增差異時，排除多餘待讀、覆蓋與功能鏈追查；七類依賴及關聯 Repo 保留明確的「本次不適用」判定，發布前重新驗證固定快照與真實 commit 祖先路徑，實際環境仍未驗證。
+
+補齊同步前本機預檢、capture 專屬 fetch 計數、固定內容行段讀取與既有搜尋 artifact 篩選。Context／Draft／Report 維持 v3；舊 context 與未使用新參數的讀取保持相容。完整變更見 [CHANGELOG](CHANGELOG.md)。
+
+## 0.6.0 更新（歷史）
 
 一次只審查指定 Repo/base/head。由同一 Skill Agent 採 Code Review 方法審查，延伸項目連回固定 Diff；執行時沿用所選模型。擷取先封存入口版本、關聯 Repo 目前已提交 HEAD 與適用指示，後續閱讀及驗證只使用 owned Git 快照。明確遠端分支依 remote 批次同步一次；本機分支與關聯 Repo 不連線。
 
@@ -118,11 +130,11 @@ python -X utf8 -B scripts/build_demo.py
 python -X utf8 -B scripts/package_release.py
 ~~~
 
-打包輸出 0.6.0 ZIP 與 SHA-256，ZIP 只有可安裝的 release-reviewer 目錄，不覆寫舊發行包。測試不需要第三方套件；CI 在 Linux／Windows 的 Python 3.10、3.14 執行測試與打包。
+打包輸出 0.7.0 ZIP 與 SHA-256，ZIP 只有可安裝的 release-reviewer 目錄，不覆寫舊發行包。測試不需要第三方套件；CI 在 Linux／Windows 的 Python 3.10、3.14 執行測試與打包。
 
 main 與手動驗證會保存完整矩陣證據及 Linux／Python 3.14 的正式 ZIP／SHA-256，附件保留十四天。推送版本 tag 時，只重用七天內且最終 commit、工作流程、依賴及矩陣識別相同的 main 證據；證據或附件缺漏就重跑完整矩陣。發布直接使用已驗證的附件，已有相同 tag／附件可重試，內容不同則停止；PR 與本機測試紀錄不能取代正式 CI 證據。
 
-Context、Draft、Report 統一使用 v3。Context 保存 report_root；report 的 release_assessment 由 helper 推導。publish_report(context, draft_path) 回傳一個 Path；CLI 只回傳 markdown_report。v3 移除 --report-dir、checklist_report、checklist_file 與整份正文 body_sha256，改用排除人工區塊的 static_body_sha256。舊 context／draft 須重新擷取審查，舊報告不改寫。
+Context、Draft、Report 統一使用 v3。Context 保存 report_root；report 的 release_assessment 由 helper 推導。publish_report(context, draft_path) 回傳一個 Path；CLI 只回傳 markdown_report。v3 移除 --report-dir、checklist_report、checklist_file 與整份正文 body_sha256，改用排除人工區塊的 static_body_sha256。缺少 coverage_policy 的舊 v3 context 沿用原覆蓋規則，不能使用新的 not-applicable 狀態；未知 policy 拒絕。v1／v2 context／draft 不適用此 v3 流程，舊報告不改寫。
 
 Git 與 owned-session 程式內附，無 MergeReviewer 執行期依賴；預設在報告成功、失敗或中止後清理本次 owned 暫存證據。啟用下節修稿重試時，可修正草稿錯誤會保留同次 context。
 
@@ -132,6 +144,8 @@ Git 與 owned-session 程式內附，無 MergeReviewer 執行期依賴；預設�
 
 擷取完成後可直接執行 `evidence.py batch --context-dir <context> --requests <context>/review-worklist.json`。後續讀取與搜尋沿用同一批次介面；批次逐項回傳結果及錯誤，搜尋仍保存完整命中與各自 search_id。細節見[證據操作](skills/release-reviewer/references/evidence-workflow.md)。
 
+已知必要行段可用 `read --line-start/--line-end` 或批次 `line_start`／`line_end`，保留原始行號及全文 hash。搜尋結果用 `view --search-id <64位hex>` 篩選原 artifact 再分頁，保留批次錯誤與完整搜尋紀錄，無須重跑搜尋；未使用新參數時沿用原輸出格式。
+
 批次可明確加上 `--shared-content`，選用版本化的共享全文輸出：相同原始內容只輸出一次，每筆固定來源與覆蓋仍分別保留；省略旗標時沿用原格式。發佈在單次驗證內共用整檔快照分析，各引用的來源、行號及機密遮蔽照常驗證；Context／Draft／Report v3、patch 暫存產物及清理流程不變。
 
 可相容選用 `git_review_context.py --summary`，只回傳身分、版本、catalog、合併狀態、完整缺口、範圍計數及證據檔路徑；完整 manifest 照常落盤。`evidence.py batch --auto-content` 執行證據一次，再按 compact UTF-8 JSON bytes 選較小的 normal／shared 格式，相等選 normal；它與 `--shared-content` 互斥。既有無旗標 CLI 行為保持原樣，技能採用這兩個選項。
@@ -140,8 +154,8 @@ Git 與 owned-session 程式內附，無 MergeReviewer 執行期依賴；預設�
 
 外部類型按固定 provider 證據判斷；抽象 bus／Topic 不能直接認定為 Kafka。provider 未知但 Topic／schema 已辨識時，用既有 `other` 類型保留契約提醒與限制，不產生無依據的 Kafka 專屬核對項。
 
-技能發布命令增加 `--retain-on-validation-error`：可修正草稿錯誤以 exit 3 保留同次 context，修正後完整重驗；來源／搜尋完整性、Git、逾時及輸出失敗仍終止清理。成功路徑只驗證一次，舊呼叫的失敗清理行為不變；中止或放棄修稿須清理保留的 context。
+技能發布命令增加 `--retain-on-validation-error`：可修正草稿錯誤以 exit 3 保留同次 context，修正後沿原 context 完整重驗；來源／搜尋完整性、Git、逾時及輸出失敗仍終止清理、回報後停止，不自動重取。成功路徑只驗證一次，舊呼叫的失敗清理行為不變；中止或放棄修稿須清理保留的 context。
 
 可重跑的效能比較與驗證界線見[效能驗證](docs/performance.md)。0.4.0 提供獨立 ZIP 與 SHA-256，並由 GitlabWorkSpace 0.24.4 整合正式附件；量測界線及歷史樣本保留於該文件。
 
-????????????????????[????](skills/release-reviewer/references/runtime-controls.md)?[????](docs/runtime-optimization.md)??????? ZIP ???????
+操作計數、完整證據分頁及清理規則見[操作與負載](skills/release-reviewer/references/runtime-controls.md)；既有量測界線見[執行期優化](docs/runtime-optimization.md)。本輪驗證 helper 回歸，未新增模型品質 benchmark。

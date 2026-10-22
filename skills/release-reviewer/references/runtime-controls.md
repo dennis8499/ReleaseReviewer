@@ -25,3 +25,12 @@ capture 的 `ancestor_path` 由 base 沿 parent 連至 head；seal 僅附帶路�
 初始 manifest 使用 writer lease 與 `generation`，不可直接改寫固定 ledger。Git 網路同步則與工作台／另一 Reviewer 共用 `git-network.lock`，格式為 `GitLabWorkspaceLease/v1`。Runtime 使用 `GITLAB_WORKSPACE_RUNTIME_DIR`，否則 Windows `%LOCALAPPDATA%/GitLabWorkspace/runtime-v1`；POSIX 為 `$XDG_RUNTIME_DIR/gitlab-workspace/runtime-v1` 或 `~/.cache/gitlab-workspace/runtime-v1`。
 
 每個獨立請求保持自己的同步時機，不跨請求重用 fetch。Git supervisor 及子程序樹關閉後才按 nonce 釋放；中斷或狀態不確定時隔離並保留鎖，依診斷人工查明，不按 PID／時間自動回收。此配額只約束共用 runtime 的使用者，不代表整台 GitLab 的容量保證。
+# Request sessions in 0.8.0
+
+New requests use the independent Repo-external `.release-review-runtime/` facade described in [session operations](session-workflow.md). `check`, `status` and saved artifact views read metadata without Git; request rounds fully validate each used repository once. `finish` preserves complete owned-source validation and replays every saved search with a fresh validation-local cache. Reading caches remain inside one context. Every request independently fetches its explicit remote branches and seals its own snapshots; no cross-request fetch or pack cache is used.
+
+The legacy commands and system-temp session rules below retain their original behavior.
+
+新 capture 保留原本的 runtime、context 與 `repos/<id>/snapshot.git/objects/pack/` 目錄位置，將 pack 串流寫入 `snapshot.pack`，再以 owned 相對路徑建立 `snapshot.idx`。Manifest 保存 Git 物件格式對應的 pack checksum，以及 pack／index 各自完整 SHA-256；讀取與發布仍驗證固定來源、物件清單、pack／index 和搜尋 ledger。歷史 context 保留原檔名，不會遷移或重新 capture。
+
+這避免 Git for Windows 對長 hash 檔名的限制，也保留原 Repo、全域與繼承的 Git 設定。Windows 支援範圍為 owned `snapshot.git` 根目錄不超過 220 UTF-8 bytes；更深的 runtime 會在封存前回報明確路徑限制，不改路徑、不回讀來源或宣稱完成。Git for Windows 的 `$GIT_DIR` 仍有額外長度上限，`core.longpaths` 無法解除所有限制。

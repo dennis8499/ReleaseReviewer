@@ -11,3 +11,8 @@
 沒有問題時明說已檢查範圍未發現有證據的直接阻擋，仍交代限制及待確認部署條件。新草稿使用 `engineering-review/v2`，完整提供 `expected`、`actual`、`scenario` 與 `technical_details`；歷史 v1／無 layout 草稿缺少結果欄位時顯示「未提供」，保留已驗證結論。
 
 進度與最終回答採結果先行，簡單答覆一至三句；最後給唯一報告連結與重要阻擋／缺口。已安裝 `output-style/SKILL.md` 時可調整行文密度，固定章節、Checklist、證據及產生時判斷仍依本契約。
+# Engineering v2 layout in 0.8.0
+
+New `engineering-review/v2` drafts render directly as `# 上版檢查: {Repo}` followed by exactly five H2 sections: 審查結論、問題總攬、問題詳情（工程師參考）、範圍與限制、技術審查紀錄（工程師參考）. The conclusion includes the entry Repo, base/head branch names, eight-character SHAs and merge direction. The overview links confirmed blockers to their details. Keep the existing six bold risk blocks, fixed evidence and sensitive-content handling.
+
+Place detailed comparison data and complete SHAs in the technical section. Keep next steps, necessary gaps, new deployment dependencies and the editable Checklist open under 範圍與限制; retain the collapsible technical evidence. Layout v1 and drafts without a layout retain the historical sections documented below. The helper renders the final layout, so publication needs no manual section rewriting.

@@ -65,8 +65,20 @@ def _path_in_temp(path: Path, root: Path) -> Path:
     return resolved
 
 
-def create_session(requested: str | Path | None = None) -> Path:
+def create_session(requested: str | Path | None = None, *, runtime_root=None, request_id=None) -> Path:
     """Create one fresh temporary evidence directory with a private owner marker."""
+    if runtime_root is not None:
+        import review_coordinator as coordination
+        root = coordination.runtime(runtime_root)
+        if not coordination.IDENTIFIER.fullmatch(request_id or ""):
+            raise SessionError("Invalid review request ID.")
+        path = root / "sessions" / request_id
+        coordination.plain(path)
+        path.mkdir(parents=True)
+        marker = {"schema": "release-reviewer-session/v2", "directory": str(path.resolve()),
+                  "runtime": str(root), "request_id": request_id, "token": uuid.uuid4().hex}
+        coordination.atomic(path / OWNER_FILE, marker)
+        return path.resolve()
     root = temp_root()
     if requested is None:
         path = Path(tempfile.mkdtemp(prefix="release-reviewer-session-", dir=root))
@@ -99,6 +111,25 @@ def _owned_session(requested: str | Path) -> Path | None:
     raw = Path(requested).expanduser().absolute()
     if not raw.exists() and not raw.is_symlink():
         return None
+    # v2 contexts live outside Git roots in a marked workspace runtime. v1 keeps
+    # its historical system-temp boundary and cannot opt out via a forged path.
+    if not _is_link(raw) and not _is_link(raw / OWNER_FILE):
+        try:
+            early = json.loads((raw / OWNER_FILE).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            early = {}
+        if isinstance(early, dict) and early.get("schema") == "release-reviewer-session/v2":
+            import review_coordinator as coordination
+            root = coordination.runtime(early.get("runtime", ""))
+            identifier = early.get("request_id", "")
+            resolved = coordination.plain(raw).resolve(strict=True)
+            if (not isinstance(identifier, str) or not coordination.IDENTIFIER.fullmatch(identifier)
+                    or resolved != root / "sessions" / identifier
+                    or early.get("directory") != str(resolved)
+                    or not isinstance(early.get("token"), str)
+                    or not TOKEN_PATTERN.fullmatch(early["token"])):
+                raise SessionError("Review session ownership differs.")
+            return resolved
     root = temp_root()
     resolved = _path_in_temp(raw, root)
     marker_path = resolved / OWNER_FILE
@@ -124,9 +155,45 @@ def _remove_tree(path: Path) -> None:
             pass
         function(target)
 
+    # Keep the verified owner marker until every other child is gone. A pack
+    # ACL failure must leave a session that the next cleanup can still own.
+    marker = path / OWNER_FILE
+    if not marker.is_file():
+        # Retain the private helper used by existing verified test-temp cleanup.
+        # Public cleanup_session always validates an owned marker first.
+        try:
+            shutil.rmtree(path, onerror=make_writable)
+        except OSError as exc:
+            raise SessionError(str(exc)) from exc
+        return
+    ownership = marker.read_bytes()
+    identity = (path.stat().st_dev, path.stat().st_ino)
     try:
-        shutil.rmtree(path, onerror=make_writable)
+        for child in path.iterdir():
+            if child.name == OWNER_FILE:
+                continue
+            if child.is_dir() and not _is_link(child):
+                shutil.rmtree(child, onerror=make_writable)
+            else:
+                remove = child.rmdir if os.name == "nt" and _is_link(child) and child.is_dir() else child.unlink
+                try:
+                    remove()
+                except OSError:
+                    if _is_link(child):
+                        raise  # Never chmod the target of a link/junction.
+                    make_writable(lambda target: remove(), str(child), None)
+        marker.unlink()
+        path.rmdir()
     except OSError as exc:
+        # Root deletion itself can fail after marker removal. Restore only in
+        # the same plain directory; never authorize a replaced or linked tree.
+        try:
+            if (path.is_dir() and not _is_link(path)
+                    and (path.stat().st_dev, path.stat().st_ino) == identity and not marker.exists()):
+                with marker.open("xb") as stream:
+                    stream.write(ownership)
+        except OSError:
+            pass
         raise SessionError(f"審查暫存清理失敗，請手動檢查：{path}（{exc}）") from exc
 
 
@@ -158,11 +225,15 @@ def cleanup_if_owned(requested: str | Path) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
+    values = sys.argv[1:] if argv is None else argv
+    if values and values[0] in ("start", "step", "check", "finish", "status", "cancel"):
+        from review_flow import main as flow_main
+        return flow_main(values)
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     cleanup = commands.add_parser("cleanup", help="Remove one verified owned evidence session.")
     cleanup.add_argument("--context-dir", required=True)
-    args = parser.parse_args(argv)
+    args = parser.parse_args(values)
     try:
         removed = cleanup_session(args.context_dir)
     except (OSError, ValueError) as exc:

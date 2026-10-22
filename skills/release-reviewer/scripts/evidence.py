@@ -21,18 +21,20 @@ import frozen_evidence
 import review_runtime
 
 SHA = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+SEARCH_FLAGS = ("grep", "--no-textconv", "--full-name", "-I", "-n", "-z", "-F")
 _CACHE = ContextVar("release_evidence_operation", default=None)
 
 
 @contextmanager
-def operation_cache(manifest: dict, context: Path):
+def operation_cache(manifest: dict, context: Path, *, persistent=False):
     """Share immutable Git evidence only within one batch or validation operation.
 
     A nested operation receives its own cache. All public readers still validate
     source, Repo, SHA and path before consulting cached data.
     """
     token = _CACHE.set({"manifest": manifest, "context": Path(context),
-                        "sources": {}, "blobs": {}, "metadata": {}, "searches": {}})
+                         "sources": {}, "blobs": {}, "metadata": {}, "searches": {},
+                         "persistent": persistent, "search_hits": 0, "search_runs": 0})
     try:
         yield
     finally:
@@ -62,7 +64,8 @@ def safe_path(value: str) -> bool:
     return not any(p.is_absolute() or ".." in p.parts for p in paths) and not paths[1].drive
 
 
-def load_manifest(context: Path) -> dict:
+def load_manifest(context: Path, *, full=True) -> dict:
+    """Keep the legacy full check; metadata mode never asserts source integrity."""
     context = review_session.validate_session(context)
     path = context / "manifest.json"
     require(not path.is_symlink(), "manifest 不能是符號連結。")
@@ -110,7 +113,8 @@ def load_manifest(context: Path) -> dict:
             else:
                 require(bool(item.get("reason")) and not manifest["context_complete"], "關聯版本缺口未保留。")
         if manifest.get("snapshot_policy") is not None and item["status"] == "captured":
-            frozen_evidence.validate(context, item)
+            if full:
+                frozen_evidence.validate(context, item)
             refs = ({manifest["base_sha"], manifest["head_sha"], manifest["diff_base"]}
                     if item["id"] == "entry" else {item["ref"]})
             if item["id"] == "entry":
@@ -132,7 +136,10 @@ def load_manifest(context: Path) -> dict:
     require(preview["status"] == "clean" or not manifest["context_complete"],
             "有合併衝突或缺口時不能標為完整。")
     import coverage_policy
-    coverage_policy.validate(manifest, context)
+    if full:
+        coverage_policy.validate(manifest, context)
+    else:
+        coverage_policy.ancestor_noop(manifest)
     return manifest
 
 
@@ -199,6 +206,10 @@ def source_version(manifest: dict, context: Path, source: str, ref: str | None =
 
 
 def command(manifest: dict, args: list[str], *, env=None, acceptable=(0,), input_bytes=None) -> bytes:
+    import review_coordinator
+    active = review_coordinator.ACTIVE.get()
+    if active:
+        active.check()
     timeout = manifest.get("git_timeout", 180.0)
     require(isinstance(timeout, (int, float)) and math.isfinite(timeout) and timeout > 0, "Git 逾時無效。")
     location = env["GIT_DIR"] if env and manifest.get("snapshot_policy") is not None else manifest["repo"]
@@ -261,18 +272,60 @@ def search(manifest: dict, context: Path, source: str, query: str, *, ignore_cas
             "搜尋字串須為非空白的單行 literal。")
     reference, env = source_version(manifest, context, source, ref, repo)
     selected_repo = repository(manifest, repo)
-    key = (selected_repo["id"], selected_repo["path"], source, reference, query, bool(ignore_case),
-           env.get("GIT_OBJECT_DIRECTORY"), env.get("GIT_ALTERNATE_OBJECT_DIRECTORIES"))
+    effective = dict(env) if env else dict(os.environ)
+    effective.update(GIT_NO_LAZY_FETCH="1", GIT_ALLOW_PROTOCOL="")
+    # Bind output-affecting Git settings without persisting possible credentials.
+    environment_fingerprint = hashlib.sha256(json.dumps(
+        {name: value for name, value in effective.items() if name.startswith("GIT_")},
+        sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    flags = (*SEARCH_FLAGS, *(("-i",) if ignore_case else ()))
+    key = (str(Path(context).resolve()), selected_repo["id"], selected_repo["path"], source, reference,
+           query, bool(ignore_case), flags, environment_fingerprint, effective.get("GIT_DIR"),
+           effective.get("GIT_OBJECT_DIRECTORY"), effective.get("GIT_ALTERNATE_OBJECT_DIRECTORIES"))
     state = _cache(manifest, context)
     if state is not None and key in state["searches"]:
         cached = state["searches"][key]
         return {**cached, "matches": [match.copy() for match in cached["matches"]]}
-    args = ["grep", "--no-textconv", "--full-name", "-I", "-n", "-z", "-F"]
-    if ignore_case:
-        args.append("-i")
+    persistent = bool(state is not None and state.get("persistent") and manifest.get("snapshot_policy"))
+    snapshot = selected_repo.get("snapshot", {})
+    identity = {"schema": "ReleaseSearchInput/v1", "repo": selected_repo["id"], "repo_path": selected_repo["path"], "source": source,
+                "context": str(Path(context).resolve()), "git_dir": effective.get("GIT_DIR"),
+                "git_environment_sha256": environment_fingerprint, "flags": list(flags),
+                "ref": reference, "snapshot": {key: snapshot.get(key) for key in ("policy", "git_dir", "object_format")},
+                "tree": snapshot.get("sources", {}).get(reference, {}).get("tree"),
+                "query": query, "ignore_case": bool(ignore_case)}
+    cache_key = hashlib.sha256(canonical(identity)).hexdigest()
+    cache_file = context / "search-cache" / (cache_key + ".json")
+    if persistent:
+        try:
+            require(cache_file.is_file(), "Search cache miss.")
+            require(not cache_file.is_symlink() and not cache_file.parent.is_symlink(), "Linked search cache.")
+            envelope = json.loads(cache_file.read_text(encoding="utf-8"))
+            cached = review_runtime.load_view(context, envelope["artifact"])
+            require(cached["identity"] == identity, "Search cache source differs.")
+            result = cached["result"]
+            expected = {"repo": selected_repo["id"], "source": source, "ref": reference,
+                        "query": query, "ignore_case": bool(ignore_case), "scope": "repo"}
+            require(isinstance(result, dict) and all(result.get(name) == value for name, value in expected.items())
+                    and type(result.get("ignore_case")) is bool
+                    and isinstance(result.get("matches"), list)
+                    and all(isinstance(match, dict) and isinstance(match.get("path"), str)
+                            and type(match.get("line")) is int and match["line"] > 0
+                            and isinstance(match.get("text"), str) for match in result["matches"]),
+                    "Search cache is malformed.")
+            state["searches"][key] = result
+            state["search_hits"] += 1
+            return {**result, "matches": [match.copy() for match in result["matches"]]}
+        except (OSError, ValueError, KeyError, TypeError):
+            # This optional accelerator is rebuilt; authoritative search records
+            # remain unchanged and publication independently replays them.
+            pass
+    args = list(flags)
     args += ["-e", query, reference, "--"]
     selected = {**manifest, "repo": selected_repo["path"]}
     raw = command(selected, args, env=env, acceptable=(0, 1))
+    if state is not None:
+        state["search_runs"] += 1
     matches = []
     offset = 0
     prefix = reference.encode() + b":"
@@ -296,6 +349,17 @@ def search(manifest: dict, context: Path, source: str, query: str, *, ignore_cas
               "ignore_case": bool(ignore_case), "scope": "repo", "matches": matches}
     if state is not None:
         state["searches"][key] = {**result, "matches": [match.copy() for match in matches]}
+    if persistent:
+        import review_coordinator
+        try:
+            review_coordinator.plain(cache_file.parent)
+            cache_file.parent.mkdir(exist_ok=True)
+            artifact = review_runtime.store_view(context, {"identity": identity, "result": result})
+            review_coordinator.atomic(cache_file, {"artifact": artifact})
+        except (OSError, ValueError):
+            # Only disposable transport-cache writes are optional. The caller
+            # still saves and later verifies the authoritative search record.
+            pass
     return result
 
 
@@ -318,16 +382,30 @@ def validate_search(context: Path, manifest: dict, identifier: str, *, source="b
     require(not directory.is_symlink() and not path.is_symlink(), "搜尋紀錄不能是符號連結。")
     record = json.loads(path.read_text(encoding="utf-8"))
     require(hashlib.sha256(canonical(record)).hexdigest() == identifier, "基礎搜尋紀錄摘要不符。")
-    fixed, _ = source_version(manifest, context, source, repo=repo)
+    fixed, _ = source_version(manifest, context, source,
+                              ref=record.get("ref") if source == "merge-parent" else None, repo=repo)
     require(record.get("source") == source and record.get("ref") == fixed
             and record.get("repo") == repo and record.get("scope") == "repo", "判定必須搜尋基礎版本整個 Repo 或指定關聯固定 Repo。")
-    current = search(manifest, context, source, record["query"], ignore_case=record["ignore_case"], repo=repo)
+    current = search(manifest, context, source, record["query"], ignore_case=record["ignore_case"],
+                     ref=record.get("ref") if source == "merge-parent" else None, repo=repo)
     require(record == current, "基礎搜尋紀錄與固定來源不符。")
     return record
 
 
 def validate_baseline_search(context: Path, manifest: dict, identifier: str) -> dict:
     return validate_search(context, manifest, identifier)
+
+
+def validate_recorded_searches(context: Path, manifest: dict):
+    """Replay the authoritative ledger with the fresh publication-local cache."""
+    directory = context / "searches"
+    require(not directory.is_symlink(), "搜尋紀錄目錄不能是符號連結。")
+    if not directory.exists():
+        return
+    for path in sorted(directory.glob("*.json")):
+        require(not path.is_symlink(), "搜尋紀錄不能是符號連結。")
+        record = json.loads(path.read_text(encoding="utf-8"))
+        validate_search(context, manifest, path.stem, source=record.get("source"), repo=record.get("repo"))
 
 
 SOURCES = ("base", "head", "merge-base", "merge-preview", "merge-parent", "supporting")
@@ -509,7 +587,7 @@ def main(argv=None):
         parser.error("--search-id 僅適用於 view。")
     try:
         context = review_session.validate_session(args.context_dir)
-        manifest = load_manifest(context)
+        manifest = load_manifest(context, full=args.action != "view")
         if args.action == "view":
             require(args.artifact and args.page_size, "view needs --artifact and --page-size")
             saved = review_runtime.load_view(context, args.artifact)

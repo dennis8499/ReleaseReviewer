@@ -1,12 +1,12 @@
 # Release Reviewer｜上版檢查
 
-獨立 Codex Skill **0.7.0**。只接受 Repo、基礎分支、比較分支，固定合併前審查。檢查直接阻止上版的 P0／P1、相關功能鏈與新增部署依賴，在 VSCode 受審 Repo/review-reports 產生**一份含可填寫 Checklist 的繁體中文 Release Report**。
+獨立 Codex Skill **0.8.0**。只接受 Repo、基礎分支、比較分支，固定合併前審查。檢查直接阻止上版的 P0／P1、相關功能鏈與新增部署依賴，在 VSCode 受審 Repo/review-reports 產生**一份含可填寫 Checklist 的繁體中文 Release Report**。
 
 ## 安裝與使用
 
 需要 Python 3.10+、Git 及可使用本機 Skills 的 Codex。Git 須支援 merge-tree --write-tree 與 --merge-base；缺少乾淨預覽時保留缺口，不改用直接比較。
 
-將 skills/release-reviewer 複製到 Codex Skills 目錄，或解壓 dist/release-reviewer-0.7.0.zip。CODEX_HOME 有設定時使用其 skills 子目錄，否則使用使用者的 .codex/skills。
+將 skills/release-reviewer 複製到 Codex Skills 目錄，或解壓 dist/release-reviewer-0.8.0.zip。CODEX_HOME 有設定時使用其 skills 子目錄，否則使用使用者的 .codex/skills。
 
 ~~~text
 $release-reviewer Repo=OrderService 基礎分支=origin/main 比較分支=origin/feature/payment
@@ -25,7 +25,13 @@ $release-reviewer Repo=C:\projects\OrderService 基礎分支=main 比較分支=f
 
 祖先豁免另需 capture 封存的 `ancestor_path` commit 證據，由發布器驗證 hash 與 parent 連線；草稿不能自行宣告祖先關係。
 
-## 0.7.0 更新
+## 0.8.0 更新
+
+新審查使用 `review_session.py start／step／check／finish／status／cancel`，在所有 Git Repo 外的獨立 `.release-review-runtime/` 保存請求、草稿與恢復資訊。成功 operation ID 可重送，失敗項修正後沿同次固定版本續跑；同 context 搜尋可共用計算，每輪只完整驗證實際使用的 Repo。純 artifact 閱讀與草稿預檢執行零次 Git。
+
+發布前仍完整驗證全部快照及真實搜尋紀錄。外部收據先保存再清理；同 request 重試回傳既有報告並檢查固定正文，允許 Checklist 人工更新。每個 request 各自 fetch 與 seal，沒有跨請求 fetch／pack 快取。舊 capture、evidence、release_report CLI 仍相容。完整命令與 JSON 見 [session 操作](skills/release-reviewer/references/session-workflow.md)。
+
+## 0.7.0 更新（歷史）
 
 祖先分支確認沒有新增差異時，排除多餘待讀、覆蓋與功能鏈追查；七類依賴及關聯 Repo 保留明確的「本次不適用」判定，發布前重新驗證固定快照與真實 commit 祖先路徑，實際環境仍未驗證。
 

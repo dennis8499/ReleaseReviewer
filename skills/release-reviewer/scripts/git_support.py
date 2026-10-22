@@ -133,6 +133,10 @@ def network_activity() -> dict[str, int]:
 
 def capture_phase(value: str) -> None:
     CAPTURE_PHASE.set(value)
+    import review_coordinator
+    active = review_coordinator.ACTIVE.get()
+    if active:
+        active.phase(value)
 
 
 def capture_diagnostic(exc: Exception) -> dict[str, Any]:
@@ -148,7 +152,12 @@ def run_git(
     binary: bool = False,
     env: Mapping[str, str] | None = None,
     input_bytes: bytes | None = None,
+    output_file=None,
 ) -> str | bytes:
+    import review_coordinator
+    active = review_coordinator.ACTIVE.get()
+    if active:
+        active.check()
     command_env = os.environ.copy()
     if env:
         command_env.update(env)
@@ -164,7 +173,7 @@ def run_git(
         completed = runner(
             ["git", "-C", str(repo), *args],
             input=input_bytes,
-            stdout=subprocess.PIPE,
+            stdout=output_file if output_file is not None else subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
             env=command_env,
@@ -179,8 +188,8 @@ def run_git(
         stderr = completed.stderr.decode("utf-8", errors="replace")
         raise GitCommandError(args, completed.returncode, stderr)
     if binary:
-        return completed.stdout
-    return completed.stdout.decode("utf-8", errors="replace")
+        return completed.stdout or b""
+    return (completed.stdout or b"").decode("utf-8", errors="replace")
 
 
 def run_git_capture(

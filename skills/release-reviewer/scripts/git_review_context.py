@@ -207,7 +207,8 @@ def _build_manifest(args: argparse.Namespace) -> dict:
             if git.remote_target_for_ref(repo, raw) is None and not git.verified_commit(repo, reference):
                 raise git.ReviewContextError(f"找不到{label}（本機分支）：{raw}；不會連線或改用其他同名版本。")
         git.capture_phase("session-preflight")
-        session = review_session.create_session(args.context_dir)
+        prepared = getattr(args, "_prepared_context", None)
+        session = review_session.validate_session(prepared) if prepared else review_session.create_session(args.context_dir)
         git.capture_phase("output-preflight")
         frozen_evidence.require(not any(session.resolve().is_relative_to(path.resolve()) for path in repositories),
                                 "--context-dir 必須位於所有 repository 外。")

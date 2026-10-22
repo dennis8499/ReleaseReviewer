@@ -21,7 +21,16 @@ def writer(context, timeout=180.0):
     if key in _WRITERS.get():
         yield
         return
-    lease = DirectoryLease(context, name="manifest-writer.lock", kind="manifest", timeout=timeout).acquire()
+    marker = context / ".release-reviewer-owned.json"
+    ownership = json.loads(marker.read_text(encoding="utf-8")) if marker.is_file() else {}
+    if isinstance(ownership, dict) and ownership.get("schema") == "release-reviewer-session/v2":
+        import review_coordinator
+        import review_session
+        review_session.validate_session(context)
+        lease = review_coordinator.FileLock(Path(ownership["runtime"]) / "jobs" /
+            (ownership["request_id"] + ".manifest.lock"), timeout=timeout).acquire()
+    else:
+        lease = DirectoryLease(context, name="manifest-writer.lock", kind="manifest", timeout=timeout).acquire()
     token = _WRITERS.set(_WRITERS.get() | {key})
     try:
         yield

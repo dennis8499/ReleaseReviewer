@@ -65,7 +65,7 @@ class ReportTests(RepoTest):
         risk["technical_details"]["engineering_fix"] = "恢復零數量處理。\n\n保留既有函式契約。"
         result = release_report.validate_result(draft, manifest, context)
         body = release_report.render_markdown(result)
-        problem = body.split("## 問題\n", 1)[1].split("## 範圍與限制", 1)[0]
+        problem = body.split("## 問題詳情（工程師參考）\n", 1)[1].split("## 範圍與限制", 1)[0]
         self.assertEqual(1, problem.count(note))
         for repeated in (risk["trigger"], risk["impact"], "恢復零數量處理。"):
             self.assertEqual(1, problem.count(repeated))
@@ -78,7 +78,7 @@ class ReportTests(RepoTest):
         self.assertIn("8:     return total / count", problem)
         self.assertIn("問題數量：P0 0／P1 1", body)
         self.assertIn("合併衝突 0 項", body)
-        self.assertIn("## 下一步\n\n本次沒有另外列出的下一步。", body)
+        self.assertIn("### 下一步\n\n本次沒有另外列出的下一步。", body)
         self.assertLess(body.index(draft["tests_executed"][0]), body.index("<details>"))
         self.assertLess(body.index(draft["tests_not_executed"][0]), body.index("<details>"))
         self.assertNotIn("\n\n\n", body)

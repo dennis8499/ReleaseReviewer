@@ -23,6 +23,7 @@ def build_release(skill: Path, destination: Path) -> Path:
     required = ("SKILL.md", "agents/openai.yaml", "references/review-rules.md",
                 "scripts/git_review_context.py", "scripts/git_support.py",
                 "scripts/evidence.py", "scripts/release_report.py", "scripts/review_session.py",
+                "scripts/review_flow.py", "scripts/review_coordinator.py", "references/session-workflow.md",
                 "scripts/group_context.py", "scripts/chain_review.py", "scripts/resource_rules.py",
                 "scripts/review_worklist.py", "references/evidence-workflow.md",
                 "scripts/frozen_evidence.py",

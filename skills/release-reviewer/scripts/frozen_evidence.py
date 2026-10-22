@@ -17,6 +17,23 @@ def require(condition, message):
         raise ValueError(message)
 
 
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def require_supported_root(path):
+    # Git for Windows setup.c rejects absolute GIT_DIR > PATH_MAX - 40 bytes.
+    # Keep the supported boundary explicit instead of failing midway through
+    # capture or changing the requested runtime/source after a failure.
+    if os.name == "nt" and len(str(path).encode("utf-8")) > 220:
+        raise git.ReviewContextError("Windows Git owned snapshot 路徑限制：Git 根目錄須不超過 220 UTF-8 bytes；"
+                                     "此路徑為 " + str(len(str(path).encode("utf-8"))) + " bytes。")
+
+
 def owned_path(context: Path, relative: str) -> Path:
     require(git.safe_relative_git_path(relative) and "\\" not in relative, "快照路徑無效。")
     root = Path(context).resolve()
@@ -42,7 +59,7 @@ def repository(context: Path, record: dict) -> Path:
     pack = owned_path(context, relative + "/objects/pack")
     require(pack.is_dir(), "固定 pack 目錄不存在。")
     for item in pack.iterdir():
-        owned_path(context, item.relative_to(context).as_posix())
+        owned_path(context, relative + "/objects/pack/" + item.name)
     owned_path(context, relative + "/config")
     return path
 
@@ -74,13 +91,30 @@ def inventory(repo: Path, tree: str, env=None) -> tuple[list, set]:
     return entries, objects
 
 
+def owned_capture_git(context, destination, args, *, workdir=None, **kwargs):
+    """Keep unsupported Windows Git root depths explicit, without fallback."""
+    try:
+        return git.run_git(workdir or destination, args, **kwargs)
+    except git.GitCommandError as exc:
+        if os.name != "nt" or not any(text in exc.stderr.lower() for text in
+                ("filename too long", "$git_dir too big", "not a git repository")):
+            raise
+        paths = {"context": context, "store": destination}
+        lengths = ", ".join(name + "=" + str(len(str(path).encode("utf-16-le")) // 2)
+                            + " UTF-16/" + str(len(str(path).encode("utf-8"))) + " UTF-8 bytes"
+                            for name, path in paths.items())
+        raise git.ReviewContextError("Windows Git 無法建立此 owned snapshot 路徑（" + lengths + "）；"
+                                     "此 Git 版本的路徑限制不能由 core.longpaths 完全解除。原始錯誤：" + str(exc)) from exc
+
+
 def seal(context: Path, record: dict, refs: list[str], *, env=None, extra_commit_objects=()):
     source = Path(record["path"])
     relative = f"repos/{record['id']}/snapshot.git"
     destination = owned_path(context, relative)
+    require_supported_root(destination)
     object_format = str(git.run_git(source, ["rev-parse", "--show-object-format"])).strip()
     require(object_format in {"sha1", "sha256"}, "不支援的 Git 物件格式。")
-    git.run_git(context, ["init", "--bare", f"--object-format={object_format}", str(destination)])
+    owned_capture_git(context, destination, ["init", "--bare", f"--object-format={object_format}", str(destination)], workdir=context)
     objects, sources, instructions, trees, instruction_content = set(), {}, [], {}, {}
     for reference in dict.fromkeys(refs):
         require(isinstance(reference, str) and re.fullmatch(r"[a-f0-9]{40}|[a-f0-9]{64}", reference), "固定 ref 無效。")
@@ -108,23 +142,60 @@ def seal(context: Path, record: dict, refs: list[str], *, env=None, extra_commit
                 and row.split()[1] == "commit" and row.split()[2].isdigit()
                 for reference, row in zip(extra, checked)), "祖先證明只能封存 commit 物件。")
         objects.update(extra)  # Commit bodies only; their historical trees are not captured.
-    git.run_git(source, ["pack-objects", str(destination / "objects/pack/snapshot")],
-                input_bytes=("\n".join(sorted(objects)) + "\n").encode("ascii"), env=env)
     record["snapshot"] = {"policy": POLICY, "git_dir": relative, "object_format": object_format,
                           "captured_at": datetime.now(timezone.utc).isoformat(), "sources": sources}
     record["instructions"] = instructions
+    # Git for Windows can reject long absolute pack finalization paths even
+    # with core.longpaths. Stream into the unchanged owned directory and use
+    # short basenames; the manifest binds the checksum and both full hashes.
+    temporary = destination / "objects/pack/.snapshot.tmp"
+    try:
+        with temporary.open("xb") as output:
+            git.run_git(source, ["pack-objects", "--stdout"], output_file=output,
+                        input_bytes=("\n".join(sorted(objects)) + "\n").encode("ascii"), env=env)
+        checksum_bytes = 20 if object_format == "sha1" else 32
+        with temporary.open("rb") as packed:
+            require(packed.read(4) == b"PACK", "固定 pack 標頭無效。")
+            packed.seek(-checksum_bytes, os.SEEK_END)
+            checksum = packed.read(checksum_bytes).hex()
+        name = "snapshot"
+        os.replace(temporary, destination / "objects/pack" / (name + ".pack"))
+        indexed = str(owned_capture_git(context, destination, ["index-pack", "-o", "objects/pack/" + name + ".idx", "objects/pack/" + name + ".pack"],
+                                  env=environment(context, record))).strip()
+        require(indexed == checksum, "固定 pack checksum 與索引驗證結果不符。")
+        record["snapshot"]["pack"] = {"file": "objects/pack/snapshot.pack", "index": "objects/pack/snapshot.idx",
+                                       "checksum": checksum,
+                                       "sha256": file_sha256(destination / "objects/pack/snapshot.pack"),
+                                       "index_sha256": file_sha256(destination / "objects/pack/snapshot.idx")}
+    finally:
+        temporary.unlink(missing_ok=True)
     validate(context, record)
 
 
 def validate(context: Path, record: dict):
     try:
         return _validate(context, record)
-    except git.ReviewContextError as exc:
+    except (git.ReviewContextError, OSError) as exc:
         raise ValueError(f"固定快照驗證失敗：{exc}") from exc
 
 
 def _validate(context: Path, record: dict):
     path, env = repository(context, record), environment(context, record)
+    packed = record["snapshot"].get("pack")
+    if packed is not None:
+        require(isinstance(packed, dict) and packed.get("file") == "objects/pack/snapshot.pack"
+                and packed.get("index") == "objects/pack/snapshot.idx", "固定 pack 路徑無效。")
+        checksum_length = {"sha1": 40, "sha256": 64}.get(record["snapshot"].get("object_format"))
+        require(isinstance(packed.get("checksum"), str) and checksum_length is not None
+                and re.fullmatch("[a-f0-9]{" + str(checksum_length) + "}", packed["checksum"]), "固定 pack checksum 無效。")
+        for field, name in (("sha256", "file"), ("index_sha256", "index")):
+            expected = packed.get(field)
+            require(isinstance(expected, str) and re.fullmatch(r"[a-f0-9]{64}", expected), "固定 pack 檔案摘要無效。")
+            target = owned_path(context, record["snapshot"]["git_dir"] + "/" + packed[name])
+            require(file_sha256(target) == expected, "固定 pack 或 index 摘要不符。")
+        with (path / packed["file"]).open("rb") as stream:
+            stream.seek(-(checksum_length // 2), os.SEEK_END)
+            require(stream.read().hex() == packed["checksum"], "固定 pack checksum 摘要不符。")
     sources = record["snapshot"].get("sources")
     require(isinstance(sources, dict) and sources, "快照沒有固定來源。")
     objects, checked_trees = set(), {}
@@ -142,7 +213,8 @@ def _validate(context: Path, record: dict):
     require(len(checked.splitlines()) == len(objects) and all(len(row.split()) == 3 for row in checked.splitlines()),
             "快照物件不完整。")
     for index in (path / "objects/pack").glob("*.idx"):
-        git.run_git(path, ["verify-pack", str(owned_path(context, index.relative_to(context).as_posix()))], env=env)
+        owned_path(context, record["snapshot"]["git_dir"] + "/" + index.relative_to(path).as_posix())
+        git.run_git(path, ["verify-pack", index.relative_to(path).as_posix()], env=env)
     for item in record.get("instructions", []):
         content = git.run_git(path, ["cat-file", "blob", f"{item['ref']}:{item['path']}"], binary=True, env=env)
         require(hashlib.sha256(content).hexdigest() == item["sha256"], "固定審查指示摘要不符。")

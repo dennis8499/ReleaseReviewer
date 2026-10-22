@@ -7,10 +7,12 @@ import base64
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
 import sys
+import uuid
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -40,6 +42,10 @@ CHECKLIST_END = "<!-- release-checklist:end -->"
 
 class DraftValidationError(ValueError):
     """A draft field or citation can be repaired without replacing frozen sources."""
+
+
+class DraftInputError(DraftValidationError):
+    """The author-controlled draft file cannot yet be read as UTF-8 JSON."""
 
 
 def draft_require(condition, message):
@@ -201,6 +207,7 @@ def validate_result(draft, manifest, context):
     """Validate once with caches scoped to this frozen-source operation."""
     coverage_policy.validate(manifest, context)
     with ev.operation_cache(manifest, context):
+        ev.validate_recorded_searches(context, manifest)
         return _validate_result(draft, manifest, context)
 
 
@@ -218,6 +225,8 @@ def _validate_result(draft, manifest, context):
     layout = draft.get("report_layout")
     draft_require(layout in (None, "engineering-review/v1", "engineering-review/v2"), "不支援的 report_layout。")
     result = {"schema": "ReleaseReviewReport/v3", "summary": text(draft.get("summary"), "summary")}
+    if layout is not None:
+        result["report_layout"] = layout
     for field in ("coverage", "code_risks", "config_changes", "db_changes", "external_changes", "dependency_coverage"):
         draft_require(isinstance(draft.get(field), list), f"{field} 必須是陣列。")
     noop = coverage_policy.ancestor_noop(manifest)
@@ -540,6 +549,35 @@ def render_checklist(result):
 
 
 def render_markdown(result):
+    if result.get("report_layout") != "engineering-review/v2":
+        return _render_legacy(result)
+    # The v2 layout is rendered from the same validated content. Comparison and
+    # next-step prose move as complete sections; the editable checklist stays open.
+    sections = _render_legacy(result, sectioned=True)
+    prefix = sections["prefix"]
+    identity = result["identity"]
+    intro = [f"# 上版檢查: {identity['project']}", "", "## 審查結論", "", *prefix,
+             f"- 入口 Repo：{code_span(identity['project'])}",
+             f"- 合併方向：{code_span(identity['head_input'])}（{code_span(identity['head_sha'][:8])}） → "
+             f"{code_span(identity['base_input'])}（{code_span(identity['base_sha'][:8])}）", "",
+             "## 問題總攬", "",
+             "| 項目 | 等級 | 說明 |", "| --- | --- | --- |"]
+    if result["merge_status"] == "conflicts":
+        intro.append("| [M-001](#M-001) | 阻擋 | 合併衝突 |")
+    for risk in result["code_risks"]:
+        intro.append(f"| [{risk['id']}](#{risk['id']}) | {risk['priority']} | {cell(risk['title'])} |")
+    if not result["blocker_count"]:
+        intro.append("| — | — | 已檢查範圍未發現已確認的直接上版阻擋。 |")
+    intro += ["", "## 問題詳情（工程師參考）", "", *sections.get("問題", []),
+              "## 範圍與限制", "", *sections.get("範圍與限制", []),
+              "### 下一步", "", *sections.get("下一步", []),
+              "## 技術審查紀錄（工程師參考）", "", "### 比較資訊", "",
+              *sections.get("比較資訊", []), *sections.get("技術審查紀錄", [])]
+    return "\n".join(line for index, line in enumerate(intro)
+                     if line or not index or intro[index - 1]).rstrip() + "\n"
+
+
+def _render_legacy(result, *, sectioned=False):
     identity = result["identity"]
     repo_names = {repo["id"]: repo["name"] for repo in identity["repositories"]}
     counts = {priority: sum(risk["priority"] == priority for risk in result["code_risks"])
@@ -552,6 +590,7 @@ def render_markdown(result):
              f"- Repo：{code_span(identity['project'])}",
              f"- 本機路徑：{code_span(identity['repo'])}", "",
              "| 角色 | 輸入分支 | 實際 ref | Commit（前 8 碼） |", "| --- | --- | --- | --- |"]
+    comparison_at = lines.index("## 比較資訊")
     for role, prefix in (("基礎分支", "base"), ("比較分支", "head")):
         lines.append(f"| {role} | {cell(code_span(identity[prefix + '_input']))} | "
                      f"{cell(code_span(identity.get(prefix + '_resolved_ref') or '未提供'))} | "
@@ -563,6 +602,7 @@ def render_markdown(result):
               f"- 快照擷取：{identity.get('generated_at')} → {identity.get('capture_completed_at')}（UTC）。",
               "- 適用版本：本報告僅適用上述固定 SHA 及本次擷取的相關 Repo；後續分支更新不改變本次結論。", "",
               "## 問題", ""]
+    problems_at = len(lines) - 2
     if result["merge_status"] == "conflicts":
         lines += ['<a id="M-001"></a>', "", "### M-001｜合併衝突", "",
                   "**問題描述**", "", "本次分支無法直接整合為乾淨的上版版本。", "",
@@ -585,6 +625,7 @@ def render_markdown(result):
                   "**建議改善方式**", "", *paragraphs(risk["recommendation"], technical["engineering_fix"])]
     if not result["blocker_count"]:
         lines += ["已檢查範圍未發現有證據的直接阻擋；待確認條件與缺口見後文。", ""]
+    scope_at = len(lines)
     lines += ["## 範圍與限制", "",
               "本次只審查指定 Repo 的已提交差異；其他 Repo 的擷取時 HEAD 是功能鏈佐證。",
               "結論只適用本次固定版本；擷取後分支移動不改寫本次結果。", ""]
@@ -612,9 +653,11 @@ def render_markdown(result):
               "僅有申請工單仍為待確認，不適用需具體理由。必要項目待確認或未通過時，上版準備未完成。",
               "本段核對紀錄可人工更新；固定正文與產生時判斷保留原始快照。", "",
                render_checklist(result), ""]
+    next_at = len(lines)
     lines += ["## 下一步", "",
-              *([f"- {step}" for step in result["next_steps"]] or ["本次沒有另外列出的下一步。"]), "",
-              "## 技術審查紀錄", "", "<details>",
+              *([f"- {step}" for step in result["next_steps"]] or ["本次沒有另外列出的下一步。"]), ""]
+    technical_at = len(lines)
+    lines += ["## 技術審查紀錄", "", "<details>",
               "<summary>固定版本、搜尋、功能鏈與覆蓋紀錄</summary>", ""]
     for label, key in (("Repo", "repo"), ("報告目錄", "report_root"),
                        ("基礎分支", "base_input"), ("比較分支", "head_input"),
@@ -670,29 +713,64 @@ def render_markdown(result):
     lines += ["", "**依賴類型覆蓋**：", "",
               *[f"- {c['kind']}：{'本次不適用' if c['status'] == 'not-applicable' else c['status']}；{c['reason']}" for c in result["dependency_coverage"]]]
     lines += ["", "</details>", ""]
+    if sectioned:
+        return {"prefix": lines[:comparison_at], "比較資訊": lines[comparison_at+1:problems_at],
+                "問題": lines[problems_at+1:scope_at], "範圍與限制": lines[scope_at+1:next_at],
+                "下一步": lines[next_at+1:technical_at], "技術審查紀錄": lines[technical_at+1:]}
     return "\n".join(line for index, line in enumerate(lines)
                      if line or not index or lines[index - 1])
 
 
-def publish_report(context, draft_path, *, retain_on_validation_error=False):
+def review_outcome(result):
+    """Project the authoritative validation result, never infer from a draft."""
+    return {"schema": "ReleaseReviewOutcome/v1", "outcome_available": True,
+            "review_complete": result["review_complete"], "review_status": result["status"],
+            "gaps": list(result["review_gaps"]), "review_gaps": list(result["review_gaps"]),
+            "context_gaps": list(result["context_gaps"]), "chain_gaps": list(result["chain_gaps"]),
+            "release_assessment": result["release_assessment"],
+            "environment_status": result["environment_status"],
+            "blocker_count": result["blocker_count"], "pending_count": result["pending_count"],
+            "pending_confirmation_count": result["pending_count"], "gap_count": result["gap_count"],
+            "remaining": {
+                "changes": [row["path"] for row in result["coverage"] if row["status"] != "reviewed"],
+                "parents": [row["id"] for row in result["merge_parent_review"] if row["status"] != "reviewed"],
+                "repositories": [row["repo"] for row in result["supporting_coverage"] if row["status"] == "not-reviewed"],
+                "dependencies": [row["kind"] for row in result["dependency_coverage"] if row["status"] == "not-reviewed"],
+                "pending_confirmation_count": result["pending_count"]}}
+
+
+def publish_report(context, draft_path, *, retain_on_validation_error=False,
+                   on_stage=None, on_published=None, on_review_outcome=None, cleanup_context=True):
     context = Path(context).expanduser().absolute()
     retain_context = False
     try:
         context = review_session.validate_session(context)
-        manifest = ev.load_manifest(context)
+        # Author-controlled input errors can be fixed without reading any Git
+        # source. Check owned metadata first; owned integrity errors are never
+        # reclassified as draft mistakes by the narrow read/parse handler.
+        ev.load_manifest(context, full=False)
         draft_path = Path(draft_path).resolve()
         try:
             draft_require(draft_path.is_relative_to(context), "草稿必須位於本次 context 內。")
             try:
                 draft = json.loads(draft_path.read_text(encoding="utf-8-sig"))
-            except json.JSONDecodeError as exc:
-                raise DraftValidationError(f"草稿 JSON 無效：{exc}") from exc
+            except (OSError, ValueError) as exc:
+                raise DraftInputError(f"草稿檔無法讀取為 UTF-8 JSON：{exc}") from exc
+        except DraftValidationError:
+            retain_context = bool(retain_on_validation_error)
+            raise
+        manifest = ev.load_manifest(context)
+        try:
+            # The facade's cheap check aggregates field mistakes before this
+            # one full, independent source/citation validation.
             result = redact(validate_result(draft, manifest, context))
         except DraftValidationError:
             if retain_on_validation_error:
                 coverage_policy.validate(manifest, context)
             retain_context = bool(retain_on_validation_error)
             raise
+        if on_review_outcome is not None:
+            on_review_outcome(review_outcome(result))
         destination = Path(manifest["report_root"])
         ev.require(not destination.is_relative_to(context), "報告不能寫入稍後會清理的 context。")
         if manifest.get("snapshot_policy") is not None:
@@ -710,24 +788,42 @@ def publish_report(context, draft_path, *, retain_on_validation_error=False):
                     "static_body_sha256": hashlib.sha256(static_body(body).encode("utf-8")).hexdigest()}
         marker = base64.b64encode(ev.canonical(metadata)).decode("ascii")
         markdown = body + f"\n<!-- release-review-report:{marker} -->\n"
-        for number in range(1000):
-            suffix = "" if number == 0 else f"-{number:02}"
-            md = destination / f"{stem}{suffix}.md"
-            created = False
-            try:
-                with md.open("x", encoding="utf-8", newline="\n") as stream:
-                    created = True
-                    stream.write(markdown)
-            except FileExistsError:
-                continue
-            except BaseException:
-                if created:
-                    md.unlink(missing_ok=True)
-                raise
-            return md
+        temporary = destination / (".release-report-" + uuid.uuid4().hex + ".tmp")
+        try:
+            temporary.write_text(markdown, encoding="utf-8", newline="\n")
+            for number in range(1000):
+                suffix = "" if number == 0 else f"-{number:02}"
+                md = destination / f"{stem}{suffix}.md"
+                if md.exists():
+                    continue
+                if on_stage is None and on_published is None:
+                    # Preserve the historical CLI's exclusive-write behavior.
+                    created = False
+                    try:
+                        with md.open("x", encoding="utf-8", newline="\n") as stream:
+                            created = True
+                            stream.write(markdown)
+                    except FileExistsError:
+                        continue
+                    except BaseException:
+                        if created:
+                            md.unlink(missing_ok=True)
+                        raise
+                    return md
+                if on_stage:
+                    on_stage(md, markdown)
+                try:
+                    os.link(temporary, md)
+                except FileExistsError:
+                    continue
+                if on_published:
+                    on_published(md)
+                return md
+        finally:
+            temporary.unlink(missing_ok=True)
         raise ValueError("找不到可使用的新報告檔名。")
     finally:
-        if not retain_context:
+        if cleanup_context and not retain_context:
             review_session.cleanup_if_owned(context)
 
 

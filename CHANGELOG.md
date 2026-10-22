@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-## 0.8.0 - 2026-10-22
+## 0.8.0 - 2026-10-23
+
+- Publish with the explicitly accepted model-quality and performance limitations documented in [release notes](docs/releases/v0.8.0.md). The original acceptance result remains failed; release CI is a separate required gate.
 
 - Seal packs through a streamed owned file with short snapshot.pack/snapshot.idx basenames, binding the Git checksum and both complete SHA-256 file hashes. Preserve historical snapshot filenames, source-independent validation, and unchanged Git configuration; reject unsupported Windows owned Git root depths before capture.
 - Add independent persistent start/step/check/finish/status/cancel requests in an owned runtime outside Git repositories, with actual read/write/replace preflight before capture.

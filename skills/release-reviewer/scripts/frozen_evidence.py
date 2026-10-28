@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import hashlib
+import json
 import os
 from pathlib import Path, PurePosixPath
 import re
@@ -10,6 +11,7 @@ import re
 import git_support as git
 
 POLICY = "frozen-start/v1"
+RECEIPT_POLICY = "snapshot-validation-receipt/v1"
 
 
 def require(condition, message):
@@ -23,6 +25,52 @@ def file_sha256(path):
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def receipt_inputs(context, record):
+    """Hash the complete snapshot shape and contents, including Git controls."""
+    root = repository(context, record)
+    files, directories = {}, []
+    pending = [root]
+    while pending:
+        directory = pending.pop()
+        for item in sorted(directory.iterdir(), key=lambda value: value.name):
+            relative = item.relative_to(root).as_posix()
+            owned_path(context, record["snapshot"]["git_dir"] + "/" + relative)
+            require(not item.is_symlink() and not getattr(item, "is_junction", lambda: False)(),
+                    "固定快照不能包含連結。")
+            if item.is_dir():
+                directories.append(relative)
+                pending.append(item)
+            else:
+                require(item.is_file(), "固定快照包含不支援的檔案類型。")
+                files[relative] = file_sha256(item)
+    description = {key: value for key, value in record.items() if key != "validation_receipt"}
+    raw = json.dumps(description, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return {"schema": RECEIPT_POLICY, "record_sha256": hashlib.sha256(raw).hexdigest(),
+            "directories": sorted(directories), "files": dict(sorted(files.items()))}
+
+
+def receipt_digest(receipt):
+    raw = json.dumps(receipt, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def verify_receipt(context, record, expected=None):
+    receipt = record.get("validation_receipt")
+    require(isinstance(receipt, dict) and receipt.get("schema") == RECEIPT_POLICY,
+            "固定快照驗證收據無效。")
+    if expected is not None:
+        require(isinstance(expected, str) and receipt_digest(receipt) == expected,
+                "固定快照驗證收據與 request 不符。")
+    require(receipt_inputs(context, record) == receipt, "固定快照或來源描述與驗證收據不符。")
+
+
+def validate_for_step(context, record, expected=None):
+    """Reuse only a request-bound full validation; old contexts remain full checks."""
+    if expected is None:
+        return validate(context, record)
+    return verify_receipt(context, record, expected)
 
 
 def require_supported_root(path):
@@ -169,7 +217,11 @@ def seal(context: Path, record: dict, refs: list[str], *, env=None, extra_commit
                                        "index_sha256": file_sha256(destination / "objects/pack/snapshot.idx")}
     finally:
         temporary.unlink(missing_ok=True)
+    before = receipt_inputs(context, record)
     validate(context, record)
+    after = receipt_inputs(context, record)
+    require(before == after, "完整快照驗證期間來源或檔案已變動。")
+    record["validation_receipt"] = after
 
 
 def validate(context: Path, record: dict):
@@ -180,6 +232,8 @@ def validate(context: Path, record: dict):
 
 
 def _validate(context: Path, record: dict):
+    if "validation_receipt" in record:
+        verify_receipt(context, record)
     path, env = repository(context, record), environment(context, record)
     packed = record["snapshot"].get("pack")
     if packed is not None:
@@ -226,7 +280,9 @@ def capture_workspace_instructions(context: Path, roots: list[Path], repositorie
     for repo in repositories:
         for root in roots:
             if repo.is_relative_to(root):
-                current = repo
+                # Repo-root instructions come from the pinned Git tree, not
+                # the mutable worktree. Only workspace ancestors are copied.
+                current = repo.parent
                 while current.is_relative_to(root):
                     candidate = current / "AGENTS.md"
                     if candidate.is_file():

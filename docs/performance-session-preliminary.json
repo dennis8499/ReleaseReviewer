@@ -1,0 +1,248 @@
+{
+  "schema": "ReleaseReviewSessionBenchmark/v1",
+  "complete": false,
+  "environment": {
+    "platform": "Windows-11-10.0.26300-SP0",
+    "python": "3.14.7 (tags/v3.14.7:823f032, Aug  5 2026, 10:51:32) [MSC v.1944 64 bit (AMD64)]",
+    "baseline_payload_sha256": "9a1c96b1a017f410d2c00f1fb703e00d4ca27d985648bdfc40920d8d2f8d983b",
+    "candidate_payload_sha256": "a0e63b217730079005a24d09a8e7e382a26c124e9ba67e1b7432f52c88395f84"
+  },
+  "samples": [
+    {
+      "variant": "baseline",
+      "run": 1,
+      "success": true,
+      "scenario": "repository",
+      "stages": {
+        "start": {
+          "wall_seconds": 10.134652400003688,
+          "git_commands": 57,
+          "tool_calls": 1,
+          "output_bytes": 11218,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 7.185965899996518,
+          "git_commands": 32,
+          "tool_calls": 1,
+          "output_bytes": 553,
+          "exit_code": 0
+        },
+        "step-1": {
+          "wall_seconds": 5.918699500005459,
+          "git_commands": 32,
+          "tool_calls": 1,
+          "output_bytes": 553,
+          "exit_code": 0
+        },
+        "check": {
+          "wall_seconds": 0.37428840000211494,
+          "git_commands": 0,
+          "tool_calls": 1,
+          "output_bytes": 317,
+          "exit_code": 0
+        },
+        "finish": {
+          "wall_seconds": 11.407928599997831,
+          "git_commands": 60,
+          "tool_calls": 1,
+          "output_bytes": 3016,
+          "exit_code": 0
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "evidence_digest": "8c2f1fe418660a162c3303311e2389f64eab2315837d7fa57293026ee0fdade2",
+      "evidence_count": 48,
+      "check_passed": true,
+      "review_complete": true,
+      "repair_seconds": 0.0,
+      "total_seconds": 35.02153480000561
+    },
+    {
+      "variant": "candidate",
+      "run": 1,
+      "success": true,
+      "scenario": "repository",
+      "stages": {
+        "start": {
+          "wall_seconds": 12.679199300000619,
+          "git_commands": 56,
+          "tool_calls": 1,
+          "output_bytes": 11340,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 2.0884167999975034,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 17932,
+          "exit_code": 0
+        },
+        "step-1": {
+          "wall_seconds": 1.9839085999992676,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 18412,
+          "exit_code": 0
+        },
+        "check": {
+          "wall_seconds": 0.41743119999591727,
+          "git_commands": 0,
+          "tool_calls": 1,
+          "output_bytes": 317,
+          "exit_code": 0
+        },
+        "finish": {
+          "wall_seconds": 12.54579509999894,
+          "git_commands": 60,
+          "tool_calls": 1,
+          "output_bytes": 3278,
+          "exit_code": 0
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "evidence_digest": "8c2f1fe418660a162c3303311e2389f64eab2315837d7fa57293026ee0fdade2",
+      "evidence_count": 48,
+      "check_passed": true,
+      "review_complete": true,
+      "repair_seconds": 0.0,
+      "total_seconds": 29.714750999992248
+    },
+    {
+      "variant": "candidate",
+      "run": 2,
+      "success": true,
+      "scenario": "repository",
+      "stages": {
+        "start": {
+          "wall_seconds": 15.935641899995971,
+          "git_commands": 56,
+          "tool_calls": 1,
+          "output_bytes": 11340,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 2.199000699998578,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 17932,
+          "exit_code": 0
+        },
+        "step-1": {
+          "wall_seconds": 2.5668192000011913,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 18412,
+          "exit_code": 0
+        },
+        "check": {
+          "wall_seconds": 0.45551229999546194,
+          "git_commands": 0,
+          "tool_calls": 1,
+          "output_bytes": 317,
+          "exit_code": 0
+        },
+        "finish": {
+          "wall_seconds": 18.065533200002392,
+          "git_commands": 60,
+          "tool_calls": 1,
+          "output_bytes": 3279,
+          "exit_code": 0
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "evidence_digest": "8c2f1fe418660a162c3303311e2389f64eab2315837d7fa57293026ee0fdade2",
+      "evidence_count": 48,
+      "check_passed": true,
+      "review_complete": true,
+      "repair_seconds": 0.0,
+      "total_seconds": 39.222507299993595
+    },
+    {
+      "variant": "baseline",
+      "run": 2,
+      "success": true,
+      "scenario": "repository",
+      "stages": {
+        "start": {
+          "wall_seconds": 13.202137799999036,
+          "git_commands": 57,
+          "tool_calls": 1,
+          "output_bytes": 11218,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 8.72369350000372,
+          "git_commands": 32,
+          "tool_calls": 1,
+          "output_bytes": 553,
+          "exit_code": 0
+        },
+        "step-1": {
+          "wall_seconds": 10.806567399995402,
+          "git_commands": 32,
+          "tool_calls": 1,
+          "output_bytes": 553,
+          "exit_code": 0
+        },
+        "check": {
+          "wall_seconds": 0.5818433000022196,
+          "git_commands": 0,
+          "tool_calls": 1,
+          "output_bytes": 317,
+          "exit_code": 0
+        },
+        "finish": {
+          "wall_seconds": 15.355978100000357,
+          "git_commands": 60,
+          "tool_calls": 1,
+          "output_bytes": 3017,
+          "exit_code": 0
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "evidence_digest": "8c2f1fe418660a162c3303311e2389f64eab2315837d7fa57293026ee0fdade2",
+      "evidence_count": 48,
+      "check_passed": true,
+      "review_complete": true,
+      "repair_seconds": 0.0,
+      "total_seconds": 48.67022010000073
+    }
+  ]
+}

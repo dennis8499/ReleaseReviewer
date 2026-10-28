@@ -1,0 +1,213 @@
+{
+  "schema": "ReleaseReviewSessionBenchmark/v1",
+  "complete": false,
+  "environment": {
+    "platform": "Windows-11-10.0.26300-SP0",
+    "python": "3.14.7 (tags/v3.14.7:823f032, Aug  5 2026, 10:51:32) [MSC v.1944 64 bit (AMD64)]",
+    "baseline_payload_sha256": "9a1c96b1a017f410d2c00f1fb703e00d4ca27d985648bdfc40920d8d2f8d983b",
+    "candidate_payload_sha256": "b684cd64ba4a443b5aec74d00feb685469a2d26665d711af3868390a01742542"
+  },
+  "samples": [
+    {
+      "variant": "baseline",
+      "run": 1,
+      "success": true,
+      "scenario": "repository",
+      "stages": {
+        "start": {
+          "wall_seconds": 14.01567950000026,
+          "git_commands": 57,
+          "tool_calls": 1,
+          "output_bytes": 11218,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 8.665403599996353,
+          "git_commands": 33,
+          "tool_calls": 1,
+          "output_bytes": 553,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 1,
+            "cache_hits": 0
+          }
+        },
+        "step-1": {
+          "wall_seconds": 8.006022000001394,
+          "git_commands": 32,
+          "tool_calls": 1,
+          "output_bytes": 553,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 0,
+            "cache_hits": 1
+          }
+        },
+        "check": {
+          "wall_seconds": 0.5075156999955652,
+          "git_commands": 0,
+          "tool_calls": 1,
+          "output_bytes": 317,
+          "exit_code": 0
+        },
+        "finish": {
+          "wall_seconds": 15.70253490000323,
+          "git_commands": 61,
+          "tool_calls": 1,
+          "output_bytes": 3016,
+          "exit_code": 0
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "evidence_digest": "42bb3cf4944f5042ed0d761026a6175999e94ce980d7f25e72840311e43fc7ee",
+      "evidence_count": 50,
+      "check_passed": true,
+      "review_complete": true,
+      "repair_seconds": 0.0,
+      "total_seconds": 46.8971556999968
+    },
+    {
+      "variant": "candidate",
+      "run": 1,
+      "success": true,
+      "scenario": "repository",
+      "stages": {
+        "start": {
+          "wall_seconds": 15.802360400004545,
+          "git_commands": 56,
+          "tool_calls": 1,
+          "output_bytes": 11340,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 2.310477200000605,
+          "git_commands": 2,
+          "tool_calls": 1,
+          "output_bytes": 18382,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 1,
+            "cache_hits": 0
+          }
+        },
+        "step-1": {
+          "wall_seconds": 1.8496068000022206,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 18862,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 0,
+            "cache_hits": 1
+          }
+        },
+        "check": {
+          "wall_seconds": 0.44583630000124685,
+          "git_commands": 0,
+          "tool_calls": 1,
+          "output_bytes": 317,
+          "exit_code": 0
+        },
+        "finish": {
+          "wall_seconds": 12.10753599999589,
+          "git_commands": 61,
+          "tool_calls": 1,
+          "output_bytes": 3278,
+          "exit_code": 0
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "evidence_digest": "42bb3cf4944f5042ed0d761026a6175999e94ce980d7f25e72840311e43fc7ee",
+      "evidence_count": 50,
+      "check_passed": true,
+      "review_complete": true,
+      "repair_seconds": 0.0,
+      "total_seconds": 32.51581670000451
+    },
+    {
+      "variant": "candidate",
+      "run": 2,
+      "success": true,
+      "scenario": "repository",
+      "stages": {
+        "start": {
+          "wall_seconds": 11.610115999996196,
+          "git_commands": 56,
+          "tool_calls": 1,
+          "output_bytes": 11340,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 1.8527364000037778,
+          "git_commands": 2,
+          "tool_calls": 1,
+          "output_bytes": 18382,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 1,
+            "cache_hits": 0
+          }
+        },
+        "step-1": {
+          "wall_seconds": 1.80581119999988,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 18862,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 0,
+            "cache_hits": 1
+          }
+        },
+        "check": {
+          "wall_seconds": 0.34192060000350466,
+          "git_commands": 0,
+          "tool_calls": 1,
+          "output_bytes": 317,
+          "exit_code": 0
+        },
+        "finish": {
+          "wall_seconds": 13.130146800001967,
+          "git_commands": 61,
+          "tool_calls": 1,
+          "output_bytes": 3279,
+          "exit_code": 0
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "evidence_digest": "42bb3cf4944f5042ed0d761026a6175999e94ce980d7f25e72840311e43fc7ee",
+      "evidence_count": 50,
+      "check_passed": true,
+      "review_complete": true,
+      "repair_seconds": 0.0,
+      "total_seconds": 28.740731000005326
+    }
+  ]
+}

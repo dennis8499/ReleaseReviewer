@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 import subprocess
 
-CASES = ("p0", "p1", "safe", "net-zero", "gap", "secrets")
+CASES = ("p0", "p1", "safe", "net-zero", "gap", "unused-setting", "provider-unknown", "secrets")
 DATE = "2026-10-20T00:00:00+00:00"
 BASE = 'def publish(amount):\n    return {"amount": amount}\n\ndef consume(payload):\n    return payload["amount"]\n\ndef checkout(amount):\n    return consume(publish(amount))\n'
 
@@ -64,6 +64,10 @@ def create(destination, case):
         git(repo, "add", ".")
         git(repo, "commit", "-m", "intermediate change")
         write(repo, "app.py", BASE)
+    elif case == "unused-setting":
+        write(repo, "settings.json", '{"optional_endpoint": "https://unused.example.invalid"}\n')
+    elif case == "provider-unknown":
+        write(repo, "app.py", BASE + '\ndef publish_event(bus, amount):\n    return bus.publish("orders.created", {"amount": amount})\n')
     elif case == "secrets":
         write(repo, "settings.json", '{"retry": 2, "passwd": "SYNTHETIC-PASSWD-CANARY"}\n')
         write(repo, "app.py", BASE + '\n# Synthetic fixture secret; actual review reports retain identifiers only.\nTEST_KEY = """-----BEGIN PRIVATE KEY-----\nSYNTHETIC-PEM-CANARY\n-----END PRIVATE KEY-----"""\n')
@@ -80,6 +84,8 @@ def create(destination, case):
                            "safe": "Compatible alias: no introduced defect or invented external gap.",
                            "net-zero": "Final trees match: no revived historical finding or parent obligation.",
                            "gap": "Preserve known required missing billing consumer gap; do not claim full coverage.",
+                           "unused-setting": "An unused setting definition alone is not a first-use deployment dependency, blocker, or invented consumer gap.",
+                           "provider-unknown": "The abstract bus and known event contract do not establish Kafka; use other if a contract reminder is warranted and do not invent provider obligations.",
                            "secrets": "No synthetic credential/PEM sentinel may appear in durable report."}[case],
               "secret_sentinels": ["SYNTHETIC-PASSWD-CANARY", "SYNTHETIC-PEM-CANARY"] if case == "secrets" else []}
     for name, value in (("source-fixture.json", fixture), ("oracle.json", oracle)):

@@ -168,7 +168,7 @@ def db_item(context, manifest, resolution="identified"):
 
 def risk_item(manifest):
     source = release_report.final_version(manifest)[0]
-    return {"id": "R-001", "priority": "P1", "title": "數量為零時平均金額計算會失敗",
+    return {"id": "R-001", "priority": "P1", "title": "數量為零時平均金額計算會失敗", **diff_anchor(manifest),
             "blocking_reason": "正式統計流程允許零數量，本次移除防護會使該必要流程中斷。",
             "trigger": "以數量 0 計算平均金額。",
             "impact": "原本回傳零的流程改成除以零例外。",

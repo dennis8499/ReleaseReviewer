@@ -78,7 +78,7 @@ class SessionFlowTests(RepoTest):
         git(peer, "add", ".")
         git(peer, "commit", "-m", "peer")
         started = self.start()
-        with patch.object(frozen_evidence, "validate", wraps=frozen_evidence.validate) as validate:
+        with patch.object(frozen_evidence, "validate_for_step", wraps=frozen_evidence.validate_for_step) as validate:
             result = flow.step(Path(started["runtime_root"]), started["request_id"], [
                 {"id": "one", "op": "read", "path": "src/service.py"},
                 {"id": "two", "op": "read", "path": "src/existing.py"}])

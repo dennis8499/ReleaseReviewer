@@ -118,6 +118,7 @@ GIT_TIMEOUT_SECONDS = contextvars.ContextVar(
     "release_reviewer_git_timeout", default=DEFAULT_GIT_TIMEOUT_SECONDS
 )
 NETWORK_ACTIVITY = contextvars.ContextVar("release_reviewer_network_activity", default=None)
+NETWORK_LOG = contextvars.ContextVar("release_reviewer_network_log", default=None)
 CAPTURE_PHASE = contextvars.ContextVar("release_reviewer_capture_phase", default="local-preflight")
 
 
@@ -131,6 +132,16 @@ def network_activity() -> dict[str, int]:
     return dict(NETWORK_ACTIVITY.get() or empty_network_activity())
 
 
+def empty_network_log():
+    return {"reason": "not-evaluated", "phase": "local-preflight", "fetches": [],
+            "http_requests": None, "ssh_requests": None}
+
+
+def network_log():
+    import copy
+    return copy.deepcopy(NETWORK_LOG.get() or empty_network_log())
+
+
 def capture_phase(value: str) -> None:
     CAPTURE_PHASE.set(value)
     import review_coordinator
@@ -141,7 +152,8 @@ def capture_phase(value: str) -> None:
 
 def capture_diagnostic(exc: Exception) -> dict[str, Any]:
     return {"phase": getattr(exc, "phase", CAPTURE_PHASE.get()),
-            "network_activity": getattr(exc, "network_activity", network_activity())}
+            "network_activity": getattr(exc, "network_activity", network_activity()),
+            "network_log": getattr(exc, "network_log", network_log())}
 
 
 def run_git(
@@ -547,6 +559,10 @@ def fetch_inputs(repo: Path, refs: Iterable[str], enabled: bool) -> list[dict[st
         seen.add((target.remote, target.branch))
         grouped.setdefault(target.remote, []).append(target)
     activity = NETWORK_ACTIVITY.get()
+    log = NETWORK_LOG.get()
+    if log is not None:
+        log["reason"] = "explicit-remote-branches" if grouped else "local-branches"
+        log["phase"] = "fetch" if grouped else "local-preflight"
     if activity is not None:
         activity["requested_ref_count"] += len(seen)
     if grouped and not enabled:
@@ -558,6 +574,11 @@ def fetch_inputs(repo: Path, refs: Iterable[str], enabled: bool) -> list[dict[st
     for remote, targets in grouped.items():
         try:
             capture_phase("fetch")
+            event = {"reason": "explicit-remote-branches", "phase": "fetch", "remote": remote,
+                     "requested_refs": [item.input_ref for item in targets],
+                     "fetch_attempt_count": 1, "fetch_success_count": 0}
+            if log is not None:
+                log["fetches"].append(event)
             if activity is not None:
                 activity["fetch_attempt_count"] += 1
             run_git(
@@ -578,6 +599,7 @@ def fetch_inputs(repo: Path, refs: Iterable[str], enabled: bool) -> list[dict[st
             if activity is not None:
                 activity["fetch_success_count"] += 1
                 activity["synced_ref_count"] += len(targets)
+            event["fetch_success_count"] = 1
         except GitCommandError as exc:
             raise ReviewContextError(
                 f"fetch {remote} 失敗（輸入 {', '.join(t.input_ref for t in targets)}）：{exc.stderr}",

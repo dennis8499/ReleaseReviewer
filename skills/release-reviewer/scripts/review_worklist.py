@@ -8,6 +8,8 @@ import evidence as ev
 import merge_parent_coverage
 import coverage_policy
 
+RISK_POLICY = "diff-causality/v1"
+
 
 def comparison_scopes(manifest):
     if coverage_policy.ancestor_noop(manifest):
@@ -48,6 +50,34 @@ def validate_diff_roots(item, manifest, evidence, *, require=ev.require):
     require(isinstance(item.get("diff_reason"), str) and item["diff_reason"].strip(),
             "延伸項目須說明與固定 Diff 的因果關係。")
     return identifiers
+
+
+def validate_risk_links(item, manifest, evidence, *, require=ev.require):
+    """Check structural Diff links and fixed-source absence; never infer a bug."""
+    identifiers = validate_diff_roots(item, manifest, evidence, require=require)
+    roots = [root for root in manifest["diff_roots"] if root["id"] in identifiers]
+    def before_path(root):
+        return root.get("old_path") or root["path"]
+    require(any(citation.get("repo") == "entry" and any(
+        (citation.get("path"), citation.get("ref")) in {
+            (before_path(root), root["before"]["ref"]), (root["path"], root["after"]["ref"])}
+        for root in roots) for citation in evidence), "程式風險須引用所選 Diff 起點的新舊版本位置。")
+    absence = item.get("final_absence", [])
+    require(isinstance(absence, list), "final_absence 必須是陣列。")
+    preview = manifest.get("merge_preview") or {}
+    final = ("merge-preview", preview["tree_sha"]) if preview.get("status") == "clean" else ("head", manifest["head_sha"])
+    entries = ev.repository(manifest, "entry")["snapshot"]["sources"][final[1]]["entries"]
+    for proof in absence:
+        require(isinstance(proof, dict) and proof.get("repo") == "entry"
+                and (proof.get("source"), proof.get("ref")) == final and ev.safe_path(proof.get("path")),
+                "final_absence 須指定最終固定來源與安全路徑。")
+        path = proof["path"]
+        require(not any(entry["path"] == path for entry in entries), "最終版本仍包含聲稱不存在的路徑。")
+        require(any((root["status"].startswith("D") or root.get("old_path")) and before_path(root) == path
+                    and any(c.get("repo") == "entry" and c.get("path") == path
+                            and c.get("ref") == root["before"]["ref"] for c in evidence)
+                    for root in roots), "刪除或改名缺失須附固定 Diff 舊版位置。")
+    return identifiers, absence
 
 
 def expected_coverage(manifest):
@@ -92,11 +122,19 @@ def prepare(manifest):
                 add(change, after, change["path"])
 
     parent_views = []
+    required = {(view["commit"], view["parent"]): set(view["paths"])
+                for view in manifest.get("required_merge_views", [])}
     for merge in manifest["merge_commits"]:
         for view in merge["parent_views"]:
             parent_views.append({"commit": merge["sha"], "parent": view["sha"],
                                  "position": view["position"], "changes": view["changes"]})
+            # Older contexts do not have this policy and retain their original reads.
+            selected = required.get((merge["sha"], view["sha"]))
+            if "required_merge_views" in manifest and selected is None:
+                continue
             for change in view["changes"]:
+                if selected is not None and not selected.intersection((change.get("path"), change.get("old_path"))):
+                    continue
                 if not change["status"].startswith("A"):
                     add(change, ("merge-parent", view["sha"]), change.get("old_path") or change["path"], old=True)
 
@@ -110,6 +148,7 @@ def prepare(manifest):
                 "metadata_only": metadata, "required_coverage": coverage,
                 "merge_parent_views": parent_views, "diff_roots": manifest.get("diff_roots", [])}
     draft = {"schema": "ReleaseReviewDraft/v3", "report_layout": "engineering-review/v2", "summary": "尚未完成本次審查。",
+             **({"risk_causality_policy": manifest["risk_causality_policy"]} if manifest.get("risk_causality_policy") else {}),
              "merge_parent_review": merge_parent_coverage.unfinished(manifest.get("required_merge_views", [])),
              "coverage": coverage, "code_risks": [], "config_changes": [], "db_changes": [],
              "external_changes": [], "functional_chain": [], "chain_gaps": [],

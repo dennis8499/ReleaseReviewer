@@ -47,7 +47,7 @@ def capture_summary(manifest: dict) -> dict:
         "schema": SUMMARY_SCHEMA, "context_schema": manifest["schema"],
         "skill_version": (Path(__file__).resolve().parents[1] / "VERSION").read_text(encoding="utf-8").strip(),
         **{key: manifest[key] for key in identity},
-        **{key: manifest[key] for key in ("coverage_policy", "network_activity") if key in manifest},
+        **{key: manifest[key] for key in ("coverage_policy", "network_activity", "network_log") if key in manifest},
         "merge_preview": {key: preview[key] for key in ("status", "tree_sha")},
         "counts": {"repositories": len(manifest["repositories"]),
                    "changed_files": len(manifest["changed_files"]),
@@ -68,7 +68,7 @@ def capture_summary_v2(manifest: dict) -> dict:
     result["schema"] = "ReleaseReviewCaptureSummary/v2"
     result["repositories"] = []
     for record in manifest["repositories"]:
-        projected = {key: value for key, value in record.items() if key != "snapshot"}
+        projected = {key: value for key, value in record.items() if key not in ("snapshot", "validation_receipt")}
         snapshot = record.get("snapshot")
         if snapshot:
             projected["snapshot"] = {key: value for key, value in snapshot.items() if key != "sources"}
@@ -164,15 +164,18 @@ def capture_ancestor_path(repo: Path, base: str, head: str) -> list[str]:
 
 def build_manifest(args: argparse.Namespace) -> dict:
     activity_token = git.NETWORK_ACTIVITY.set(git.empty_network_activity())
+    log_token = git.NETWORK_LOG.set(git.empty_network_log())
     phase_token = git.CAPTURE_PHASE.set("local-preflight")
     try:
         return _build_manifest(args)
     except (OSError, ValueError, git.ReviewContextError) as exc:
         exc.phase = git.CAPTURE_PHASE.get()
         exc.network_activity = git.network_activity()
+        exc.network_log = git.network_log()
         raise
     finally:
         git.NETWORK_ACTIVITY.reset(activity_token)
+        git.NETWORK_LOG.reset(log_token)
         git.CAPTURE_PHASE.reset(phase_token)
 
 
@@ -194,8 +197,12 @@ def _build_manifest(args: argparse.Namespace) -> dict:
             raise git.ReviewContextError(f"找不到 workspace：{workspace_file}")
         if not workspace.is_dir():
             raise git.ReviewContextError("無法辨識工作區報告根目錄；請確認目前 VSCode 工作區。")
-        repositories, discovery_gaps = group_context.discover(workspace, workspace_file)
-        repo = group_context.choose(repositories, workspace, args.project)
+        prepared_discovery = getattr(args, "_prepared_discovery", None)
+        if prepared_discovery is None:
+            repositories, discovery_gaps = group_context.discover(workspace, workspace_file)
+            repo = group_context.choose(repositories, workspace, args.project)
+        else:
+            repositories, discovery_gaps, repo = prepared_discovery
         report_root = repo / "review-reports"
         catalog, catalog_gaps = group_context.catalog(repositories, repo, args.workspace_context_json)
         # Validate both namespaces before any remote operation. Tags/revisions never fetch.
@@ -299,12 +306,14 @@ def _build_manifest(args: argparse.Namespace) -> dict:
             "entry_repo": "entry", "repositories": catalog,
             "review_scope": "committed", "working_tree_unchanged": unchanged,
             "fetches": fetches, "changed_files": changes,
-            "network_activity": git.network_activity(), "coverage_policy": "ancestor-noop/v1",
+            "network_activity": git.network_activity(), "network_log": git.network_log(), "coverage_policy": "ancestor-noop/v1",
+            "risk_causality_policy": review_worklist.RISK_POLICY,
             "release_changes": release_changes, "merge_preview": preview,
             "merge_commits": merge_commits,
             "context_gaps": sorted(set(gaps)), "context_complete": not gaps,
             "context_dir": str(session), "git_timeout": timeout,
             "snapshot_policy": frozen_evidence.POLICY,
+            "validation_policy": frozen_evidence.RECEIPT_POLICY,
             "capture_completed_at": datetime.now(timezone.utc).isoformat(),
             "workspace_instructions": workspace_instructions,
         }
@@ -362,7 +371,8 @@ def main(argv=None):
             review_session.cleanup_session(Path(result["context_dir"]))
             print(f"release-reviewer: {exc}", file=sys.stderr)
             print("release-reviewer: diagnostic: " + json.dumps(
-                {"phase": "capture-summary", "network_activity": result["network_activity"]}, ensure_ascii=False),
+                {"phase": "capture-summary", "network_activity": result["network_activity"],
+                 "network_log": result.get("network_log")}, ensure_ascii=False),
                 file=sys.stderr)
             return 2
     print(json.dumps(result, ensure_ascii=False, indent=2 if args.pretty else None))

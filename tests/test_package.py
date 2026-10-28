@@ -53,3 +53,29 @@ class PackageTests(RepoTest):
         self.assertEqual(self.repo / "review-reports", report.parent)
         self.assertEqual([report], list((self.repo / "review-reports").glob("release-review-*.md")))
         self.assertFalse(context.exists())
+
+    def test_unpacked_session_reads_worklist_and_publishes(self):
+        archive = packaging.build_release(SKILL, self.root / "session-dist")
+        with ZipFile(archive) as zipped:
+            zipped.extractall(self.root / "session-standalone")
+        script = self.root / "session-standalone/release-reviewer/scripts/review_session.py"
+        runtime = self.root / "session-runtime"
+        started = python(script, "start", "--workspace", self.root, "--project", self.repo,
+                         "--base", "main", "--head", "feature", "--runtime-root", runtime)
+        self.assertEqual(0, started.returncode, started.stderr)
+        start = json.loads(started.stdout)
+        context = Path(start["context_dir"])
+        args = ["--runtime-root", runtime, "--request-id", start["request_id"]]
+        step = python(script, "step", *args, "--worklist", context / "review-worklist.json", "--response-format", "auto")
+        self.assertEqual(0, step.returncode, step.stderr)
+        response = json.loads(step.stdout)
+        self.assertTrue(response.get("complete", response.get("evidence_complete")))
+        manifest = json.loads((context / "manifest.json").read_text(encoding="utf-8"))
+        save_draft(context, draft_for(manifest))
+        checked = python(script, "check", *args)
+        self.assertEqual(0, checked.returncode, checked.stderr)
+        finished = python(script, "finish", *args)
+        self.assertEqual(0, finished.returncode, finished.stderr)
+        published = json.loads(finished.stdout)
+        self.assertTrue(Path(published["report_path"]).is_file())
+        self.assertFalse(context.exists())

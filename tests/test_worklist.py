@@ -44,10 +44,12 @@ class WorklistTests(RepoTest):
         change = {"path": "src/service.py", "status": "M", "old_path": None, "old_mode": "100644", "new_mode": "100644"}
         manifest["merge_commits"] = [{"sha": parent2, "parents": [parent1, parent2], "parent_views": [
             {"position": n, "sha": parent, "changes": [change]} for n, parent in enumerate((parent1, parent2), 1)]}]
+        manifest["required_merge_views"] = [{"id": "required-parent", "commit": parent2, "parent": parent1,
+                                             "paths": ["src/service.py"]}]
         manifest["repositories"].append({"id": "repo-001", "role": "supporting", "status": "unavailable", "reason": "missing branch"})
         worklist, draft = review_worklist.prepare(manifest)
         self.assertEqual([v["parent"] for v in worklist["merge_parent_views"]], [parent1, parent2])
-        self.assertEqual({r["ref"] for r in worklist["requests"] if r["source"] == "merge-parent"}, {parent1, parent2})
+        self.assertEqual({r["ref"] for r in worklist["requests"] if r["source"] == "merge-parent"}, {parent1})
         self.assertEqual(draft["supporting_coverage"], [{"repo": "repo-001", "status": "not-reviewed", "reason": "missing branch", "searches": [], "evidence": []}])
 
     def test_no_difference_does_not_invent_reads(self):

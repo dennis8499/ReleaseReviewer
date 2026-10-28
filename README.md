@@ -1,12 +1,12 @@
 # Release Reviewer｜上版檢查
 
-獨立 Codex Skill **0.8.0**。只接受 Repo、基礎分支、比較分支，固定合併前審查。檢查直接阻止上版的 P0／P1、相關功能鏈與新增部署依賴，在 VSCode 受審 Repo/review-reports 產生**一份含可填寫 Checklist 的繁體中文 Release Report**。
+獨立 Codex Skill **0.9.0**。只接受 Repo、基礎分支、比較分支，固定合併前審查。檢查直接阻止上版的 P0／P1、相關功能鏈與新增部署依賴，在 VSCode 受審 Repo/review-reports 產生**一份含可填寫 Checklist 的繁體中文 Release Report**。
 
 ## 安裝與使用
 
 需要 Python 3.10+、Git 及可使用本機 Skills 的 Codex。Git 須支援 merge-tree --write-tree 與 --merge-base；缺少乾淨預覽時保留缺口，不改用直接比較。
 
-將 skills/release-reviewer 複製到 Codex Skills 目錄，或解壓 dist/release-reviewer-0.8.0.zip。CODEX_HOME 有設定時使用其 skills 子目錄，否則使用使用者的 .codex/skills。
+將 skills/release-reviewer 複製到 Codex Skills 目錄，或解壓 dist/release-reviewer-0.9.0.zip。CODEX_HOME 有設定時使用其 skills 子目錄，否則使用使用者的 .codex/skills。
 
 ~~~text
 $release-reviewer Repo=OrderService 基礎分支=origin/main 比較分支=origin/feature/payment
@@ -19,13 +19,21 @@ $release-reviewer Repo=C:\projects\OrderService 基礎分支=main 比較分支=f
 
 透過 GitlabWorkSpace 使用時，請同步更新包含本版原生 Skill 的離線套件；專案內另行安裝的技能也須更新。歷史報告保留。
 
-同次審查只由主 agent 擷取一次，子 agent 共用固定 context；修稿沿保留的同一份快照完成。明確遠端 base/head 每個 remote 批次同步一次，關聯 Repo 使用本機 HEAD；終止錯誤回報後停止，不自動重跑。新增 `network_activity` 分別列 fetch 嘗試／成功與分支要求／同步數，不代表 HTTP 請求數。
+同次審查由同一 agent 擷取及審查固定 context；修稿沿保留的同一份快照完成。明確遠端 base/head 每個 remote 批次同步一次，關聯 Repo 使用本機 HEAD；終止錯誤回報後停止，不自動重跑。`network_activity` 與 `network_log` 分別保留 fetch 數量、觸發原因和各 remote 的嘗試／成功狀態；Git 指令數不等同 HTTP 或 SSH 請求數。
 
 新 context 使用 `coverage_policy=ancestor-noop/v1`。只有完整證明比較分支已含於基礎版本、乾淨合併不新增內容、全部 catalog 已擷取且沒有必要缺口時，agent 才將七類依賴與關聯 Repo 覆蓋明確判為「本次不適用」，保留理由與清單；初始草稿仍未審查。報告無新增 Checklist 時顯示「無本次新增核對項」，實際環境仍未驗證。其餘新增依賴判斷繼續以入口 base 整個 Repo 為基準。完整條件見[審查規則](skills/release-reviewer/references/review-rules.md#祖先分支無新增內容)。
 
 祖先豁免另需 capture 封存的 `ancestor_path` commit 證據，由發布器驗證 hash 與 parent 連線；草稿不能自行宣告祖先關係。
 
-## 0.8.0 更新
+## 0.9.0 更新
+
+Session 可直接以 `step --worklist` 執行待讀清單，按 Repo 批次讀取固定 blob；選用 `--response-format auto` 時，共享相同內容並保留每筆來源與行號。新 context 綁定完整快照驗證收據，step 對實際使用的 Repo 檢查檔案內容與結構；finish 仍獨立完整驗證全部快照和搜尋紀錄。舊 context 保持完整驗證，Context／Draft／Report 維持 v3。
+
+新草稿的程式風險須連回固定 Diff 並說明因果；刪除造成的問題可結合舊版位置及最終版本缺失證據。入口 Repo 使用最終版本的適用 `AGENTS.md`，關聯 Repo 使用固定 HEAD。必要缺口、七類依賴及人工 Checklist 均保留。
+
+合成案例的 helper 五組配對均完成且讀取／搜尋證據一致；完整 Agent 時間與三模型語意盲測尚未驗證，不宣稱已達端到端優化目標。詳細數據與發布限制見 [0.9.0 發版紀錄](docs/releases/v0.9.0.md)。
+
+## 0.8.0 更新（歷史）
 
 新審查使用 `review_session.py start／step／check／finish／status／cancel`，在所有 Git Repo 外的獨立 `.release-review-runtime/` 保存請求、草稿與恢復資訊。成功 operation ID 可重送，失敗項修正後沿同次固定版本續跑；同 context 搜尋可共用計算，每輪只完整驗證實際使用的 Repo。純 artifact 閱讀與草稿預檢執行零次 Git。
 

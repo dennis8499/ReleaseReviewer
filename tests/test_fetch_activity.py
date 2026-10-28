@@ -6,6 +6,7 @@ from unittest import mock
 
 from support import *
 import frozen_evidence
+import review_flow as flow
 
 
 class FetchActivityTests(RepoTest):
@@ -29,6 +30,10 @@ class FetchActivityTests(RepoTest):
         _, manifest = self.capture()
         expected = context_helper.git.empty_network_activity()
         self.assertEqual(expected, manifest["network_activity"])
+        self.assertEqual("local-branches", manifest["network_log"]["reason"])
+        self.assertEqual([], manifest["network_log"]["fetches"])
+        self.assertIsNone(manifest["network_log"]["http_requests"])
+        self.assertIsNone(manifest["network_log"]["ssh_requests"])
         self.assertEqual("ancestor-noop/v1", manifest["coverage_policy"])
         for projector in (context_helper.capture_summary, context_helper.capture_summary_v2):
             summary = projector(manifest)
@@ -51,6 +56,11 @@ class FetchActivityTests(RepoTest):
                 _, manifest = self.capture(base="origin/main", head="origin/feature")
             self.assertEqual(1, len([call for call in calls.call_args_list if call.args[1][0] == "fetch"]))
             self.assertEqual(expected, manifest["network_activity"])
+            event, = manifest["network_log"]["fetches"]
+            self.assertEqual(("explicit-remote-branches", "fetch", "origin", 1, 1),
+                             (event["reason"], event["phase"], event["remote"],
+                              event["fetch_attempt_count"], event["fetch_success_count"]))
+            self.assertEqual({"origin/main", "origin/feature"}, set(event["requested_refs"]))
             self.assertEqual(2, len(manifest["fetches"]))
         _, local = self.capture()
         self.assertEqual(context_helper.git.empty_network_activity(), local["network_activity"])
@@ -93,6 +103,20 @@ class FetchActivityTests(RepoTest):
             self.capture(base="origin/main", head="upstream/feature")
         self.assertEqual({"fetch_attempt_count": 2, "fetch_success_count": 1,
                           "requested_ref_count": 2, "synced_ref_count": 1}, raised.exception.network_activity)
+        events = raised.exception.network_log["fetches"]
+        self.assertEqual([("origin", 1, 1), ("upstream", 1, 0)],
+                         [(row["remote"], row["fetch_attempt_count"], row["fetch_success_count"]) for row in events])
+
+    def test_same_request_retry_reuses_the_original_network_log(self):
+        self.remote()
+        args = flow.parser().parse_args(["start", "--workspace", str(self.root), "--project", str(self.repo),
+                                         "--base", "origin/main", "--head", "origin/feature"])
+        first = flow.start(args)
+        with mock.patch.object(context_helper.git, "fetch_inputs", side_effect=AssertionError("unexpected refetch")):
+            second = flow.start(args)
+        self.assertEqual(first["request_id"], second["request_id"])
+        self.assertEqual(first["network_log"], second["network_log"])
+        flow.cancel(Path(first["runtime_root"]), first["request_id"])
 
     def test_timeout_diagnostic_preserves_message_exit_code_and_empty_stdout(self):
         self.remote()

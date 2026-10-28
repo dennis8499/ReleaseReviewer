@@ -225,6 +225,11 @@ def _validate_result(draft, manifest, context):
     layout = draft.get("report_layout")
     draft_require(layout in (None, "engineering-review/v1", "engineering-review/v2"), "不支援的 report_layout。")
     result = {"schema": "ReleaseReviewReport/v3", "summary": text(draft.get("summary"), "summary")}
+    policy = manifest.get("risk_causality_policy")
+    if policy is not None:
+        ev.require(policy == review_worklist.RISK_POLICY, "unsupported risk causality policy")
+        draft_require(draft.get("risk_causality_policy", policy) == policy, "草稿與固定風險因果政策不符。")
+        result["risk_causality_policy"] = policy
     if layout is not None:
         result["report_layout"] = layout
     for field in ("coverage", "code_risks", "config_changes", "db_changes", "external_changes", "dependency_coverage"):
@@ -307,9 +312,13 @@ def _validate_result(draft, manifest, context):
                    "標示已重現時須記錄實際執行的檢查。")
         risk["evidence"] = cached_citations(item.get("evidence", []), manifest, context, all_sources=True,
                                             require_ranges=layout == "engineering-review/v2")
+        if manifest.get("risk_causality_policy") is not None:
+            risk["diff_roots"], risk["final_absence"] = review_worklist.validate_risk_links(
+                item, manifest, risk["evidence"], require=draft_require)
+            risk["diff_reason"] = item["diff_reason"]
         draft_require(any(e["repo"] == "entry" and e["path"] in reviewed for e in risk["evidence"]),
                    "程式風險至少須引用一個已審查的變更路徑。")
-        draft_require(any(e["repo"] == "entry" and (e["source"], e["ref"]) == final_pair for e in risk["evidence"]),
+        draft_require(bool(risk.get("final_absence")) or any(e["repo"] == "entry" and (e["source"], e["ref"]) == final_pair for e in risk["evidence"]),
                    "程式風險須附最終受審版本的行為證據。")
         risks.append(risk)
     result["code_risks"] = risks
@@ -409,7 +418,7 @@ def _validate_result(draft, manifest, context):
                           ("project", "repo", "base_input", "head_input", "base_resolved_ref", "head_resolved_ref", "base_sha", "head_sha",
                            "merge_base", "diff_base", "mode", "generated_at", "working_tree_unchanged", "report_root")}
     result["identity"].update({"final_source": final_pair[0], "final_ref": final_pair[1]})
-    catalog = [{key: value for key, value in record.items() if key != "snapshot"}
+    catalog = [{key: value for key, value in record.items() if key not in ("snapshot", "validation_receipt")}
                for record in manifest["repositories"]]
     for projected, record in zip(catalog, manifest["repositories"]):
         if record.get("snapshot"):
@@ -622,6 +631,9 @@ def _render_legacy(result, *, sectioned=False):
                   "**預期結果**", "", risk_prose(risk["expected"]), "",
                   "**實際結果**", "", risk_prose(risk["actual"]), "",
                   "**證據**", "", *paragraphs(technical["explanation"]), *citations(risk["evidence"], repo_names),
+                  *(["Diff 起點：" + "、".join(risk["diff_roots"]) + "；" + risk["diff_reason"], ""] if risk.get("diff_roots") else []),
+                  *[line for proof in risk.get("final_absence", [])
+                    for line in ("最終版本不存在：" + code_span(proof["path"]) + "（" + proof["source"] + " " + proof["ref"][:8] + "）", "")],
                   "**建議改善方式**", "", *paragraphs(risk["recommendation"], technical["engineering_fix"])]
     if not result["blocker_count"]:
         lines += ["已檢查範圍未發現有證據的直接阻擋；待確認條件與缺口見後文。", ""]

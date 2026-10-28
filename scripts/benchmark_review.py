@@ -33,7 +33,9 @@ def normalize(value, replacements=()):
     """Remove run-specific locations/times while retaining review semantics."""
     if isinstance(value, dict):
         return {key: normalize(item, replacements) for key, item in value.items()
-                if key not in {"generated_at", "captured_at", "capture_completed_at", "generation"}
+                # Receipt hashes include the fixture's absolute source path;
+                # source descriptors and validated evidence remain compared.
+                if key not in {"generated_at", "captured_at", "capture_completed_at", "generation", "validation_receipt"}
                 and not (key in {"required_merge_views", "merge_parent_review"} and item == [])
                 and not (key == "merge_parent_policy" and not value.get("required_merge_views"))}
     if isinstance(value, list):

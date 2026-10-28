@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.9.0 - 2026-10-28
+
+- Add ordered session worklist execution, stable operation IDs, per-repository batched blob reads and optional shared-content responses; preserve checkpoints, source identities, line ranges and the legacy response format.
+- Reuse full snapshot validation only after checking a request-bound receipt against source descriptors and every owned snapshot file and directory. Retain full validation for older contexts and independent snapshot and search-ledger validation at publication.
+- Resolve repository instructions from the fixed final entry tree or supporting HEAD; seed only necessary merge-parent reads while retaining historical sources for follow-up.
+- Require new code risks to identify their fixed Diff roots and causal explanation, including verified final-path absence for deletion or rename evidence. Keep Context, Draft and Report at v3 and preserve legacy contexts.
+- Record per-remote fetch reasons, phase and attempt/success counts; local branches and supporting repositories remain offline, and same-request retries do not refetch.
+- Record the five-pair synthetic helper measurements, Windows/Python 3.14 regression and known acceptance limits in the [release notes](docs/releases/v0.9.0.md). Full Agent performance and three-model semantic quality remain unverified.
+
 ## 0.8.0 - 2026-10-23
 
 - Publish with the explicitly accepted model-quality and performance limitations documented in [release notes](docs/releases/v0.8.0.md). The original acceptance result remains failed; release CI is a separate required gate.

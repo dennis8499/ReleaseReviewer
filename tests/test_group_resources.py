@@ -61,7 +61,7 @@ class GroupTests(RepoTest):
             {"id": "F-002", "from_repo": refs["relay"]["repo"], "to_repo": refs["consumer"]["repo"], "kind": "event", "status": "reviewed", **diff_anchor(manifest, "src/contract.py"),
              "description": "consumer 仍讀取 amount 欄位。", "evidence": [refs["relay"], refs["consumer"]]},
         ]
-        draft["code_risks"] = [{"id": "R-001", "priority": "P1", "title": "事件欄位改名使未變更消費端失敗",
+        draft["code_risks"] = [{"id": "R-001", "priority": "P1", "title": "事件欄位改名使未變更消費端失敗", **diff_anchor(manifest, "src/contract.py"),
                                 "blocking_reason": "既有 consumer 必須能處理上版後事件，欄位改名會中斷既有處理流程。",
                                 "trigger": "入口發出 total 事件並由既有 consumer 處理。", "impact": "consumer 讀取 amount 失敗。",
                                 "recommendation": "保留舊欄位或安排相容版本部署。", "scenario_source": "code-derived",

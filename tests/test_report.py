@@ -22,6 +22,7 @@ class ReportTests(RepoTest):
         result = release_report.validate_result(draft, manifest, context)
         md = release_report.publish_report(context, save_draft(context, draft))
         self.assertEqual(result["schema"], "ReleaseReviewReport/v3")
+        self.assertNotIn("validation_receipt", result["identity"]["repositories"][0])
         self.assertEqual([len(result[k]) for k in ("code_risks", "config_changes", "db_changes")], [1, 1, 1])
         self.assertNotIn("CoreDb.dbo.Orders", [d["name"] for d in result["db_changes"]])
         self.assertTrue(result["review_complete"])
@@ -29,6 +30,7 @@ class ReportTests(RepoTest):
         document = md.read_text(encoding="utf-8")
         marker = re.search(r"<!-- release-review-report:([A-Za-z0-9+/=]+) -->", document).group(1)
         metadata = json.loads(base64.b64decode(marker))
+        self.assertNotIn("validation_receipt", metadata["repositories"][0])
         body = document.split("\n<!-- release-review-report:")[0]
         self.assertEqual(metadata["static_body_sha256"], hashlib.sha256(release_report.static_body(body).encode()).hexdigest())
         self.assertNotIn("checklist_file", metadata)

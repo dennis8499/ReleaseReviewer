@@ -33,7 +33,7 @@ def operation_cache(manifest: dict, context: Path, *, persistent=False):
     source, Repo, SHA and path before consulting cached data.
     """
     token = _CACHE.set({"manifest": manifest, "context": Path(context),
-                         "sources": {}, "blobs": {}, "metadata": {}, "searches": {},
+                         "sources": {}, "blobs": {}, "metadata": {}, "searches": {}, "path_indexes": {},
                          "persistent": persistent, "search_hits": 0, "search_runs": 0})
     try:
         yield
@@ -93,6 +93,9 @@ def load_manifest(context: Path, *, full=True) -> dict:
             "工作區身分無效。")
     repositories = manifest.get("repositories")
     require(isinstance(repositories, list) and bool(repositories), "Repo catalog 無效。")
+    validation_policy = manifest.get("validation_policy")
+    require(validation_policy is None or validation_policy == frozen_evidence.RECEIPT_POLICY,
+            "不支援的快照驗證收據政策。")
     require(manifest.get("snapshot_policy") is not None or not any(
         isinstance(item, dict) and item.get("snapshot") is not None for item in repositories),
         "自足快照不能移除固定政策而降級為舊來源。")
@@ -113,6 +116,10 @@ def load_manifest(context: Path, *, full=True) -> dict:
             else:
                 require(bool(item.get("reason")) and not manifest["context_complete"], "關聯版本缺口未保留。")
         if manifest.get("snapshot_policy") is not None and item["status"] == "captured":
+            if validation_policy is not None:
+                receipt = item.get("validation_receipt")
+                require(isinstance(receipt, dict) and receipt.get("schema") == validation_policy,
+                        "固定快照缺少驗證收據。")
             if full:
                 frozen_evidence.validate(context, item)
             refs = ({manifest["base_sha"], manifest["head_sha"], manifest["diff_base"]}
@@ -522,15 +529,22 @@ def _prefetch_reads(manifest, context, requests):
             source = request.get("source", "base")
             reference, env = source_version(manifest, context, source, request.get("ref"), request.get("repo"))
             selected = repository(manifest, request.get("repo"))
-            entries = selected["snapshot"]["sources"][reference]["entries"]
-            found = [entry for entry in entries if entry["path"] == path and entry["kind"] == "blob"]
-            require(len(found) == 1, "path is not a fixed blob")
+            index_key = (selected["id"], reference)
+            if index_key not in state["path_indexes"]:
+                entries = selected["snapshot"]["sources"][reference]["entries"]
+                state["path_indexes"][index_key] = {entry["path"]: entry for entry in entries}
+            found = state["path_indexes"][index_key].get(path)
+            require(found is not None and found["kind"] == "blob", "path is not a fixed blob")
             key = (selected["id"], selected["path"], reference, path,
                    env.get("GIT_OBJECT_DIRECTORY"), env.get("GIT_ALTERNATE_OBJECT_DIRECTORIES"))
+            if key in state["blobs"]:
+                continue
             group = groups.setdefault(selected["id"], {"repo": selected, "env": env, "items": [], "keys": []})
-            expression = reference + ":" + path
-            group["items"].append((expression, found[0]["object"]))
-            group["keys"].append((key, expression))
+            # The fixed tree inventory already binds each path to its blob OID.
+            # Read each distinct object only once even across refs and paths.
+            oid = found["object"]
+            group["items"].append((oid, oid))
+            group["keys"].append((key, oid))
         except EVIDENCE_ERRORS:
             continue  # The ordinary request path records this item's error.
     for group in groups.values():

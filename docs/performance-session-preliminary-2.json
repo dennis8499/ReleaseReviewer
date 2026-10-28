@@ -1,0 +1,71 @@
+{
+  "schema": "ReleaseReviewSessionBenchmark/v1",
+  "complete": false,
+  "environment": {
+    "platform": "Windows-11-10.0.26300-SP0",
+    "python": "3.14.7 (tags/v3.14.7:823f032, Aug  5 2026, 10:51:32) [MSC v.1944 64 bit (AMD64)]",
+    "baseline_payload_sha256": "9a1c96b1a017f410d2c00f1fb703e00d4ca27d985648bdfc40920d8d2f8d983b",
+    "candidate_payload_sha256": "b684cd64ba4a443b5aec74d00feb685469a2d26665d711af3868390a01742542"
+  },
+  "samples": [
+    {
+      "variant": "baseline",
+      "run": 1,
+      "success": true,
+      "scenario": "repository",
+      "stages": {
+        "start": {
+          "wall_seconds": 12.873524800001178,
+          "git_commands": 57,
+          "tool_calls": 1,
+          "output_bytes": 11218,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 8.482166199995845,
+          "git_commands": 32,
+          "tool_calls": 1,
+          "output_bytes": 553,
+          "exit_code": 0
+        },
+        "step-1": {
+          "wall_seconds": 7.5908729000002495,
+          "git_commands": 32,
+          "tool_calls": 1,
+          "output_bytes": 553,
+          "exit_code": 0
+        },
+        "check": {
+          "wall_seconds": 0.4384790999974939,
+          "git_commands": 0,
+          "tool_calls": 1,
+          "output_bytes": 317,
+          "exit_code": 0
+        },
+        "finish": {
+          "wall_seconds": 17.458762199996272,
+          "git_commands": 60,
+          "tool_calls": 1,
+          "output_bytes": 3017,
+          "exit_code": 0
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "evidence_digest": "8c2f1fe418660a162c3303311e2389f64eab2315837d7fa57293026ee0fdade2",
+      "evidence_count": 48,
+      "check_passed": true,
+      "review_complete": true,
+      "repair_seconds": 0.0,
+      "total_seconds": 46.84380519999104
+    }
+  ]
+}

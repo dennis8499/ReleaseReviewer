@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import time
 import uuid
 
@@ -87,6 +88,28 @@ def fixed_identity(manifest):
             "diff_base", "generated_at", "capture_completed_at", "snapshot_policy") if key in manifest}
 
 
+def receipt_anchors(job, manifest):
+    import frozen_evidence
+    policy = manifest.get("validation_policy")
+    if policy is None:
+        if "snapshot_receipts" in job:
+            raise ValueError("Snapshot validation policy was removed from this request.")
+        return None  # Sessions created by older versions always fully validate.
+    if policy != frozen_evidence.RECEIPT_POLICY:
+        raise ValueError("Unsupported snapshot validation policy.")
+    if job.get("risk_causality_policy") != manifest.get("risk_causality_policy"):
+        raise ValueError("Risk causality policy differs from this request.")
+    anchors = job.get("snapshot_receipts")
+    captured = {item["id"]: item for item in manifest["repositories"] if item["status"] == "captured"}
+    if not isinstance(anchors, dict) or set(anchors) != set(captured):
+        raise ValueError("Snapshot receipts do not match this request's captured repositories.")
+    for identifier, record in captured.items():
+        receipt = record.get("validation_receipt")
+        if not isinstance(receipt, dict) or frozen_evidence.receipt_digest(receipt) != anchors[identifier]:
+            raise ValueError("Snapshot validation receipt differs from this request.")
+    return anchors
+
+
 def diagnostics(draft, manifest):
     """Aggregate only draft/metadata checks; no Git and no semantic approval."""
     import review_worklist
@@ -101,6 +124,9 @@ def diagnostics(draft, manifest):
         draft = {}
     if draft.get("schema") != "ReleaseReviewDraft/v3":
         error("schema", "/schema", "schema must be ReleaseReviewDraft/v3")
+    policy = manifest.get("risk_causality_policy")
+    if policy is not None and (policy != review_worklist.RISK_POLICY or draft.get("risk_causality_policy", policy) != policy):
+        error("risk_policy", "/risk_causality_policy", "draft and fixed risk causality policy must match")
     if draft.get("report_layout") not in (None, "engineering-review/v1", "engineering-review/v2"):
         error("layout", "/report_layout", "unsupported report layout")
     if not isinstance(draft.get("summary"), str) or not draft["summary"].strip():
@@ -388,6 +414,8 @@ def diagnostics(draft, manifest):
                 if not isinstance(value, str) or not value.strip() or value.strip() == "未提供":
                     error("required", f"/{field}/{i}/{name}", name + " is required")
             if field == "code_risks":
+                if manifest.get("risk_causality_policy") == review_worklist.RISK_POLICY:
+                    diff_links(row, f"/{field}/{i}")
                 if row.get("priority") not in ("P0", "P1"):
                     error("priority", f"/{field}/{i}/priority", "only P0/P1 release blockers are accepted")
                 else:
@@ -411,7 +439,14 @@ def diagnostics(draft, manifest):
                     if row.get("definition_status") == "defined" and not final_evidence(definitions):
                         error("definition_final_source", f"/{field}/{i}/definition_evidence", "defined configuration needs final entry-version definition evidence")
             evidence = citations(row.get("evidence", []), f"/{field}/{i}/evidence")
-            if not final_evidence(evidence):
+            valid_absence = False
+            if field == "code_risks" and manifest.get("risk_causality_policy") == review_worklist.RISK_POLICY:
+                try:
+                    _, absence = review_worklist.validate_risk_links(row, manifest, evidence)
+                    valid_absence = bool(absence)
+                except (ValueError, KeyError, TypeError) as exc:
+                    error("risk_causality", f"/{field}/{i}", str(exc))
+            if not final_evidence(evidence) and not valid_absence:
                 error("risk_final_source" if field == "code_risks" else "extension_final_source", f"/{field}/{i}/evidence",
                       "item needs final entry-version behavior, use, target or definition evidence")
             if field == "code_risks":
@@ -515,7 +550,7 @@ def start(args):
                                           args.refresh, args.auth_scope)
         began = time.perf_counter()
         try:
-            repositories, _ = group_context.discover(Path(args.workspace).resolve(), Path(args.workspace_file) if args.workspace_file else None)
+            repositories, discovery_gaps = group_context.discover(Path(args.workspace).resolve(), Path(args.workspace_file) if args.workspace_file else None)
             repo = group_context.choose(repositories, Path(args.workspace).resolve(), args.project)
             if any(root.is_relative_to(item.resolve()) for item in repositories):
                 raise ValueError("Release runtime must be outside every declared Git Repo.")
@@ -535,13 +570,18 @@ def start(args):
                 options += ["--workspace-context-json", json.dumps(args.workspace_context_json, ensure_ascii=False)]
             capture_args = capture.parse_args(options)
             capture_args._prepared_context = str(context)
+            capture_args._prepared_discovery = (repositories, discovery_gaps, repo)
             with active.activate():
                 active.check()
                 manifest = capture.build_manifest(capture_args)
                 active.check()
             update(root, identifier, state="ready", phase="review", selected_repo="entry",
                    network_activity=manifest["network_activity"],
+                   network_log=manifest["network_log"],
                    fixed_identity=fixed_identity(manifest),
+                   risk_causality_policy=manifest["risk_causality_policy"],
+                   snapshot_receipts={item["id"]: frozen_evidence.receipt_digest(item["validation_receipt"])
+                                      for item in manifest["repositories"] if item["status"] == "captured"},
                    metrics={"capture_seconds": time.perf_counter() - began})
             summary = capture.capture_summary_v2(manifest)
             return {"schema": "ReleaseReviewStart/v1", "tool": "release-reviewer", "request_id": identifier, "runtime_root": str(root),
@@ -551,12 +591,13 @@ def start(args):
                     "required_coverage": coordination.read_json(context / "review-worklist.json")["required_coverage"],
                     "required_merge_views": manifest.get("required_merge_views", []),
                     "workspace_instructions": manifest.get("workspace_instructions", []),
-                    "network_activity": manifest["network_activity"],
+                    "network_activity": manifest["network_activity"], "network_log": manifest["network_log"],
                     "files": summary["files"], "step": {"operations": ["read", "search", "list", "instructions", "patch", "view"],
                     "requests_file": "UTF-8 JSON array, each operation needs unique id and op"}}
         except BaseException as exc:
             update(root, identifier, state="cancelled" if active.cancelled() else "failed", phase="terminal",
-                   error=coordination.safe_error(exc), finished_at_epoch=time.time())
+                   error=coordination.safe_error(exc), finished_at_epoch=time.time(),
+                   **{key: getattr(exc, key) for key in ("network_activity", "network_log") if hasattr(exc, key)})
             if context and context.exists():
                 review_session.cleanup_session(context)
             raise
@@ -592,16 +633,98 @@ def artifact_view(context, artifact, pointer="", offset=0, page_size=100, string
 
 
 def compact(value, context):
-    if len(review_runtime.canonical(value)) <= LIMIT:
-        return {**value, "outcome_available": True}
+    inline = {**value, "outcome_available": True}
+    if len(review_runtime.canonical(inline)) < LIMIT:
+        return inline
     artifact = review_runtime.store_view(context, value)
-    return {"schema": "ReleaseReviewEvidenceSummary/v1", "artifact": artifact,
+    summary = {"schema": "ReleaseReviewEvidenceSummary/v1", "artifact": artifact,
             "evidence_complete": True, "view_complete": False,
             **{key: value[key] for key in ("request_id", "runtime_root", "context_dir", "draft_path", "state", "complete", "next_index", "error") if key in value},
             "fields": list(value), "continue": {"op": "view", "artifact": artifact, "pointer": "", "offset": 0, "page_size": 100}}
+    if len(review_runtime.canonical(summary)) >= LIMIT:
+        summary.pop("error", None)  # The complete error remains in the artifact.
+    return summary
 
 
-def step(root, identifier, operations=None, *, requests_file=None):
+def worklist_operations(path):
+    """Map unchanged worklist requests to repeatable, content-derived IDs."""
+    import evidence as ev
+    requests = ev.load_requests(str(path))
+    result = []
+    for request in requests:
+        ev.require(isinstance(request, dict), "worklist request must be an object")
+        operation = {"op": request.get("action"), **{k: v for k, v in request.items() if k != "action"}}
+        operation["id"] = "worklist-" + coordination.digest(operation)
+        result.append(operation)
+    return result
+
+
+def read_prefix(manifest, context, operations, start, repo_id):
+    """Select one Repo's reads within the consecutive valid read prefix."""
+    import evidence as ev
+    requests, seen = [], {}
+    for operation in operations[start:]:
+        if not isinstance(operation, dict) or operation.get("op") != "read":
+            break
+        op_id = operation.get("id")
+        args = {key: value for key, value in operation.items() if key not in ("id", "op")}
+        if not isinstance(op_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", op_id):
+            break
+        old = manifest["operations"].get(op_id)
+        fingerprint = coordination.digest(operation)
+        if (old and old["fingerprint"] != fingerprint) or (op_id in seen and seen[op_id] != fingerprint):
+            break
+        seen[op_id] = fingerprint
+        request = {"action": "read", **args}
+        selected_id = request.get("repo", "entry")
+        if request.get("source") is None:
+            request["source"] = "head" if selected_id == "entry" else "supporting"
+        try:
+            ev.require(not request.keys() - ev.REQUEST_FIELDS, "unknown request fields")
+            ev.require(isinstance(selected_id, str) and bool(selected_id), "invalid repository")
+            ev.require(ev.safe_path(request.get("path")), "invalid path")
+            ev.require(type(request.get("ignore_case", False)) is bool, "invalid ignore_case")
+            if "line_start" in request or "line_end" in request:
+                begin, end = request.get("line_start"), request.get("line_end")
+                ev.require(type(begin) is int and type(end) is int and 1 <= begin <= end, "invalid line range")
+            selected = ev.repository(manifest, selected_id)
+            ev.require(selected.get("status") == "captured", "repository was not captured")
+            if old:
+                continue  # A checkpoint is read from its saved artifact, not Git.
+            reference, _ = ev.source_version(manifest, context, request["source"], request.get("ref"), selected_id)
+            state = ev._cache(manifest, context)
+            index_key = (selected_id, reference)
+            if index_key not in state["path_indexes"]:
+                entries = selected["snapshot"]["sources"][reference]["entries"]
+                state["path_indexes"][index_key] = {entry["path"]: entry for entry in entries}
+            found = state["path_indexes"][index_key].get(request["path"])
+            ev.require(found is not None and found["kind"] == "blob", "path is not a fixed blob")
+        except ev.EVIDENCE_ERRORS:
+            break
+        if selected_id == repo_id:
+            requests.append(request)
+    return requests
+
+
+def shared_step(outcome, content_ids):
+    """Keep operation identities separate while sharing repeated full read lines."""
+    contents, operations = {}, []
+    for row in outcome["operations"]:
+        result = row.get("result")
+        identifier = content_ids.get(row.get("id"))
+        if (identifier is not None and isinstance(result, dict) and isinstance(result.get("lines"), list)
+                and all(key in result for key in ("repo", "source", "ref", "path"))
+                and "line_start" not in result):
+            if identifier in contents and contents[identifier]["lines"] != result["lines"]:
+                raise ValueError("Saved read content identity differs from its lines.")
+            contents.setdefault(identifier, {"lines": result["lines"]})
+            result = {**{key: value for key, value in result.items() if key != "lines"}, "content_id": identifier}
+            row = {**row, "result": result}
+        operations.append(row)
+    return {**outcome, "schema": "ReleaseReviewStep/v2", "operations": operations, "contents": contents}
+
+
+def step(root, identifier, operations=None, *, requests_file=None, worklist=None, response_format="legacy"):
     import evidence as ev
     import frozen_evidence
     path = job_path(root, identifier)
@@ -610,16 +733,19 @@ def step(root, identifier, operations=None, *, requests_file=None):
         if job["state"] not in ("ready", "reviewing"):
             raise ValueError("Session is not ready for review.")
         active = coordination.Coordination(root, identifier)
-        results, checked, changed = [], set(), False
+        results, checked, changed, content_ids = [], set(), False, {}
         began = time.perf_counter()
         try:
             with active.activate(), review_runtime.writer(context):
                 manifest = ev.load_manifest(context, full=False)
+                anchors = receipt_anchors(job, manifest)
                 checkpoints = manifest.setdefault("operations", {})
                 ev.require(isinstance(checkpoints, dict) and all(
                     isinstance(key, str) and isinstance(value, dict)
                     and isinstance(value.get("fingerprint"), str) and coordination.DIGEST.fullmatch(value["fingerprint"])
                     and isinstance(value.get("artifact"), str) and coordination.DIGEST.fullmatch(value["artifact"])
+                    and ("content_sha256" not in value or isinstance(value["content_sha256"], str)
+                         and coordination.DIGEST.fullmatch(value["content_sha256"]))
                     for key, value in checkpoints.items()), "Owned operation checkpoints are invalid.")
                 def input_failure(message, code="authoring.invalid-requests-file", pointer="/requests_file"):
                     errors = [{"code": code, "pointer": pointer, "message": message}]
@@ -628,21 +754,25 @@ def step(root, identifier, operations=None, *, requests_file=None):
                             "operations": [], "complete": False, "next_index": 0, "error": message, "errors": errors,
                             "terminal": False, "recoverable": True, "context_retained": True,
                             "evidence_verified": False, "git_commands": 0}
-                if requests_file is not None:
+                if requests_file is not None and worklist is not None:
+                    return input_failure("requests-file and worklist are mutually exclusive")
+                if response_format not in ("legacy", "auto"):
+                    return input_failure("invalid response format")
+                if requests_file is not None or worklist is not None:
                     try:
-                        operations = coordination.read_json(requests_file)
+                        operations = worklist_operations(worklist) if worklist is not None else coordination.read_json(requests_file)
                     except (OSError, ValueError) as exc:
                         return input_failure(coordination.safe_error(exc))
-                if not isinstance(operations, list) or not operations:
+                if not isinstance(operations, list) or (not operations and worklist is None):
                     return input_failure("operations must be a nonempty array", "authoring.invalid-operations", "")
                 with ev.operation_cache(manifest, context, persistent=True):
+                    prefetched_repos = set()
                     for index, operation in enumerate(operations):
                         active.check()
                         try:
                             if not isinstance(operation, dict):
                                 raise ValueError("operation must be an object")
                             op_id = operation.get("id")
-                            import re
                             if not isinstance(op_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", op_id):
                                 raise ValueError("operation requires a unique id")
                             fingerprint = coordination.digest(operation)
@@ -654,6 +784,8 @@ def step(root, identifier, operations=None, *, requests_file=None):
                             args = {key: value for key, value in operation.items() if key not in ("id", "op")}
                             if kind not in ("read", "search", "list", "instructions", "patch", "view"):
                                 raise ValueError("unsupported step operation")
+                            if kind != "read":
+                                prefetched_repos.clear()
                             repo_id = args.get("repo", "entry")
                             repo = ev.repository(manifest, repo_id)
                             if kind != "view" and repo.get("status") != "captured":
@@ -665,13 +797,20 @@ def step(root, identifier, operations=None, *, requests_file=None):
                             # A saved successful checkpoint is owned evidence,
                             # so damage is fatal rather than an authoring typo.
                             result = review_runtime.load_view(context, old["artifact"])
+                            if "content_sha256" in old:
+                                content_ids[op_id] = old["content_sha256"]
                             results.append({"id": op_id, "reused": True, "artifact": old["artifact"], "result": result})
                             continue
                         # Source damage is terminal. Validation is once per used
                         # Repo in this round, never for pure artifact navigation.
                         if kind != "view" and repo_id not in checked:
-                            frozen_evidence.validate(context, repo)
+                            frozen_evidence.validate_for_step(context, repo, None if anchors is None else anchors[repo_id])
                             checked.add(repo_id)
+                        if kind == "read" and repo_id not in prefetched_repos:
+                            requests = read_prefix(manifest, context, operations, index, repo_id)
+                            if requests:
+                                ev._prefetch_reads(manifest, context, requests)
+                            prefetched_repos.add(repo_id)
                         try:
                             if kind in ("read", "search", "list"):
                                 if args.get("source") is None:
@@ -686,12 +825,21 @@ def step(root, identifier, operations=None, *, requests_file=None):
                             else:
                                 if set(args) - {"repo"}:
                                     raise ValueError("unknown instructions argument")
-                                source = "head" if repo_id == "entry" else "supporting"
+                                source = ("merge-preview" if manifest.get("merge_preview", {}).get("status") == "clean"
+                                          else "head") if repo_id == "entry" else "supporting"
                                 ref, _ = ev.source_version(manifest, context, source, repo=repo_id)
                                 result = {"instructions": [{**item, "content": ev.read_blob(manifest, context, source, item["path"], repo=repo_id).decode("utf-8")}
                                                           for item in repo.get("instructions", []) if item["ref"] == ref]}
+                            content_sha256 = None
+                            if kind == "read" and "line_start" not in result:
+                                raw = ev._read_blob(manifest, context, args["source"], args.get("path"),
+                                                    args.get("ref"), args.get("repo"))[2]
+                                content_sha256 = hashlib.sha256(raw).hexdigest()
                             artifact = review_runtime.store_view(context, result)
                             manifest["operations"][op_id] = {"fingerprint": fingerprint, "artifact": artifact}
+                            if content_sha256 is not None:
+                                content_ids[op_id] = content_sha256
+                                manifest["operations"][op_id]["content_sha256"] = content_sha256
                             changed = True
                             results.append({"id": op_id, "artifact": artifact, "result": result})
                         except ev.EVIDENCE_ERRORS as exc:
@@ -706,8 +854,13 @@ def step(root, identifier, operations=None, *, requests_file=None):
             update(root, identifier, state="reviewing", phase="review", last_step={key: outcome[key] for key in ("complete", "next_index")},
                    errors=[],
                    metrics={**job.get("metrics", {}), "read_search_seconds": job.get("metrics", {}).get("read_search_seconds", 0) + time.perf_counter() - began})
-            return {"request_id": identifier, "state": "reviewing", "phase": "review", "terminal": False,
-                    "recoverable": not outcome["complete"], "context_retained": True, **outcome}
+            result = {"request_id": identifier, "state": "reviewing", "phase": "review", "terminal": False,
+                      "recoverable": not outcome["complete"], "context_retained": True, **outcome}
+            if response_format == "auto":
+                shared = shared_step(result, content_ids)
+                if len(review_runtime.canonical(shared)) < len(review_runtime.canonical(result)):
+                    return shared
+            return result
         except BaseException as exc:
             update(root, identifier, state="cancelled" if active.cancelled() else "failed", phase="terminal",
                    error=coordination.safe_error(exc), finished_at_epoch=time.time())
@@ -791,6 +944,7 @@ def finish(root, identifier):
             active.check()
             import evidence
             frozen = evidence.load_manifest(context, full=False)
+            receipt_anchors(job, frozen)
             if Path(frozen["repo"]) != Path(job["inputs"]["project"]):
                 raise ValueError("Captured entry Repo differs from this request's reviewed Repo.")
             update(root, identifier, state="validating", phase="validation")
@@ -840,6 +994,8 @@ def parser():
     for name in ("workspace", "workspace-file", "runtime-root", "request-id", "project", "base", "head"):
         value.add_argument("--" + name)
     value.add_argument("--requests-file", type=Path)
+    value.add_argument("--worklist", type=Path)
+    value.add_argument("--response-format", choices=("legacy", "auto"), default="legacy")
     value.add_argument("--workspace-context-json", type=json.loads, default={})
     value.add_argument("--refresh", action="store_true")
     value.add_argument("--auth-scope", default=os.environ.get("GITLAB_WORKSPACE_AUTH_SCOPE", ""))
@@ -862,7 +1018,8 @@ def main(argv=None):
         else:
             root = resolve_runtime(args.workspace, args.runtime_root)
             if args.command == "step":
-                result = step(root, args.request_id, requests_file=args.requests_file)
+                result = step(root, args.request_id, requests_file=args.requests_file,
+                              worklist=args.worklist, response_format=args.response_format)
                 code = 0 if result["complete"] else 3
             elif args.command == "check":
                 result = check(root, args.request_id)

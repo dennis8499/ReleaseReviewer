@@ -1,0 +1,144 @@
+{
+  "schema": "ReleaseReviewHelperBenchmark/v1",
+  "scope": "Helper workflow only; no LLM or agent end-to-end measurement.",
+  "methodology": {
+    "runs": 1,
+    "summary": "median",
+    "processes": "One fresh process per variant, scenario and run; fixture setup and interpreter startup excluded.",
+    "helper_commands": "In-process helper main() invocations; per-command Python startup is not measured.",
+    "oracle": "JSON parsing remains measured for both variants. Shared-content format restoration is excluded from evidence wall time and recorded as oracle_seconds; report/hash normalization also runs outside measured stages.",
+    "fail_fast": "Stop on the first failed worker, absent digest or normalized artifact mismatch, preserving partial evidence.",
+    "stages": "Capture, evidence/draft preparation, one nested publish validation, and publish excluding that validation.",
+    "output_bytes": "UTF-8 bytes of captured helper stdout; report file bytes are artifact_bytes.",
+    "dense_lines": 25000,
+    "citation_repetitions": 12
+  },
+  "summary": {
+    "success": false,
+    "scenarios": {
+      "no-diff": {
+        "success": false,
+        "workers_succeeded": true,
+        "semantic_equivalent": false
+      }
+    }
+  },
+  "samples": [
+    {
+      "variant": "baseline",
+      "run": 1,
+      "success": true,
+      "scenario": "no-diff",
+      "semantic_digest": "c0472cc681b2348fe34f91bcedae7066c02619dad938481c00b8597d5b1672a1",
+      "artifact_digests": {
+        "manifest": "408515c9a6ac63191dc6660737245de9c35616dde0928d62a8d31916492eb2dc",
+        "evidence": "3564d02cacdef9c9277ac0eba8b055ae8c870f3dd74cc734d691f3b000bfc4cc",
+        "draft": "b3aa39dc9120d3c1c324875259e71e31f9644bbdb720e5f8580224e3b64cc527",
+        "result": "2c9e0768cab86bb84b8e112dfbd4fed9c1940dbe60941538cdc591d4d14bf269",
+        "patches": "14edaca5df2802d22424d532fd28995a339a4fda9fb767ecb1811a2975971aa3",
+        "report": "63a1b13a1c1b956a03d1eb1b68a5dae7ac2462ea1847cd1f7ac7f2e63236aab5"
+      },
+      "request_count": 1,
+      "dense_matches": 0,
+      "stages": {
+        "capture": {
+          "wall_seconds": 5.9223921000011615,
+          "git_subprocesses": 51,
+          "helper_commands": 1,
+          "output_bytes": 3211,
+          "artifact_bytes": 0
+        },
+        "evidence": {
+          "wall_seconds": 1.1969435999999405,
+          "git_subprocesses": 9,
+          "helper_commands": 1,
+          "output_bytes": 513,
+          "artifact_bytes": 0
+        },
+        "validate": {
+          "wall_seconds": 0.30419410000467906,
+          "git_subprocesses": 3,
+          "helper_commands": 0,
+          "output_bytes": 0,
+          "artifact_bytes": 0
+        },
+        "publish": {
+          "wall_seconds": 1.0373074999952223,
+          "git_subprocesses": 8,
+          "helper_commands": 1,
+          "output_bytes": 170,
+          "artifact_bytes": 6371
+        }
+      },
+      "total": {
+        "wall_seconds": 8.460837300001003,
+        "git_subprocesses": 71,
+        "helper_commands": 3,
+        "output_bytes": 3894,
+        "artifact_bytes": 6371
+      },
+      "oracle_seconds": 0.000948900000366848
+    },
+    {
+      "variant": "current",
+      "run": 1,
+      "success": true,
+      "scenario": "no-diff",
+      "semantic_digest": "423c19671577b49190066700c8709e321f191aaba746ed9630b3592f0e8f3a55",
+      "artifact_digests": {
+        "manifest": "ccb9777bfe01d2b95dca54972c917090e32e30aa4e961daa7a0128612f0d342a",
+        "evidence": "3564d02cacdef9c9277ac0eba8b055ae8c870f3dd74cc734d691f3b000bfc4cc",
+        "draft": "b3aa39dc9120d3c1c324875259e71e31f9644bbdb720e5f8580224e3b64cc527",
+        "result": "a3d9557a62246411b8198866eee3cbadcbb884e76cc03968c1ae4c10a0c7e7ec",
+        "patches": "14edaca5df2802d22424d532fd28995a339a4fda9fb767ecb1811a2975971aa3",
+        "report": "63a1b13a1c1b956a03d1eb1b68a5dae7ac2462ea1847cd1f7ac7f2e63236aab5"
+      },
+      "request_count": 1,
+      "dense_matches": 0,
+      "stages": {
+        "capture": {
+          "wall_seconds": 6.196147499998915,
+          "git_subprocesses": 51,
+          "helper_commands": 1,
+          "output_bytes": 3344,
+          "artifact_bytes": 0
+        },
+        "evidence": {
+          "wall_seconds": 1.220828799996525,
+          "git_subprocesses": 9,
+          "helper_commands": 1,
+          "output_bytes": 513,
+          "artifact_bytes": 0
+        },
+        "validate": {
+          "wall_seconds": 0.21685359999537468,
+          "git_subprocesses": 3,
+          "helper_commands": 0,
+          "output_bytes": 0,
+          "artifact_bytes": 0
+        },
+        "publish": {
+          "wall_seconds": 1.165368900008616,
+          "git_subprocesses": 8,
+          "helper_commands": 1,
+          "output_bytes": 170,
+          "artifact_bytes": 6371
+        }
+      },
+      "total": {
+        "wall_seconds": 8.79919879999943,
+        "git_subprocesses": 71,
+        "helper_commands": 3,
+        "output_bytes": 4027,
+        "artifact_bytes": 6371
+      },
+      "oracle_seconds": 0.0006918000071891584
+    }
+  ],
+  "failed_fast": {
+    "scenario": "no-diff",
+    "variant": "current",
+    "run": 1,
+    "reason": "Normalized evidence/report differs from this scenario's first successful run."
+  }
+}

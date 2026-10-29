@@ -30,18 +30,18 @@ PRERELEASE_ID = r"(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
 BUILD_ID = r"[0-9A-Za-z-]+"
 SEMVER = re.compile(rf"{NUMERIC}\.{NUMERIC}\.{NUMERIC}(?:-({PRERELEASE_ID}(?:\.{PRERELEASE_ID})*))?(?:\+({BUILD_ID}(?:\.{BUILD_ID})*))?")
 SPECS = {
-    "GitlabWorkSpace": {"workflow": "release.yml", "version": "package.json", "canonical": "linux-py3.11-stable",
-        "cells": {"linux-py3.11-stable": ["Linux", "3.11"], "windows-py3.11-1.90.0": ["Windows", "3.11"],
+    "GitlabWorkSpace": {"workflow": "release.yml", "version": "package.json", "canonical": "windows-py3.11-stable",
+        "cells": {"windows-py3.11-1.90.0": ["Windows", "3.11"],
                   "windows-py3.11-stable": ["Windows", "3.11"], "windows-py3.14-stable": ["Windows", "3.14"]}},
-    "MergeReviewer": {"workflow": "ci.yml", "version": "skills/merge-reviewer/VERSION", "canonical": "linux-py3.14",
-        "cells": {f"{os_name}-py{py}": [system, py] for os_name, system in (("linux", "Linux"), ("windows", "Windows")) for py in ("3.10", "3.14")}},
-    "ReleaseReviewer": {"workflow": "ci.yml", "version": "skills/release-reviewer/VERSION", "canonical": "linux-py3.14",
-        "cells": {f"{os_name}-py{py}": [system, py] for os_name, system in (("linux", "Linux"), ("windows", "Windows")) for py in ("3.10", "3.14")}},
+    "MergeReviewer": {"workflow": "ci.yml", "version": "skills/merge-reviewer/VERSION", "canonical": "windows-py3.14",
+        "cells": {f"windows-py{py}": ["Windows", py] for py in ("3.10", "3.14")}},
+    "ReleaseReviewer": {"workflow": "ci.yml", "version": "skills/release-reviewer/VERSION", "canonical": "windows-py3.14",
+        "cells": {f"windows-py{py}": ["Windows", py] for py in ("3.10", "3.14")}},
     "Megin": {"workflow": "knowledge-portability.yml", "version": "VERSION", "canonical": "linux-py3.13",
         "fixed_dependencies": {"merge-reviewer": "fc08cf5706334264f289633aa80ed6ee34a09911"},
         "cells": {"source-py3.13": ["Linux", "3.13"], "linux-py3.13": ["Linux", "3.13"], "windows-py3.13": ["Windows", "3.13"]}},
-    "code-base-llm-wiki": {"workflow": "release.yml", "version": "VERSION", "canonical": "linux-py3.14",
-        "cells": {"linux-py3.11": ["Linux", "3.11"], "linux-py3.14": ["Linux", "3.14"]}},
+    "code-base-llm-wiki": {"workflow": "release.yml", "version": "VERSION", "canonical": "windows-py3.14",
+        "cells": {"windows-py3.11": ["Windows", "3.11"], "windows-py3.14": ["Windows", "3.14"]}},
 }
 
 

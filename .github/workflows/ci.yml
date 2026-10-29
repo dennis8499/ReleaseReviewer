@@ -22,7 +22,7 @@ jobs:
   select:
     name: Select exact main CI proof
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     outputs:
       reuse_run_id: ${{ steps.proof.outputs.reuse_run_id }}
     steps:
@@ -36,7 +36,7 @@ jobs:
         id: proof
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python -X utf8 -B scripts/release_ci.py select --output "$GITHUB_OUTPUT"
+        run: python -X utf8 -B scripts/release_ci.py select --output "$env:GITHUB_OUTPUT"
 
   build:
     needs: select
@@ -48,12 +48,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cell: linux-py3.10
-            os: ubuntu-latest
-            python-version: '3.10'
-          - cell: linux-py3.14
-            os: ubuntu-latest
-            python-version: '3.14'
           - cell: windows-py3.10
             os: windows-latest
             python-version: '3.10'
@@ -72,7 +66,7 @@ jobs:
       - name: Run the complete unit suite
         run: python -X utf8 -B -m unittest discover -s tests -v
       - name: Build canonical standalone Skill package
-        if: matrix.cell == 'linux-py3.14'
+        if: matrix.cell == 'windows-py3.14'
         run: python -X utf8 -B scripts/package_release.py
       - name: Test release provenance and publication contracts
         run: python -X utf8 -B scripts/test_release_ci.py -v
@@ -91,7 +85,7 @@ jobs:
     name: Promote verified bytes to formal Release
     needs: [select, build]
     if: ${{ always() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && needs.select.result == 'success' && (needs.build.result == 'success' || (needs.build.result == 'skipped' && needs.select.outputs.reuse_run_id != '')) }}
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     permissions:
       contents: write
       actions: read
@@ -106,7 +100,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REUSE_RUN_ID: ${{ needs.select.outputs.reuse_run_id }}
-        run: python -X utf8 -B scripts/release_ci.py publish --run-id "$REUSE_RUN_ID" --fallback-current-run --output release-publication.json
+        run: python -X utf8 -B scripts/release_ci.py publish --run-id "$env:REUSE_RUN_ID" --fallback-current-run --output release-publication.json
       - name: Save verified formal asset digests
         uses: actions/upload-artifact@v7
         with:

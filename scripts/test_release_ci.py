@@ -22,11 +22,11 @@ class ProofTests(unittest.TestCase):
         self.now = ci.utcnow()
         self.source = {"repository": "owner/MergeReviewer", "sha": "a" * 40,
                        "workflow": ".github/workflows/ci.yml", "version": "1.2.3",
-                       "matrix": {"linux-py3.14": ["Linux", "3.14"]}, "canonical": "linux-py3.14"}
+                       "matrix": {"windows-py3.14": ["Windows", "3.14"]}, "canonical": "windows-py3.14"}
         self.run = {"id": 10, "head_sha": self.source["sha"], "head_repository": {"full_name": "owner/MergeReviewer"},
                     "path": self.source["workflow"], "created_at": self.now.isoformat(), "event": "push",
                     "head_branch": "main", "status": "completed", "conclusion": "success"}
-        self.job = {"name": "Validate [linux-py3.14]", "status": "completed", "conclusion": "success", "run_attempt": 1}
+        self.job = {"name": "Validate [windows-py3.14]", "status": "completed", "conclusion": "success", "run_attempt": 1}
 
     def test_main_and_manual_main_are_trusted_but_pr_and_foreign_sources_are_not(self):
         for event in ("push", "workflow_dispatch"):
@@ -50,19 +50,19 @@ class ProofTests(unittest.TestCase):
                 ci.validate_run(run, self.source, fallback=True, current_run=current, tag=tag)
 
     def test_matrix_requires_each_cell_success_latest_attempt_and_no_duplicates(self):
-        self.assertEqual(set(ci.matrix_jobs([self.job], self.source["matrix"])), {"linux-py3.14"})
+        self.assertEqual(set(ci.matrix_jobs([self.job], self.source["matrix"])), {"windows-py3.14"})
         for jobs in ([], [dict(self.job, conclusion="skipped")], [dict(self.job, conclusion="cancelled")],
                      [self.job, self.job], [self.job, dict(self.job, run_attempt=2, conclusion="failure")]):
             with self.assertRaises(ci.ProofError):
                 ci.matrix_jobs(jobs, self.source["matrix"])
         retry = dict(self.job, run_attempt=2)
-        self.assertEqual(ci.matrix_jobs([dict(self.job, conclusion="failure"), retry], self.source["matrix"])["linux-py3.14"], retry)
+        self.assertEqual(ci.matrix_jobs([dict(self.job, conclusion="failure"), retry], self.source["matrix"])["windows-py3.14"], retry)
 
     def artifact(self, mutate=None, extra=None):
         data = b"exact validated release"
         filename = "merge-reviewer-1.2.3.zip"
-        proof = {"schema": ci.SCHEMA, "identity": copy.deepcopy(self.source), "cell": "linux-py3.14",
-                 "environment": ["Linux", "3.14"], "run_id": 10, "run_attempt": 1,
+        proof = {"schema": ci.SCHEMA, "identity": copy.deepcopy(self.source), "cell": "windows-py3.14",
+                 "environment": ["Windows", "3.14"], "run_id": 10, "run_attempt": 1,
                  "event": "push", "ref": "refs/heads/main", "created_at": self.now.isoformat(),
                  "files": {filename: {"sha256": ci.digest(data), "bytes": len(data)}}}
         if mutate:
@@ -74,7 +74,7 @@ class ProofTests(unittest.TestCase):
             if extra:
                 stream.writestr(extra, b"unexpected")
         raw = buffer.getvalue()
-        row = {"id": 20, "name": f"release-ci-{self.source['sha']}-linux-py3.14-1", "expired": False,
+        row = {"id": 20, "name": f"release-ci-{self.source['sha']}-windows-py3.14-1", "expired": False,
                "digest": "sha256:" + ci.digest(raw), "workflow_run": {"id": 10, "head_sha": self.source["sha"]}}
         api = mock.Mock()
         api.pages.return_value = [row]
@@ -82,7 +82,7 @@ class ProofTests(unittest.TestCase):
         return api, row
 
     def verify(self, api):
-        return ci.verify_artifacts(api, self.run, self.source, {"linux-py3.14": self.job})
+        return ci.verify_artifacts(api, self.run, self.source, {"windows-py3.14": self.job})
 
     def test_exact_canonical_bytes_and_complete_artifact_inventory(self):
         api, row = self.artifact()
@@ -98,7 +98,7 @@ class ProofTests(unittest.TestCase):
             self.verify(api)
 
     def test_proof_tampering_wrong_dependencies_cell_and_asset_digest_are_rejected(self):
-        mutations = [lambda p: p["identity"].update(version="1.2.4"), lambda p: p.update(cell="windows-py3.14"),
+        mutations = [lambda p: p["identity"].update(version="1.2.4"), lambda p: p.update(cell="windows-py3.10"),
                      lambda p: p.update(run_attempt=2), lambda p: p.update(ref="refs/pull/1/merge"),
                      lambda p: p["files"]["merge-reviewer-1.2.3.zip"].update(sha256="0" * 64)]
         for mutate in mutations:
@@ -128,9 +128,16 @@ class ProofTests(unittest.TestCase):
                 self.assertEqual(opened.call_args.args[0].get_header("Accept"), accept)
 
     def test_five_product_specs_keep_required_matrix_and_canonical_versions(self):
-        self.assertEqual([len(ci.SPECS[name]["cells"]) for name in ("GitlabWorkSpace", "MergeReviewer", "ReleaseReviewer", "Megin", "code-base-llm-wiki")], [4, 4, 4, 3, 2])
+        self.assertEqual([len(ci.SPECS[name]["cells"]) for name in ("GitlabWorkSpace", "MergeReviewer", "ReleaseReviewer", "Megin", "code-base-llm-wiki")], [3, 2, 2, 3, 2])
         for name, spec in ci.SPECS.items():
             self.assertIn(spec["canonical"], spec["cells"])
+        scoped_names = ("GitlabWorkSpace", "MergeReviewer", "ReleaseReviewer", "code-base-llm-wiki")
+        if "WorkflowKit" in ci.SPECS:
+            scoped_names += ("WorkflowKit",)
+        for name in scoped_names:
+            scoped = ci.SPECS[name]
+            self.assertTrue(all(environment[0] == "Windows" for environment in scoped["cells"].values()), name)
+            self.assertTrue(scoped["canonical"].startswith("windows-"), name)
 
     def test_checksums_cover_exact_asset_inventory_and_bytes(self):
         data = b"archive"
@@ -151,7 +158,7 @@ class ProofTests(unittest.TestCase):
         api.pages.side_effect = pages
         with mock.patch.object(ci, "verify_artifacts", return_value={"asset": b"bytes"}) as verify:
             ci.verified_run(api, 10, self.source)
-            self.assertEqual(verify.call_args.args[3]["linux-py3.14"]["run_attempt"], 2)
+            self.assertEqual(verify.call_args.args[3]["windows-py3.14"]["run_attempt"], 2)
 
     def test_github_pagination_accepts_actual_release_array_and_actions_envelope(self):
         api = ci.GitHub("owner/MergeReviewer", "never-sent")

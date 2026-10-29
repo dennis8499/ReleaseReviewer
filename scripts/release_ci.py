@@ -37,9 +37,6 @@ SPECS = {
         "cells": {f"windows-py{py}": ["Windows", py] for py in ("3.10", "3.14")}},
     "ReleaseReviewer": {"workflow": "ci.yml", "version": "skills/release-reviewer/VERSION", "canonical": "windows-py3.14",
         "cells": {f"windows-py{py}": ["Windows", py] for py in ("3.10", "3.14")}},
-    "Megin": {"workflow": "knowledge-portability.yml", "version": "VERSION", "canonical": "linux-py3.13",
-        "fixed_dependencies": {"merge-reviewer": "fc08cf5706334264f289633aa80ed6ee34a09911"},
-        "cells": {"source-py3.13": ["Linux", "3.13"], "linux-py3.13": ["Linux", "3.13"], "windows-py3.13": ["Windows", "3.13"]}},
     "code-base-llm-wiki": {"workflow": "release.yml", "version": "VERSION", "canonical": "windows-py3.14",
         "cells": {"windows-py3.11": ["Windows", "3.11"], "windows-py3.14": ["Windows", "3.14"]}},
 }
@@ -96,8 +93,6 @@ def runtime_details(root, repository):
                 details["packages"][package] = importlib.metadata.version(package)
             except importlib.metadata.PackageNotFoundError:
                 details["packages"][package] = None
-    if name == "Megin" and (root / ".test-dependencies/merge-reviewer/.git").exists():
-        details["fixed_dependencies"]["merge-reviewer"] = git(root / ".test-dependencies/merge-reviewer", "rev-parse", "HEAD")
     if name == "GitlabWorkSpace":
         filename = root / ".gitlab-workspace-validation/ci/extension-host.json"
         require(filename.is_file(), "Missing actual VS Code host preflight metadata")
@@ -158,7 +153,6 @@ def asset_names(repository, version):
         "GitlabWorkSpace": [f"gitlab-workspace-{version}.vsix", f"gitlab-workspace-kit-{version}.zip", "SHA256SUMS"],
         "MergeReviewer": [f"merge-reviewer-{version}.zip"],
         "ReleaseReviewer": [f"release-reviewer-{version}.zip", f"release-reviewer-{version}.zip.sha256"],
-        "Megin": ["megin-skills.zip"],
         "code-base-llm-wiki": ["codebase-llm-wiki-codex.zip", "codebase-llm-wiki-copilot.zip", "update-manifest.json", "SHA256SUMS"],
     }[name]
 

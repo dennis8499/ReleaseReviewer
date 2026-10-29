@@ -127,8 +127,8 @@ class ProofTests(unittest.TestCase):
                 self.assertEqual(api.request(path, raw=True), b"exact binary bytes")
                 self.assertEqual(opened.call_args.args[0].get_header("Accept"), accept)
 
-    def test_five_product_specs_keep_required_matrix_and_canonical_versions(self):
-        self.assertEqual([len(ci.SPECS[name]["cells"]) for name in ("GitlabWorkSpace", "MergeReviewer", "ReleaseReviewer", "Megin", "code-base-llm-wiki")], [3, 2, 2, 3, 2])
+    def test_product_specs_keep_required_matrix_and_canonical_versions(self):
+        self.assertEqual([len(ci.SPECS[name]["cells"]) for name in ("GitlabWorkSpace", "MergeReviewer", "ReleaseReviewer", "code-base-llm-wiki")], [3, 2, 2, 2])
         for name, spec in ci.SPECS.items():
             self.assertIn(spec["canonical"], spec["cells"])
         scoped_names = ("GitlabWorkSpace", "MergeReviewer", "ReleaseReviewer", "code-base-llm-wiki")
@@ -221,7 +221,7 @@ class ProofTests(unittest.TestCase):
         for version in ("01.2.3", "1.2.3-01", "1.2.3-beta..1", "1.2.3+", "v1.2.3", "1.2.3٢"):
             with self.assertRaises(ci.ProofError):
                 ci.validate_version("owner/GitlabWorkSpace", version)
-        for repository in ("Megin", "MergeReviewer", "ReleaseReviewer", "code-base-llm-wiki"):
+        for repository in ("MergeReviewer", "ReleaseReviewer", "code-base-llm-wiki"):
             with self.assertRaises(ci.ProofError):
                 ci.validate_version("owner/" + repository, "1.2.3-beta.1")
 

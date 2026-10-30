@@ -1,0 +1,69 @@
+{
+  "schema": "ReleaseReviewerBlindQualityMatrix/v1",
+  "complete": true,
+  "acceptance_complete": false,
+  "models": {
+    "gpt-6.1-sol": "high"
+  },
+  "conditions": [
+    "candidate"
+  ],
+  "cases": [
+    "safe"
+  ],
+  "runs_per_cell": 1,
+  "seed": 20261029,
+  "codex_cli": "codex.cmd",
+  "baseline_skill_sha256": "0ffe214ea727f54a8d2d03e4f63bbc2c0a89b7f7372e086c46e06afef38a68a4",
+  "candidate_skill_sha256": "cf868a35b75dd2c75b3ef9870804d91eb29273e08b7b0452bd5a94b16333533d",
+  "no_skill_isolation_proven": false,
+  "scoring": "blind reports are preserved; semantic_score requires an oracle-backed independent review",
+  "samples": [
+    {
+      "id": "gpt-6.1-sol-candidate-safe-01",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "condition": "candidate",
+      "case": "safe",
+      "run": 1,
+      "elapsed_seconds": 0.20350710000093386,
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "exit_code": 1,
+      "error": null,
+      "report_created": false,
+      "session_error": null,
+      "job_updated_at": null,
+      "report_path": null,
+      "report_sha256": null,
+      "report_bytes": 0,
+      "secret_leak": false,
+      "job_state": null,
+      "cleanup_verified": null,
+      "cleanup_error": null,
+      "network_activity": null,
+      "network_log": null,
+      "runtime_metrics": null,
+      "review_complete": null,
+      "review_status": null,
+      "release_assessment": null,
+      "blocker_count": null,
+      "pending_count": null,
+      "gap_count": null,
+      "oracle_expected": "Compatible alias: no introduced defect or invented external gap.",
+      "semantic_score": null,
+      "global_skill_isolation": "not proven; user CODEX_HOME remains active",
+      "installed_skill_sha256": "cf868a35b75dd2c75b3ef9870804d91eb29273e08b7b0452bd5a94b16333533d",
+      "signals": {
+        "p0": false,
+        "p1": false,
+        "checklist": false,
+        "ftp": false,
+        "sftp": false,
+        "kafka": false
+      }
+    }
+  ]
+}

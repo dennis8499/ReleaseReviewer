@@ -1,12 +1,16 @@
 """Use unchanged owned layouts under real, long Unicode Windows runtimes."""
 from collections import Counter
 import contextlib
+import os
 import shutil
+import tempfile
 from unittest.mock import patch
 
 from support import *
 import frozen_evidence
+import evidence
 import git_support as git_module
+import git_network_lease
 import review_flow as flow
 import review_runtime
 
@@ -112,6 +116,107 @@ class WindowsLongPathTests(RepoTest):
         runtime /= "\u5c64\u6e2c\u8a66" + "x" * (remaining - 4)
         self.assertEqual(final_pack_units, len(str(runtime / suffix).encode("utf-16-le")) // 2)
         return runtime
+
+    def test_atomic_json_supports_a_temporary_path_beyond_legacy_limit(self):
+        with tempfile.TemporaryDirectory(prefix="long-atomic-", dir=self.root) as temporary_root:
+            base = Path(temporary_root)
+            filename = "result.json"
+            units = lambda path: len(str(path).encode("utf-16-le")) // 2
+            filler_length = 230 - units(base / filename) - 1
+            self.assertGreater(filler_length, 0)
+            context = base / ("x" * filler_length)
+            context.mkdir()
+            target = context / filename
+            temporary = target.with_name("." + target.name + "-" + "0" * 32)
+            self.assertEqual(230, units(target))
+            self.assertGreater(units(temporary), 260)
+
+            git_network_lease._atomic_json(target, {"written": True})
+
+            self.assertEqual({"written": True}, json.loads(target.read_text(encoding="utf-8")))
+            target.unlink()
+            context.rmdir()
+
+    def test_search_record_roundtrips_beyond_legacy_path_limit(self):
+        with tempfile.TemporaryDirectory(prefix="long-search-", dir=self.root) as temporary_root:
+            base = Path(temporary_root)
+            filename = "0" * 64 + ".json"
+            base_target = base / "searches" / filename
+            units = lambda path: len(str(path).encode("utf-16-le")) // 2
+            filler_length = 261 - units(base_target) - 1
+            self.assertGreater(filler_length, 0)
+            context = base / ("x" * filler_length)
+            context.mkdir()
+            expected_target = context / "searches" / filename
+            self.assertEqual(261, units(expected_target))
+
+            record = {"repo": "entry", "source": "base", "ref": "refs/heads/main",
+                      "query": "InvoiceTax", "ignore_case": False, "scope": "repo", "matches": []}
+            identifier = evidence.record_search(context, record)
+            target = context / "searches" / f"{identifier}.json"
+
+            self.assertEqual(261, units(target))
+            self.assertEqual([target], review_runtime.path_children(context / "searches", suffix=".json"))
+            self.assertEqual(record, json.loads(review_runtime.path_read_text(target, encoding="utf-8")))
+            git_network_lease._plain_directory(target)
+            os.unlink(review_runtime._extended_windows_path(target))
+            os.rmdir(review_runtime._extended_windows_path(context / "searches"))
+            os.rmdir(review_runtime._extended_windows_path(context))
+
+    def test_search_step_and_finish_work_when_session_ledger_path_exceeds_limit(self):
+        base = self.root / "long-runtime"
+        base.mkdir()
+        filename = "0" * 64 + ".json"
+        probe = base / "sessions" / ("0" * 32) / "searches" / filename
+        units = lambda path: len(str(path).encode("utf-16-le")) // 2
+        filler_length = 261 - units(probe) - 1
+        self.assertGreater(filler_length, 0)
+        runtime = base / ("r" * filler_length)
+        with patch.dict(os.environ, {"GITLAB_WORKSPACE_RUNTIME_DIR": str(runtime)}):
+            args = flow.parser().parse_args(["start", "--workspace", str(self.root),
+                                             "--project", str(self.repo), "--base", "main",
+                                             "--head", "feature", "--runtime-root", str(runtime)])
+            started = flow.start(args)
+            root, identifier = Path(started["runtime_root"]), started["request_id"]
+            context = Path(started["context_dir"])
+            target = context / "searches" / filename
+            self.assertEqual(261, units(target))
+
+            result = flow.step(root, identifier, [
+                {"id": "long-ledger", "op": "search", "source": "base", "query": "EXISTING_TIMEOUT"}])
+            self.assertTrue(result["complete"])
+            self.assertEqual(1, result["search_activity"]["executed"])
+            self.assertEqual(1, len(review_runtime.path_children(context / "searches", suffix=".json")))
+
+            manifest = evidence.load_manifest(context, full=False)
+            save_draft(context, draft_for(manifest))
+            report, code = flow.finish(root, identifier)
+            self.assertEqual(0, code)
+            self.assertTrue(Path(report["report_path"]).is_file())
+            self.assertFalse(context.exists())
+
+    def test_long_artifact_view_uses_extended_path_for_atomic_fallback(self):
+        with tempfile.TemporaryDirectory(prefix="long-view-", dir=self.root) as temporary_root:
+            base = Path(temporary_root)
+            filename = "0" * 64 + ".json"
+            base_target = base / "views" / filename
+            units = lambda path: len(str(path).encode("utf-16-le")) // 2
+            filler_length = 261 - units(base_target) - 1
+            self.assertGreater(filler_length, 0)
+            context = base / ("x" * filler_length)
+            context.mkdir()
+            target = context / "views" / filename
+            self.assertEqual(261, units(target))
+
+            value = {"saved": "long-path evidence"}
+            with patch.object(review_runtime.os, "link", side_effect=PermissionError("hard links denied")):
+                identifier = review_runtime.store_view(context, value)
+
+            self.assertEqual(value, review_runtime.load_view(context, identifier))
+            actual_target = context / "views" / (identifier + ".json")
+            os.unlink(review_runtime._extended_windows_path(actual_target))
+            (context / "views").rmdir()
+            context.rmdir()
 
     @contextlib.contextmanager
     def record_commands(self):

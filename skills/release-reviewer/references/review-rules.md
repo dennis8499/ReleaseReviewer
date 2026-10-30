@@ -199,7 +199,7 @@ Context／Draft／Report 維持 v3。缺少 `coverage_policy` 的舊 v3 context 
 必要欄位為 id、kind、name、connection、resolution、description、baseline_reason、baseline_searches、recommendation、evidence。
 
 - 編號 D-001 起；kind 為 connection、database、table、column、view、procedure。
-- name 使用可辨識的完整非機密物件名稱，例如 BillingDb.dbo.Invoice.tax_code；connection 是連線鍵／邏輯名稱，不放完整連線字串。
+- name 使用可辨識的完整非機密物件名稱，例如 BillingDb.dbo.Invoice.tax_code；connection 保留連線鍵／服務身分，固定來源明確提供時可加非機密主機、port 與 protocol；不得放密碼、token、私鑰或完整連線字串。
 - resolution 為 identified 或 unknown；動態來源可用「待解析的 BillingDb 動態資料表」等忠實描述。
 - evidence 包含最終版本的程式使用、連線目標或此次部署資源定義位置；必要時補 ORM mapping／設定定義證據。
 - 同一 connection、kind、name 去重。不同 DB／schema 的同名物件不要錯誤合併。
@@ -207,7 +207,7 @@ Context／Draft／Report 維持 v3。缺少 `coverage_policy` 的舊 v3 context 
 
 ### 外部資源與新增判定
 
-external_changes 必要欄位與 db_changes 相同，編號 E-001 起，kind 為 ftp、sftp、redis、kafka、other。connection 是邏輯連線／服務帳號用途識別，name 是非機密資源名稱，例如 Kafka 的 Topic、Redis DB／key prefix、SFTP 目錄。完整新增辨識與核對項見 resource-checks.md。
+external_changes 必要欄位與 db_changes 相同，編號 E-001 起，kind 為 ftp、sftp、redis、kafka、other。connection 是邏輯連線／服務帳號用途識別；固定來源明確提供且非機密時，納入主機、port、protocol、傳輸模式等 endpoint。name 是非機密資源名稱，例如 Kafka 的 Topic、Redis DB／key prefix、SFTP 目錄。description／recommendation 記錄可確認的操作和目標；Checklist 連回此依賴，不能以「固定端點」或泛稱「目標主機」取代已知值。未知的環境注入值明確列為待核對，不猜測。不得輸出密碼、token、私鑰或完整連線字串。完整新增辨識與核對項見 resource-checks.md。
 
 三類提醒皆可帶 introduction：first-use（預設）、resource-definition、target-change、access-change。此次新增且會隨部署套用的定義，即使尚無執行程式呼叫，也要以 resource-definition 提醒，引用最終定義及 base 全 Repo 搜尋；不能把定義存在誤認為既有程式使用或環境已建立。
 

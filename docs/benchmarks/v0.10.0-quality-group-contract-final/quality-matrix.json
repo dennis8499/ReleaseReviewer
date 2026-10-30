@@ -1,0 +1,102 @@
+{
+  "schema": "ReleaseReviewerBlindQualityMatrix/v1",
+  "complete": true,
+  "acceptance_complete": false,
+  "models": {
+    "gpt-6.1-sol": "high"
+  },
+  "conditions": [
+    "candidate"
+  ],
+  "cases": [
+    "group-contract"
+  ],
+  "runs_per_cell": 1,
+  "seed": 20261029,
+  "codex_cli": "codex.cmd",
+  "baseline_skill_sha256": "0ffe214ea727f54a8d2d03e4f63bbc2c0a89b7f7372e086c46e06afef38a68a4",
+  "candidate_skill_sha256": "5ffca53b34c2d6e9dc71cee2ee9f0c6dd45cefa342be2ddb8bc3cb8beb7bfd00",
+  "no_skill_isolation_proven": false,
+  "scoring": "blind reports are preserved; semantic_score requires an oracle-backed independent review",
+  "samples": [
+    {
+      "id": "gpt-6.1-sol-candidate-group-contract-01",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "condition": "candidate",
+      "case": "group-contract",
+      "run": 1,
+      "elapsed_seconds": 311.0524087999984,
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "exit_code": 0,
+      "error": null,
+      "report_created": true,
+      "session_error": null,
+      "job_updated_at": "2026-10-29T17:03:16.514533+00:00",
+      "report_path": "reports/gpt-6.1-sol-candidate-group-contract-01.md",
+      "report_sha256": "3cc3117994626ed31dc41161a6e8dbcbe45673fd5e7fd9f2ee8307cea817546e",
+      "report_bytes": 21195,
+      "secret_leak": false,
+      "job_state": "published",
+      "cleanup_verified": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "network_log": {
+        "reason": "local-branches",
+        "phase": "local-preflight",
+        "fetches": [],
+        "http_requests": null,
+        "ssh_requests": null
+      },
+      "runtime_metrics": {
+        "capture_seconds": 2.068319000001793,
+        "read_search_seconds": 0.8601385000001756,
+        "step_operation_requests": 26,
+        "step_operations": 25,
+        "step_reused_operations": 0,
+        "step_git_commands": 16,
+        "step_git_seconds": 0.41426610000416986,
+        "step_output_bytes": 2277,
+        "step_batched_blobs": 8,
+        "step_searches": 9,
+        "step_search_cache_hits": 0,
+        "git_commands": 11,
+        "git_seconds": 0.26298859999951674,
+        "git_output_bytes": 1794,
+        "batched_blobs": 5,
+        "validation_seconds": 0.5391867999969691,
+        "searches_executed": 9,
+        "search_cache_hits": 0,
+        "unique_blobs": 7,
+        "unique_citation_files": 7,
+        "validation_publish_seconds": 0.8966098000018974
+      },
+      "review_complete": true,
+      "review_status": "靜態檢查完成",
+      "release_assessment": "blocked",
+      "blocker_count": 1,
+      "pending_count": 3,
+      "gap_count": 0,
+      "oracle_expected": "The entry Repo changes orders.created payload from amount to total while the captured billing-consumer Repo still reads amount. Report the directly triggered P1 contract break with evidence from both Repo identities; preserve the supporting Repo as related and do not guess an infrastructure provider.",
+      "semantic_score": null,
+      "global_skill_isolation": "not proven; user CODEX_HOME remains active",
+      "installed_skill_sha256": "5ffca53b34c2d6e9dc71cee2ee9f0c6dd45cefa342be2ddb8bc3cb8beb7bfd00",
+      "signals": {
+        "p0": true,
+        "p1": true,
+        "checklist": true,
+        "ftp": true,
+        "sftp": true,
+        "kafka": true
+      }
+    }
+  ]
+}

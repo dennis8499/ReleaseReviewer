@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 import uuid
 
-from git_network_lease import DirectoryLease
+from git_network_lease import DirectoryLease, extended_windows_path
 
 _WRITERS = ContextVar("review_context_writers", default=frozenset())
 
@@ -110,12 +110,75 @@ def shared_reads(value):
     return {"schema": "MergeReviewEvidenceBatch/v1", "reads": reads, "contents": contents}
 
 
+def _extended_windows_path(path):
+    """Keep artifact views on the same shared Windows path policy as runtime files."""
+    return extended_windows_path(path)
+
+
+def path_exists(path):
+    return os.path.exists(_extended_windows_path(path))
+
+
+def path_is_symlink(path):
+    return os.path.islink(_extended_windows_path(path))
+
+
+def path_mkdir(path, *, exist_ok=False):
+    target = _extended_windows_path(path)
+    try:
+        os.mkdir(target)
+    except FileExistsError:
+        if not exist_ok or not os.path.isdir(target):
+            raise
+
+
+def path_read_text(path, *, encoding="utf-8"):
+    with open(_extended_windows_path(path), "r", encoding=encoding) as stream:
+        return stream.read()
+
+
+def path_write_text(path, value, *, encoding="utf-8", exclusive=False):
+    with open(_extended_windows_path(path), "x" if exclusive else "w", encoding=encoding) as stream:
+        return stream.write(value)
+
+
+def path_children(path, *, suffix=None):
+    with os.scandir(_extended_windows_path(path)) as entries:
+        return [Path(path) / entry.name for entry in entries
+                if suffix is None or entry.name.endswith(suffix)]
+
+
+def _view_exists(path):
+    return path_exists(path)
+
+
+def _view_is_symlink(path):
+    return path_is_symlink(path)
+
+
+def _view_read(path):
+    with open(_extended_windows_path(path), "rb") as stream:
+        return stream.read()
+
+
+def _view_write_exclusive(path, value):
+    with open(_extended_windows_path(path), "xb") as stream:
+        stream.write(value)
+
+
+def _view_unlink(path):
+    try:
+        os.unlink(_extended_windows_path(path))
+    except FileNotFoundError:
+        pass
+
+
 def _views(context):
     root = Path(context).resolve()
     directory = root / "views"
-    if directory.is_symlink() or (directory.exists() and directory.resolve() != directory):
+    if path_is_symlink(directory) or (path_exists(directory) and directory.resolve() != directory):
         raise ValueError("Evidence view directory cannot be a link")
-    directory.mkdir(exist_ok=True)
+    path_mkdir(directory, exist_ok=True)
     return directory
 
 
@@ -123,18 +186,33 @@ def store_view(context, value):
     raw = canonical(value)
     identifier = hashlib.sha256(raw).hexdigest()
     target = _views(context) / (identifier + ".json")
-    if target.is_symlink():
+    if _view_is_symlink(target):
         raise ValueError("Evidence view cannot be a link")
     temporary = target.with_name(".view-" + uuid.uuid4().hex)
     try:
-        temporary.write_bytes(raw)
+        _view_write_exclusive(temporary, raw)
         try:
-            os.link(temporary, target)
+            os.link(_extended_windows_path(temporary), _extended_windows_path(target))
         except FileExistsError:
-            if target.read_bytes() != raw:
+            if _view_read(target) != raw:
+                raise ValueError("Evidence view identity mismatch")
+        except OSError:
+            # Some managed Windows temp volumes deny hard links. A same-volume
+            # rename is still atomic and, on Windows, fails if another writer
+            # already installed the content-addressed target.
+            if os.name != "nt" or _view_exists(target):
+                if not _view_exists(target) or _view_is_symlink(target) or _view_read(target) != raw:
+                    raise ValueError("Evidence view could not be installed safely")
+            else:
+                try:
+                    os.rename(_extended_windows_path(temporary), _extended_windows_path(target))
+                except FileExistsError:
+                    if _view_is_symlink(target) or _view_read(target) != raw:
+                        raise ValueError("Evidence view identity mismatch")
+            if _view_is_symlink(target) or _view_read(target) != raw:
                 raise ValueError("Evidence view identity mismatch")
     finally:
-        temporary.unlink(missing_ok=True)
+        _view_unlink(temporary)
     return identifier
 
 
@@ -142,9 +220,9 @@ def load_view(context, identifier):
     if not isinstance(identifier, str) or len(identifier) != 64 or any(c not in "0123456789abcdef" for c in identifier):
         raise ValueError("Invalid evidence artifact ID")
     path = _views(context) / (identifier + ".json")
-    if path.is_symlink():
+    if _view_is_symlink(path):
         raise ValueError("Evidence view cannot be a link")
-    raw = path.read_bytes()
+    raw = _view_read(path)
     if hashlib.sha256(raw).hexdigest() != identifier:
         raise ValueError("Evidence view checksum mismatch")
     return json.loads(raw)

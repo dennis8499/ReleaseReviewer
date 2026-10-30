@@ -1,5 +1,7 @@
 import copy
 import json
+import os
+import unittest
 from unittest.mock import patch
 
 from support import *
@@ -34,7 +36,32 @@ class SessionOptimizationTests(RepoTest):
         resumed = flow.step(root, identifier, operations)
         self.assertTrue(resumed["complete"])
         self.assertTrue(all(item["reused"] for item in resumed["operations"][:2]))
+        metrics = flow.status(root, identifier)["metrics"]
+        self.assertEqual(8, metrics["step_operation_requests"])
+        self.assertEqual(4, metrics["step_operations"])
+        self.assertEqual(2, metrics["step_reused_operations"])
         flow.cancel(root, identifier)
+
+    def test_snapshot_resolves_frozen_trees_and_instructions_in_batches(self):
+        write(self.repo, "AGENTS.md", "Keep this captured review invariant.\n")
+        git(self.repo, "add", "AGENTS.md")
+        git(self.repo, "commit", "-m", "add scoped review guidance")
+        args = flow.parser().parse_args(["start", "--workspace", str(self.root), "--project", str(self.repo),
+                                         "--base", "main", "--head", "feature"])
+        with patch.object(context_helper.git, "run_git", wraps=context_helper.git.run_git) as calls:
+            started = flow.start(args)
+        manifest = json.loads((Path(started["context_dir"]) / "manifest.json").read_text(encoding="utf-8"))
+        tree_batches = [call for call in calls.call_args_list
+                        if call.args[1][:2] == ["cat-file", "--batch-check=%(objectname) %(objecttype) %(objectsize)"]]
+        instruction_batches = [call for call in calls.call_args_list
+                               if call.args[1] == ["cat-file", "--batch"]]
+        self.assertEqual(2, len(tree_batches))  # capture plus independent sealed-snapshot validation
+        self.assertEqual(2, len(instruction_batches))  # capture plus independent content check
+        self.assertGreaterEqual(len(manifest["repositories"][0]["instructions"]), 1)
+        self.assertFalse(any(call.args[1][0] == "rev-parse" and
+                             any(value.endswith("^{tree}") for value in call.args[1])
+                             for call in calls.call_args_list))
+        flow.cancel(Path(started["runtime_root"]), started["request_id"])
 
     def test_conflicting_duplicate_id_is_excluded_from_the_prefetch_prefix(self):
         started = self.start()
@@ -108,6 +135,51 @@ class SessionOptimizationTests(RepoTest):
         view = flow.artifact_view(context, page["artifact"], pointer="/contents/" + content_id + "/lines", page_size=2)
         self.assertEqual(result["contents"][content_id]["lines"][:2], view["items"])
         flow.cancel(root, identifier)
+
+    def test_oversized_single_artifact_field_is_segmented_with_following_page(self):
+        started = self.start()
+        context = Path(started["context_dir"])
+        original = "長字串內容" * 12000
+        value = {"operations": [{"id": "large", "text": original}, {"id": "after", "text": "next"}],
+                 "results": [], "padding": "x" * (flow.LIMIT * 2)}
+        summary = flow.compact(value, context)
+        self.assertLessEqual(len(review_runtime.canonical(summary)), flow.LIMIT)
+        self.assertEqual("/operations/0/text", summary["continue"]["pointer"])
+        self.assertEqual("/operations", summary["next_page"]["pointer"])
+        page = flow.artifact_view(context, summary["artifact"], pointer="/operations", page_size=100)
+        self.assertLessEqual(len(review_runtime.canonical(page)), flow.LIMIT)
+        self.assertEqual(0, page["items"][0]["index"])
+        self.assertEqual("/operations", page["next_page"]["pointer"])
+        self.assertEqual(1, page["next_page"]["offset"])
+        request = summary["continue"]
+        chunks = []
+        while request:
+            self.assertEqual("view", request["op"])
+            request = {key: item for key, item in request.items() if key != "op"}
+            part = flow.artifact_view(context, **request)
+            self.assertLessEqual(len(review_runtime.canonical(part)), flow.LIMIT)
+            chunks.append(part["text"])
+            request = part.get("continue")
+        self.assertEqual(original, "".join(chunks))
+        following = page["next_page"]
+        following = {key: item for key, item in following.items() if key != "op"}
+        self.assertEqual("after", flow.artifact_view(context, **following)["items"][0]["id"])
+        with self.assertRaises(ValueError):
+            flow.artifact_view(context, summary["artifact"], pointer="/operations", offset=3)
+        with self.assertRaises(ValueError):
+            flow.artifact_view(context, summary["artifact"], pointer="/operations/0/text",
+                               string_offset=len(original) + 1)
+        flow.cancel(Path(started["runtime_root"]), started["request_id"])
+
+    @unittest.skipUnless(os.name == "nt", "Windows managed temp volumes may deny hard links")
+    def test_artifact_store_falls_back_to_atomic_rename_when_hard_links_are_denied(self):
+        started = self.start()
+        context = Path(started["context_dir"])
+        value = {"saved": "完整固定證據"}
+        with patch.object(review_runtime.os, "link", side_effect=PermissionError("hard links denied")):
+            identifier = review_runtime.store_view(context, value)
+        self.assertEqual(value, review_runtime.load_view(context, identifier))
+        flow.cancel(Path(started["runtime_root"]), started["request_id"])
 
     def test_cli_accepts_worklist_and_uses_same_ids_on_retry(self):
         started = self.start()

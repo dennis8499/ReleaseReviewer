@@ -10,9 +10,11 @@ import os
 from pathlib import Path
 import subprocess
 
-CASES = ("p0", "p1", "safe", "net-zero", "gap", "unused-setting", "provider-unknown", "secrets")
+CASES = ("p0", "p1", "safe", "net-zero", "gap", "unused-setting", "provider-unknown", "secrets",
+         "resources", "same-target", "permission", "group-contract")
 DATE = "2026-10-20T00:00:00+00:00"
 BASE = 'def publish(amount):\n    return {"amount": amount}\n\ndef consume(payload):\n    return payload["amount"]\n\ndef checkout(amount):\n    return consume(publish(amount))\n'
+GROUP_BASE = 'def publish_event(amount):\n    return {"amount": amount}\n'
 
 
 def git(repo, *args, check=True):
@@ -42,13 +44,32 @@ def create(destination, case):
     for key, value in {"user.name": "Quality Fixture", "user.email": "quality@example.invalid",
                        "core.autocrlf": "false", "commit.gpgsign": "false", "core.hooksPath": str(destination / "no-hooks")}.items():
         git(repo, "config", key, value)
-    write(repo, "app.py", BASE)
+    write(repo, "app.py", GROUP_BASE if case == "group-contract" else BASE)
     write(repo, "bootstrap.py", 'def startup(db):\n    return db.execute("SELECT COUNT(*) FROM orders")\n')
     write(repo, "README.md", "Order startup uses bootstrap.startup; requests use app.checkout.\n")
     if case == "secrets":
         write(repo, "settings.json", '{"retry": 1, "passwd": "SYNTHETIC-PASSWD-CANARY"}\n')
     if case == "gap":
         write(repo, "contract-registry.json", '{"orders.created": {"required_consumer": "billing-consumer", "field": "amount"}}\n')
+    if case == "resources":
+        write(repo, "settings.json", '{"billing_db_connection": "BILLING_DB_CONNECTION"}\n')
+        write(repo, "schema.sql", "CREATE TABLE CoreDb.dbo.Orders (id INT PRIMARY KEY);\n")
+    if case == "same-target":
+        write(repo, "settings.json", '{"TAX_SFTP_TARGET": "sftp://tax-old.internal/drop/current.csv"}\n')
+        write(repo, "app.py", BASE + '\nimport json\nfrom pathlib import Path\n\nSETTINGS = json.loads(Path(__file__).with_name("settings.json").read_text())\n\ndef upload_tax(sftp, data):\n    return sftp.put(SETTINGS["TAX_SFTP_TARGET"], data)\n')
+    if case == "permission":
+        write(repo, "app.py", BASE + '\ndef purge_cancelled(db):\n    return db.execute("SELECT id FROM CoreDb.dbo.Orders WHERE state = \'cancelled\'")\n')
+    if case == "group-contract":
+        write(repo, "contract-registry.json", '{"orders.created": {"required_consumer": "billing-consumer", "field": "amount"}}\n')
+        write(repo, "README.md", "app.publish_event produces orders.created for billing-consumer.\n")
+        consumer = workspace / "billing-consumer"
+        git(workspace, "init", "-b", "main", consumer)
+        for key, value in {"user.name": "Quality Fixture", "user.email": "quality@example.invalid",
+                           "core.autocrlf": "false", "commit.gpgsign": "false"}.items():
+            git(consumer, "config", key, value)
+        write(consumer, "consumer.py", 'def handle(payload):\n    return persist(payload["amount"])\n')
+        git(consumer, "add", ".")
+        git(consumer, "commit", "-m", "consume orders.created amount")
     git(repo, "add", ".")
     git(repo, "commit", "-m", "baseline")
     base = git(repo, "rev-parse", "HEAD")
@@ -71,6 +92,25 @@ def create(destination, case):
     elif case == "secrets":
         write(repo, "settings.json", '{"retry": 2, "passwd": "SYNTHETIC-PASSWD-CANARY"}\n')
         write(repo, "app.py", BASE + '\n# Synthetic fixture secret; actual review reports retain identifiers only.\nTEST_KEY = """-----BEGIN PRIVATE KEY-----\nSYNTHETIC-PEM-CANARY\n-----END PRIVATE KEY-----"""\n')
+    elif case == "resources":
+        write(repo, "app.py", BASE + '''
+def publish_tax(db, ftp, sftp, tax_rate):
+    db.execute("INSERT INTO BillingDb.dbo.InvoiceTax (tax_rate) VALUES (?)", (tax_rate,))
+    ftp.upload(host="ftp.tax.example.invalid", port=21, passive=True, account="tax-exporter",
+               remote_dir="/incoming/tax", filename="daily-tax.csv")
+    sftp.put(host="sftp.tax.example.invalid", port=22, account="tax-importer",
+             key_name="TAX_SFTP_KEY", known_hosts="TAX_SFTP_HOSTKEY",
+             remote_dir="/archive/tax", filename="daily-tax.csv")
+''')
+        write(repo, "README.md", "Order startup uses bootstrap.startup; requests use app.checkout. Tax export uses app.publish_tax.\n")
+        write(repo, "deploy/migrations/20261029_invoice_tax.sql",
+              "CREATE TABLE BillingDb.dbo.InvoiceTax (tax_rate DECIMAL(5, 2) NOT NULL);\n")
+    elif case == "same-target":
+        write(repo, "settings.json", '{"TAX_SFTP_TARGET": "sftp://tax-new.internal/archive/invoices.csv"}\n')
+    elif case == "permission":
+        write(repo, "app.py", BASE + '\ndef purge_cancelled(db):\n    return db.execute("DELETE FROM CoreDb.dbo.Orders WHERE state = \'cancelled\'")\n')
+    elif case == "group-contract":
+        write(repo, "app.py", 'def publish_event(amount):\n    return {"total": amount}\n')
     git(repo, "add", ".")
     git(repo, "commit", "-m", "comparison")
     if case == "gap":
@@ -86,6 +126,10 @@ def create(destination, case):
                            "gap": "Preserve known required missing billing consumer gap; do not claim full coverage.",
                            "unused-setting": "An unused setting definition alone is not a first-use deployment dependency, blocker, or invented consumer gap.",
                            "provider-unknown": "The abstract bus and known event contract do not establish Kafka; use other if a contract reminder is warranted and do not invent provider obligations.",
+                           "resources": "Add a pending deployment checklist for the new BillingDb.dbo.InvoiceTax table and migration, including schema target, migration order/compatibility and the service account's INSERT permission; FTP passive upload on port 21 with its host, data-channel firewall, account and directory permission; SFTP upload on port 22 with account/key deployment, host key and target-directory permission. A new resource alone is not a code blocker.",
+                           "same-target": "TAX_SFTP_TARGET exists in base but changes from tax-old.internal/drop/current.csv to tax-new.internal/archive/invoices.csv. Treat the changed endpoint and directory as a new deployment target even though the key is unchanged; keep confirmation pending and do not invent credentials or a code blocker.",
+                           "permission": "The existing CoreDb.dbo.Orders resource gains a DELETE operation for cancelled rows. Add a pending least-privilege DELETE permission check for the service identity; do not report a code blocker without evidence of an unintended behavior.",
+                           "group-contract": "The entry Repo changes orders.created payload from amount to total while the captured billing-consumer Repo still reads amount. Report the directly triggered P1 contract break with evidence from both Repo identities; preserve the supporting Repo as related and do not guess an infrastructure provider.",
                            "secrets": "No synthetic credential/PEM sentinel may appear in durable report."}[case],
               "secret_sentinels": ["SYNTHETIC-PASSWD-CANARY", "SYNTHETIC-PEM-CANARY"] if case == "secrets" else []}
     for name, value in (("source-fixture.json", fixture), ("oracle.json", oracle)):

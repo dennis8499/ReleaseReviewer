@@ -1,0 +1,102 @@
+{
+  "schema": "ReleaseReviewerBlindQualityMatrix/v1",
+  "complete": true,
+  "acceptance_complete": false,
+  "models": {
+    "gpt-6.1-sol": "high"
+  },
+  "conditions": [
+    "candidate"
+  ],
+  "cases": [
+    "resources"
+  ],
+  "runs_per_cell": 1,
+  "seed": 20261029,
+  "codex_cli": "codex.cmd",
+  "baseline_skill_sha256": "0ffe214ea727f54a8d2d03e4f63bbc2c0a89b7f7372e086c46e06afef38a68a4",
+  "candidate_skill_sha256": "a384907bae7ed49305def5bdebe65b9e065b3946d6291c815d39f7db2c0fb398",
+  "no_skill_isolation_proven": false,
+  "scoring": "blind reports are preserved; semantic_score requires an oracle-backed independent review",
+  "samples": [
+    {
+      "id": "gpt-6.1-sol-candidate-resources-01",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "condition": "candidate",
+      "case": "resources",
+      "run": 1,
+      "elapsed_seconds": 224.0906453999978,
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "exit_code": 0,
+      "error": null,
+      "report_created": true,
+      "session_error": null,
+      "job_updated_at": "2026-10-29T16:28:02.356432+00:00",
+      "report_path": "reports/gpt-6.1-sol-candidate-resources-01.md",
+      "report_sha256": "d74720df2cd6159e13e1f411bf0ba618673b1356312efec8303a0d2bf82ced8d",
+      "report_bytes": 26284,
+      "secret_leak": false,
+      "job_state": "published",
+      "cleanup_verified": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "network_log": {
+        "reason": "local-branches",
+        "phase": "local-preflight",
+        "fetches": [],
+        "http_requests": null,
+        "ssh_requests": null
+      },
+      "runtime_metrics": {
+        "capture_seconds": 1.5587575000008655,
+        "read_search_seconds": 1.2178246000039508,
+        "step_operation_requests": 50,
+        "step_operations": 41,
+        "step_reused_operations": 1,
+        "step_git_commands": 26,
+        "step_git_seconds": 0.6631099999940488,
+        "step_output_bytes": 4175,
+        "step_batched_blobs": 8,
+        "step_searches": 24,
+        "step_search_cache_hits": 0,
+        "git_commands": 25,
+        "git_seconds": 0.6209828999853926,
+        "git_output_bytes": 3523,
+        "batched_blobs": 3,
+        "validation_seconds": 1.1102376999988337,
+        "searches_executed": 24,
+        "search_cache_hits": 0,
+        "unique_blobs": 6,
+        "unique_citation_files": 6,
+        "validation_publish_seconds": 1.3301979999996547
+      },
+      "review_complete": true,
+      "review_status": "靜態檢查完成",
+      "release_assessment": "pending-confirmation",
+      "blocker_count": 0,
+      "pending_count": 17,
+      "gap_count": 0,
+      "oracle_expected": "Add a pending deployment checklist for the new BillingDb.dbo.InvoiceTax table and migration, including schema target, migration order/compatibility and the service account's INSERT permission; FTP passive upload on port 21 with its host, data-channel firewall, account and directory permission; SFTP upload on port 22 with account/key deployment, host key and target-directory permission. A new resource alone is not a code blocker.",
+      "semantic_score": null,
+      "global_skill_isolation": "not proven; user CODEX_HOME remains active",
+      "installed_skill_sha256": "a384907bae7ed49305def5bdebe65b9e065b3946d6291c815d39f7db2c0fb398",
+      "signals": {
+        "p0": true,
+        "p1": true,
+        "checklist": true,
+        "ftp": true,
+        "sftp": true,
+        "kafka": true
+      }
+    }
+  ]
+}

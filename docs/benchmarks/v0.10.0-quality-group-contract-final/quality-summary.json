@@ -1,0 +1,15 @@
+{
+  "schema": "ReleaseReviewerBlindQualitySummary/v1",
+  "semantic_scoring_complete": false,
+  "cells": {
+    "gpt-6.1-sol/group-contract": {
+      "candidate": {
+        "runs": 1,
+        "median_seconds": 311.0524087999984,
+        "reports_created": 1,
+        "secret_leaks": 0,
+        "semantic_score": null
+      }
+    }
+  }
+}

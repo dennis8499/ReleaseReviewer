@@ -9,6 +9,7 @@ from pathlib import Path, PurePosixPath
 import re
 
 import git_support as git
+import review_runtime
 
 POLICY = "frozen-start/v1"
 RECEIPT_POLICY = "snapshot-validation-receipt/v1"
@@ -139,6 +140,29 @@ def inventory(repo: Path, tree: str, env=None) -> tuple[list, set]:
     return entries, objects
 
 
+def tree_ids(repo: Path, refs, env=None) -> dict[str, str]:
+    """Resolve a set of frozen commits to trees in one local Git process."""
+    unique = list(dict.fromkeys(refs))
+    if not unique:
+        return {}
+    raw = str(git.run_git(
+        repo,
+        ["cat-file", "--batch-check=%(objectname) %(objecttype) %(objectsize)"],
+        input_bytes=("".join(f"{reference}^{{tree}}\n" for reference in unique)).encode("ascii"),
+        env=env,
+    ))
+    rows = raw.splitlines()
+    require(len(rows) == len(unique), "固定 tree 解析結果不完整。")
+    result = {}
+    for reference, row in zip(unique, rows):
+        fields = row.split()
+        require(len(fields) == 3 and re.fullmatch(r"[a-f0-9]{40}|[a-f0-9]{64}", fields[0])
+                and fields[1] == "tree" and fields[2].isdigit(),
+                "固定 ref 未解析為完整 Git tree。")
+        result[reference] = fields[0]
+    return result
+
+
 def owned_capture_git(context, destination, args, *, workdir=None, **kwargs):
     """Keep unsupported Windows Git root depths explicit, without fallback."""
     try:
@@ -163,10 +187,11 @@ def seal(context: Path, record: dict, refs: list[str], *, env=None, extra_commit
     object_format = str(git.run_git(source, ["rev-parse", "--show-object-format"])).strip()
     require(object_format in {"sha1", "sha256"}, "不支援的 Git 物件格式。")
     owned_capture_git(context, destination, ["init", "--bare", f"--object-format={object_format}", str(destination)], workdir=context)
-    objects, sources, instructions, trees, instruction_content = set(), {}, [], {}, {}
+    objects, sources, instructions, trees, instruction_oids = set(), {}, [], {}, {}
+    resolved_trees = tree_ids(source, refs, env)
     for reference in dict.fromkeys(refs):
         require(isinstance(reference, str) and re.fullmatch(r"[a-f0-9]{40}|[a-f0-9]{64}", reference), "固定 ref 無效。")
-        tree = str(git.run_git(source, ["rev-parse", f"{reference}^{{tree}}"], env=env)).strip()
+        tree = resolved_trees[reference]
         if tree not in trees:
             trees[tree] = inventory(source, tree, env)
         entries, closure = trees[tree]
@@ -175,14 +200,20 @@ def seal(context: Path, record: dict, refs: list[str], *, env=None, extra_commit
         objects.add(reference)
         for item in entries:
             if item["kind"] == "blob" and PurePosixPath(item["path"]).name == "AGENTS.md":
-                if item["object"] not in instruction_content:
-                    instruction_content[item["object"]] = git.run_git(source, ["cat-file", "blob", item["object"]], binary=True, env=env)
-                content = instruction_content[item["object"]]
-                instructions.append({"ref": reference, "path": item["path"],
-                                     "sha256": hashlib.sha256(content).hexdigest()})
+                instruction_oids[(reference, item["path"])] = item["object"]
     extra = list(dict.fromkeys(extra_commit_objects))
     require(all(isinstance(reference, str) and re.fullmatch(r"[a-f0-9]{40}|[a-f0-9]{64}", reference)
                 for reference in extra), "祖先證明 commit 身分無效。")
+    if instruction_oids:
+        unique_oids = list(dict.fromkeys(instruction_oids.values()))
+        instruction_content = review_runtime.batch_blobs(
+            lambda data: git.run_git(source, ["cat-file", "--batch"], binary=True,
+                                     input_bytes=data, env=env),
+            [(oid, oid) for oid in unique_oids], object_format)
+        for (reference, path), oid in instruction_oids.items():
+            content = instruction_content[oid]
+            instructions.append({"ref": reference, "path": path,
+                                 "sha256": hashlib.sha256(content).hexdigest()})
     if extra:
         checked = str(git.run_git(source, ["cat-file", "--batch-check"],
                                  input_bytes=("\n".join(extra) + "\n").encode("ascii"), env=env)).splitlines()
@@ -253,8 +284,9 @@ def _validate(context: Path, record: dict):
     sources = record["snapshot"].get("sources")
     require(isinstance(sources, dict) and sources, "快照沒有固定來源。")
     objects, checked_trees = set(), {}
+    resolved_trees = tree_ids(path, sources, env)
     for reference, expected in sources.items():
-        tree = str(git.run_git(path, ["rev-parse", f"{reference}^{{tree}}"], env=env)).strip()
+        tree = resolved_trees[reference]
         require(tree == expected["tree"], "快照 tree 身分不符。")
         if tree not in checked_trees:
             checked_trees[tree] = inventory(path, tree, env)
@@ -269,9 +301,23 @@ def _validate(context: Path, record: dict):
     for index in (path / "objects/pack").glob("*.idx"):
         owned_path(context, record["snapshot"]["git_dir"] + "/" + index.relative_to(path).as_posix())
         git.run_git(path, ["verify-pack", index.relative_to(path).as_posix()], env=env)
+    instruction_rows = []
     for item in record.get("instructions", []):
-        content = git.run_git(path, ["cat-file", "blob", f"{item['ref']}:{item['path']}"], binary=True, env=env)
-        require(hashlib.sha256(content).hexdigest() == item["sha256"], "固定審查指示摘要不符。")
+        reference, name = item["ref"], item["path"]
+        require(reference in resolved_trees and isinstance(name, str), "固定審查指示來源無效。")
+        entries = checked_trees[resolved_trees[reference]][0]
+        matched = next((entry for entry in entries if entry["path"] == name and entry["kind"] == "blob"), None)
+        require(matched is not None, "固定審查指示不在已封存 Git tree。")
+        instruction_rows.append((item, matched["object"]))
+    if instruction_rows:
+        unique_oids = list(dict.fromkeys(oid for _, oid in instruction_rows))
+        contents = review_runtime.batch_blobs(
+            lambda data: git.run_git(path, ["cat-file", "--batch"], binary=True,
+                                     input_bytes=data, env=env),
+            [(oid, oid) for oid in unique_oids], record["snapshot"]["object_format"])
+        for item, oid in instruction_rows:
+            require(hashlib.sha256(contents[oid]).hexdigest() == item["sha256"],
+                    "固定審查指示摘要不符。")
 
 
 def capture_workspace_instructions(context: Path, roots: list[Path], repositories: list[Path]) -> list:

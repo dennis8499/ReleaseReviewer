@@ -34,11 +34,19 @@ def build_checklist(result: dict) -> list[dict]:
     checks = []
     for field in ("config_changes", "db_changes", "external_changes"):
         for dependency in result[field]:
+            name = dependency["name"]
+            connection = dependency.get("connection", "入口服務設定")
             rules = CONFIG if field == "config_changes" else COMMON + (
                 DB if field == "db_changes" else EXTERNAL[dependency["kind"]])
             for operation, question in rules:
+                if operation == "network":
+                    question = (f"確認目標「{name}」及連線／服務身分「{connection}」的主機、連接埠、"
+                                "DNS／路由與防火牆已開通；未知或環境提供值須核對實際設定並記錄驗證證據。")
+                elif operation == "transport":
+                    question = (f"確認目標「{name}」及連線／服務身分「{connection}」的 TLS／憑證／"
+                                "加密設定符合目標環境；不適用時記錄理由。")
                 checks.append({"id": f"K-{len(checks) + 1:03}", "dependency_id": dependency["id"],
-                               "resource": dependency["name"], "connection": dependency.get("connection", "入口服務設定"),
+                               "resource": name, "connection": connection,
                                "operation": operation, "question": question,
                                "status": "待確認", "owner": "", "date": "", "evidence": "", "reason": ""})
     return checks

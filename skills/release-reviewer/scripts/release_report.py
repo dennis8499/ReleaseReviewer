@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 import uuid
 
 sys.dont_write_bytecode = True
@@ -203,12 +204,51 @@ def final_version(manifest):
     return "head", manifest["head_sha"]
 
 
-def validate_result(draft, manifest, context):
+def draft_citation_requests(draft):
+    """Select only citation locations the v3 validator itself can consume."""
+    if not isinstance(draft, dict):
+        return []
+    requests = []
+    for field in ("coverage", "merge_parent_review", "code_risks", "config_changes", "db_changes",
+                  "external_changes", "supporting_coverage", "functional_chain", "dependency_coverage"):
+        items = draft.get(field)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            for citation_field in ("evidence", "definition_evidence"):
+                citations = item.get(citation_field)
+                if not isinstance(citations, list):
+                    continue
+                for citation in citations:
+                    if (isinstance(citation, dict)
+                            and all(key in citation for key in ("repo", "source", "ref", "path"))):
+                        requests.append({"action": "read", "repo": citation["repo"],
+                                         "source": citation["source"], "ref": citation["ref"],
+                                         "path": citation["path"]})
+    return requests
+
+
+def validate_result(draft, manifest, context, *, on_metrics=None):
     """Validate once with caches scoped to this frozen-source operation."""
     coverage_policy.validate(manifest, context)
-    with ev.operation_cache(manifest, context):
-        ev.validate_recorded_searches(context, manifest)
-        return _validate_result(draft, manifest, context)
+    began = time.perf_counter()
+    with ev.operation_cache(manifest, context) as operation:
+        try:
+            ev.validate_recorded_searches(context, manifest)
+            ev._prefetch_reads(manifest, context, draft_citation_requests(draft))
+            return _validate_result(draft, manifest, context)
+        finally:
+            operation["metrics"].update(
+                validation_seconds=time.perf_counter() - began,
+                searches_executed=operation["search_runs"],
+                search_cache_hits=operation["search_hits"],
+                unique_blobs=len(operation["blobs"]),
+                unique_citation_files=len(operation["metadata"]),
+            )
+            if on_metrics is not None:
+                on_metrics(operation["metrics"].copy())
 
 
 def _validate_result(draft, manifest, context):
@@ -752,7 +792,8 @@ def review_outcome(result):
 
 
 def publish_report(context, draft_path, *, retain_on_validation_error=False,
-                   on_stage=None, on_published=None, on_review_outcome=None, cleanup_context=True):
+                   on_stage=None, on_published=None, on_review_outcome=None,
+                   on_validation_metrics=None, cleanup_context=True):
     context = Path(context).expanduser().absolute()
     retain_context = False
     try:
@@ -775,7 +816,7 @@ def publish_report(context, draft_path, *, retain_on_validation_error=False,
         try:
             # The facade's cheap check aggregates field mistakes before this
             # one full, independent source/citation validation.
-            result = redact(validate_result(draft, manifest, context))
+            result = redact(validate_result(draft, manifest, context, on_metrics=on_validation_metrics))
         except DraftValidationError:
             if retain_on_validation_error:
                 coverage_policy.validate(manifest, context)
@@ -828,6 +869,15 @@ def publish_report(context, draft_path, *, retain_on_validation_error=False,
                     os.link(temporary, md)
                 except FileExistsError:
                     continue
+                except OSError:
+                    if os.name != "nt":
+                        raise
+                    # Managed Windows volumes can deny hard links. A same-directory
+                    # rename keeps report publication atomic and refuses an existing target.
+                    try:
+                        os.rename(temporary, md)
+                    except FileExistsError:
+                        continue
                 if on_published:
                     on_published(md)
                 return md

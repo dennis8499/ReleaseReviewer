@@ -1,0 +1,2242 @@
+{
+  "schema": "ReleaseReviewSessionBenchmark/v1",
+  "complete": true,
+  "scope": "Synthetic helper CLI only; not an agent or semantic-quality measurement.",
+  "method": "Alternating independent processes; start, two 24-read steps with searches, check and finish; no-change uses identical base/head; all samples retained.",
+  "environment": {
+    "platform": "Windows-11-10.0.26300-SP0",
+    "python": "3.14.7 (tags/v3.14.7:823f032, Aug  5 2026, 10:51:32) [MSC v.1944 64 bit (AMD64)]",
+    "baseline_payload_sha256": "0ffe214ea727f54a8d2d03e4f63bbc2c0a89b7f7372e086c46e06afef38a68a4",
+    "candidate_payload_sha256": "d93312371078acfb369e8f9c0fb3ae59546a40294e9c50dd6d66fa176000d8b4"
+  },
+  "summary": {
+    "repository": {
+      "success": false,
+      "all_samples_succeeded": false,
+      "evidence_equivalent": false,
+      "helper_target_ratio": 0.8,
+      "pair_count": 5
+    },
+    "group": {
+      "success": false,
+      "all_samples_succeeded": false,
+      "evidence_equivalent": false,
+      "helper_target_ratio": 0.8,
+      "pair_count": 5
+    },
+    "no-change": {
+      "success": false,
+      "all_samples_succeeded": false,
+      "evidence_equivalent": false,
+      "helper_target_ratio": 1.05,
+      "pair_count": 5
+    }
+  },
+  "samples": [
+    {
+      "variant": "baseline",
+      "run": 1,
+      "success": false,
+      "scenario": "repository",
+      "stages": {
+        "start": {
+          "wall_seconds": 2.8829929000003176,
+          "git_commands": 56,
+          "tool_calls": 1,
+          "output_bytes": 11340,
+          "stdout_bytes": 11340,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 0.915254499999719,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 779,
+          "stdout_bytes": 779,
+          "stderr_bytes": 0,
+          "exit_code": 3
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "error": "RuntimeError: step-0 exited 3: \n{\"request_id\":\"97b595db1fd142379e2b5aff62b953db\",\"state\":\"reviewing\",\"phase\":\"review\",\"terminal\":false,\"recoverable\":true,\"context_retained\":true,\"operations\":[],\"complete\":false,\"next_index\":0,\"error\":\"[WinError 5] 存取被拒。: '<LOCAL_PATH>' -> '<LOCAL_PATH>'\",\"search_activity\":{\"executed\":0,\"cache_hits\":0},\"outcome_available\":true}\r\n"
+    },
+    {
+      "variant": "candidate",
+      "run": 1,
+      "success": true,
+      "scenario": "repository",
+      "stages": {
+        "start": {
+          "wall_seconds": 2.708715900000243,
+          "git_commands": 52,
+          "tool_calls": 1,
+          "output_bytes": 11340,
+          "stdout_bytes": 11340,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 1.9966823000013392,
+          "git_commands": 2,
+          "tool_calls": 1,
+          "output_bytes": 18382,
+          "stdout_bytes": 18382,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 1,
+            "cache_hits": 0
+          }
+        },
+        "step-1": {
+          "wall_seconds": 1.9136578000016016,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 18862,
+          "stdout_bytes": 18862,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 0,
+            "cache_hits": 1
+          }
+        },
+        "check": {
+          "wall_seconds": 0.32321959999899263,
+          "git_commands": 0,
+          "tool_calls": 1,
+          "output_bytes": 317,
+          "stdout_bytes": 317,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "finish": {
+          "wall_seconds": 2.4433415999992576,
+          "git_commands": 8,
+          "tool_calls": 1,
+          "output_bytes": 3731,
+          "stdout_bytes": 3731,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "evidence_digest": "42bb3cf4944f5042ed0d761026a6175999e94ce980d7f25e72840311e43fc7ee",
+      "evidence_count": 50,
+      "check_passed": true,
+      "review_complete": true,
+      "review_status": "靜態檢查完成",
+      "blocker_count": 0,
+      "pending_count": 0,
+      "gap_count": 0,
+      "report_published": true,
+      "cleanup_pending": false,
+      "runtime_metrics": {
+        "capture_seconds": 2.424014800000805,
+        "read_search_seconds": 3.349912300000142,
+        "step_operation_requests": 50,
+        "step_operations": 50,
+        "step_reused_operations": 0,
+        "step_git_commands": 3,
+        "step_git_seconds": 0.1244909999986703,
+        "step_output_bytes": 8917,
+        "step_batched_blobs": 24,
+        "step_searches": 1,
+        "step_search_cache_hits": 1,
+        "git_commands": 2,
+        "git_seconds": 0.11513790000026347,
+        "git_output_bytes": 9632,
+        "batched_blobs": 26,
+        "validation_seconds": 1.506588099999135,
+        "searches_executed": 1,
+        "search_cache_hits": 0,
+        "unique_blobs": 52,
+        "unique_citation_files": 52,
+        "validation_publish_seconds": 1.9844190000003437
+      },
+      "repair_seconds": 0.0,
+      "total_seconds": 9.385617200001434
+    },
+    {
+      "variant": "candidate",
+      "run": 2,
+      "success": true,
+      "scenario": "repository",
+      "stages": {
+        "start": {
+          "wall_seconds": 3.0638652999987244,
+          "git_commands": 52,
+          "tool_calls": 1,
+          "output_bytes": 11340,
+          "stdout_bytes": 11340,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 1.6397974000010436,
+          "git_commands": 2,
+          "tool_calls": 1,
+          "output_bytes": 18382,
+          "stdout_bytes": 18382,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 1,
+            "cache_hits": 0
+          }
+        },
+        "step-1": {
+          "wall_seconds": 1.6269641000017145,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 18862,
+          "stdout_bytes": 18862,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 0,
+            "cache_hits": 1
+          }
+        },
+        "check": {
+          "wall_seconds": 0.28648339999926975,
+          "git_commands": 0,
+          "tool_calls": 1,
+          "output_bytes": 317,
+          "stdout_bytes": 317,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "finish": {
+          "wall_seconds": 2.2073763999997027,
+          "git_commands": 8,
+          "tool_calls": 1,
+          "output_bytes": 3730,
+          "stdout_bytes": 3730,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "evidence_digest": "42bb3cf4944f5042ed0d761026a6175999e94ce980d7f25e72840311e43fc7ee",
+      "evidence_count": 50,
+      "check_passed": true,
+      "review_complete": true,
+      "review_status": "靜態檢查完成",
+      "blocker_count": 0,
+      "pending_count": 0,
+      "gap_count": 0,
+      "report_published": true,
+      "cleanup_pending": false,
+      "runtime_metrics": {
+        "capture_seconds": 2.727809399999387,
+        "read_search_seconds": 2.739156900001035,
+        "step_operation_requests": 50,
+        "step_operations": 50,
+        "step_reused_operations": 0,
+        "step_git_commands": 3,
+        "step_git_seconds": 0.1158990999992966,
+        "step_output_bytes": 8917,
+        "step_batched_blobs": 24,
+        "step_searches": 1,
+        "step_search_cache_hits": 1,
+        "git_commands": 2,
+        "git_seconds": 0.08880129999852215,
+        "git_output_bytes": 9632,
+        "batched_blobs": 26,
+        "validation_seconds": 1.404694400000153,
+        "searches_executed": 1,
+        "search_cache_hits": 0,
+        "unique_blobs": 52,
+        "unique_citation_files": 52,
+        "validation_publish_seconds": 1.8365128000004916
+      },
+      "repair_seconds": 0.0,
+      "total_seconds": 8.824486600000455
+    },
+    {
+      "variant": "baseline",
+      "run": 2,
+      "success": false,
+      "scenario": "repository",
+      "stages": {
+        "start": {
+          "wall_seconds": 3.209457899998597,
+          "git_commands": 56,
+          "tool_calls": 1,
+          "output_bytes": 11340,
+          "stdout_bytes": 11340,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 1.0100404000004346,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 779,
+          "stdout_bytes": 779,
+          "stderr_bytes": 0,
+          "exit_code": 3
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "error": "RuntimeError: step-0 exited 3: \n{\"request_id\":\"4f12aa8f4ef74bc5b7b4f4d20e83b3f7\",\"state\":\"reviewing\",\"phase\":\"review\",\"terminal\":false,\"recoverable\":true,\"context_retained\":true,\"operations\":[],\"complete\":false,\"next_index\":0,\"error\":\"[WinError 5] 存取被拒。: '<LOCAL_PATH>' -> '<LOCAL_PATH>'\",\"search_activity\":{\"executed\":0,\"cache_hits\":0},\"outcome_available\":true}\r\n"
+    },
+    {
+      "variant": "baseline",
+      "run": 3,
+      "success": false,
+      "scenario": "repository",
+      "stages": {
+        "start": {
+          "wall_seconds": 3.174321399999826,
+          "git_commands": 56,
+          "tool_calls": 1,
+          "output_bytes": 11340,
+          "stdout_bytes": 11340,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 0.982980700000553,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 779,
+          "stdout_bytes": 779,
+          "stderr_bytes": 0,
+          "exit_code": 3
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "error": "RuntimeError: step-0 exited 3: \n{\"request_id\":\"d68b083dd2bb4f62bab20ddaeb340f2c\",\"state\":\"reviewing\",\"phase\":\"review\",\"terminal\":false,\"recoverable\":true,\"context_retained\":true,\"operations\":[],\"complete\":false,\"next_index\":0,\"error\":\"[WinError 5] 存取被拒。: '<LOCAL_PATH>' -> '<LOCAL_PATH>'\",\"search_activity\":{\"executed\":0,\"cache_hits\":0},\"outcome_available\":true}\r\n"
+    },
+    {
+      "variant": "candidate",
+      "run": 3,
+      "success": true,
+      "scenario": "repository",
+      "stages": {
+        "start": {
+          "wall_seconds": 2.9320542000004934,
+          "git_commands": 52,
+          "tool_calls": 1,
+          "output_bytes": 11340,
+          "stdout_bytes": 11340,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 1.663108300001113,
+          "git_commands": 2,
+          "tool_calls": 1,
+          "output_bytes": 18382,
+          "stdout_bytes": 18382,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 1,
+            "cache_hits": 0
+          }
+        },
+        "step-1": {
+          "wall_seconds": 1.593218899999556,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 18862,
+          "stdout_bytes": 18862,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 0,
+            "cache_hits": 1
+          }
+        },
+        "check": {
+          "wall_seconds": 0.2718095000000176,
+          "git_commands": 0,
+          "tool_calls": 1,
+          "output_bytes": 317,
+          "stdout_bytes": 317,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "finish": {
+          "wall_seconds": 2.08206489999975,
+          "git_commands": 8,
+          "tool_calls": 1,
+          "output_bytes": 3733,
+          "stdout_bytes": 3733,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "evidence_digest": "42bb3cf4944f5042ed0d761026a6175999e94ce980d7f25e72840311e43fc7ee",
+      "evidence_count": 50,
+      "check_passed": true,
+      "review_complete": true,
+      "review_status": "靜態檢查完成",
+      "blocker_count": 0,
+      "pending_count": 0,
+      "gap_count": 0,
+      "report_published": true,
+      "cleanup_pending": false,
+      "runtime_metrics": {
+        "capture_seconds": 2.632483900000807,
+        "read_search_seconds": 2.7300740999999107,
+        "step_operation_requests": 50,
+        "step_operations": 50,
+        "step_reused_operations": 0,
+        "step_git_commands": 3,
+        "step_git_seconds": 0.11907119999887072,
+        "step_output_bytes": 8917,
+        "step_batched_blobs": 24,
+        "step_searches": 1,
+        "step_search_cache_hits": 1,
+        "git_commands": 2,
+        "git_seconds": 0.07321420000153012,
+        "git_output_bytes": 9632,
+        "batched_blobs": 26,
+        "validation_seconds": 1.3197646999997232,
+        "searches_executed": 1,
+        "search_cache_hits": 0,
+        "unique_blobs": 52,
+        "unique_citation_files": 52,
+        "validation_publish_seconds": 1.726727799999935
+      },
+      "repair_seconds": 0.0,
+      "total_seconds": 8.54225580000093
+    },
+    {
+      "variant": "candidate",
+      "run": 4,
+      "success": true,
+      "scenario": "repository",
+      "stages": {
+        "start": {
+          "wall_seconds": 2.927304799999547,
+          "git_commands": 52,
+          "tool_calls": 1,
+          "output_bytes": 11340,
+          "stdout_bytes": 11340,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 1.598408299998482,
+          "git_commands": 2,
+          "tool_calls": 1,
+          "output_bytes": 18382,
+          "stdout_bytes": 18382,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 1,
+            "cache_hits": 0
+          }
+        },
+        "step-1": {
+          "wall_seconds": 1.572393500000544,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 18862,
+          "stdout_bytes": 18862,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 0,
+            "cache_hits": 1
+          }
+        },
+        "check": {
+          "wall_seconds": 0.29226359999847773,
+          "git_commands": 0,
+          "tool_calls": 1,
+          "output_bytes": 317,
+          "stdout_bytes": 317,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "finish": {
+          "wall_seconds": 2.387541099998998,
+          "git_commands": 8,
+          "tool_calls": 1,
+          "output_bytes": 3732,
+          "stdout_bytes": 3732,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "evidence_digest": "42bb3cf4944f5042ed0d761026a6175999e94ce980d7f25e72840311e43fc7ee",
+      "evidence_count": 50,
+      "check_passed": true,
+      "review_complete": true,
+      "review_status": "靜態檢查完成",
+      "blocker_count": 0,
+      "pending_count": 0,
+      "gap_count": 0,
+      "report_published": true,
+      "cleanup_pending": false,
+      "runtime_metrics": {
+        "capture_seconds": 2.625244800001383,
+        "read_search_seconds": 2.653581900000063,
+        "step_operation_requests": 50,
+        "step_operations": 50,
+        "step_reused_operations": 0,
+        "step_git_commands": 3,
+        "step_git_seconds": 0.11723500000152853,
+        "step_output_bytes": 8917,
+        "step_batched_blobs": 24,
+        "step_searches": 1,
+        "step_search_cache_hits": 1,
+        "git_commands": 2,
+        "git_seconds": 0.13060229999973672,
+        "git_output_bytes": 9632,
+        "batched_blobs": 26,
+        "validation_seconds": 1.5703684000000067,
+        "searches_executed": 1,
+        "search_cache_hits": 0,
+        "unique_blobs": 52,
+        "unique_citation_files": 52,
+        "validation_publish_seconds": 2.015589700000419
+      },
+      "repair_seconds": 0.0,
+      "total_seconds": 8.777911299996049
+    },
+    {
+      "variant": "baseline",
+      "run": 4,
+      "success": false,
+      "scenario": "repository",
+      "stages": {
+        "start": {
+          "wall_seconds": 3.1859722000008333,
+          "git_commands": 56,
+          "tool_calls": 1,
+          "output_bytes": 11340,
+          "stdout_bytes": 11340,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 0.9749460999992152,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 779,
+          "stdout_bytes": 779,
+          "stderr_bytes": 0,
+          "exit_code": 3
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "error": "RuntimeError: step-0 exited 3: \n{\"request_id\":\"4f3ac837afb54147832a89424bb13e64\",\"state\":\"reviewing\",\"phase\":\"review\",\"terminal\":false,\"recoverable\":true,\"context_retained\":true,\"operations\":[],\"complete\":false,\"next_index\":0,\"error\":\"[WinError 5] 存取被拒。: '<LOCAL_PATH>' -> '<LOCAL_PATH>'\",\"search_activity\":{\"executed\":0,\"cache_hits\":0},\"outcome_available\":true}\r\n"
+    },
+    {
+      "variant": "baseline",
+      "run": 5,
+      "success": false,
+      "scenario": "repository",
+      "stages": {
+        "start": {
+          "wall_seconds": 3.317272899999807,
+          "git_commands": 56,
+          "tool_calls": 1,
+          "output_bytes": 11340,
+          "stdout_bytes": 11340,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 0.9962157000009029,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 779,
+          "stdout_bytes": 779,
+          "stderr_bytes": 0,
+          "exit_code": 3
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "error": "RuntimeError: step-0 exited 3: \n{\"request_id\":\"ee64f643a3304f15ab64204d9c3427c9\",\"state\":\"reviewing\",\"phase\":\"review\",\"terminal\":false,\"recoverable\":true,\"context_retained\":true,\"operations\":[],\"complete\":false,\"next_index\":0,\"error\":\"[WinError 5] 存取被拒。: '<LOCAL_PATH>' -> '<LOCAL_PATH>'\",\"search_activity\":{\"executed\":0,\"cache_hits\":0},\"outcome_available\":true}\r\n"
+    },
+    {
+      "variant": "candidate",
+      "run": 5,
+      "success": true,
+      "scenario": "repository",
+      "stages": {
+        "start": {
+          "wall_seconds": 3.05945839999913,
+          "git_commands": 52,
+          "tool_calls": 1,
+          "output_bytes": 11340,
+          "stdout_bytes": 11340,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 1.9434082999996463,
+          "git_commands": 2,
+          "tool_calls": 1,
+          "output_bytes": 18382,
+          "stdout_bytes": 18382,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 1,
+            "cache_hits": 0
+          }
+        },
+        "step-1": {
+          "wall_seconds": 1.668923299999733,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 18862,
+          "stdout_bytes": 18862,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 0,
+            "cache_hits": 1
+          }
+        },
+        "check": {
+          "wall_seconds": 0.28627640000013344,
+          "git_commands": 0,
+          "tool_calls": 1,
+          "output_bytes": 317,
+          "stdout_bytes": 317,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "finish": {
+          "wall_seconds": 2.44481579999956,
+          "git_commands": 8,
+          "tool_calls": 1,
+          "output_bytes": 3731,
+          "stdout_bytes": 3731,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "evidence_digest": "42bb3cf4944f5042ed0d761026a6175999e94ce980d7f25e72840311e43fc7ee",
+      "evidence_count": 50,
+      "check_passed": true,
+      "review_complete": true,
+      "review_status": "靜態檢查完成",
+      "blocker_count": 0,
+      "pending_count": 0,
+      "gap_count": 0,
+      "report_published": true,
+      "cleanup_pending": false,
+      "runtime_metrics": {
+        "capture_seconds": 2.738772600001539,
+        "read_search_seconds": 3.0649701000002096,
+        "step_operation_requests": 50,
+        "step_operations": 50,
+        "step_reused_operations": 0,
+        "step_git_commands": 3,
+        "step_git_seconds": 0.13166439999986324,
+        "step_output_bytes": 8917,
+        "step_batched_blobs": 24,
+        "step_searches": 1,
+        "step_search_cache_hits": 1,
+        "git_commands": 2,
+        "git_seconds": 0.08818089999840595,
+        "git_output_bytes": 9632,
+        "batched_blobs": 26,
+        "validation_seconds": 1.611276600000565,
+        "searches_executed": 1,
+        "search_cache_hits": 0,
+        "unique_blobs": 52,
+        "unique_citation_files": 52,
+        "validation_publish_seconds": 2.050222699999722
+      },
+      "repair_seconds": 0.0,
+      "total_seconds": 9.402882199998203
+    },
+    {
+      "variant": "baseline",
+      "run": 1,
+      "success": false,
+      "scenario": "group",
+      "stages": {
+        "start": {
+          "wall_seconds": 4.644567299999835,
+          "git_commands": 73,
+          "tool_calls": 1,
+          "output_bytes": 11562,
+          "stdout_bytes": 11562,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 0.8990289000012126,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 779,
+          "stdout_bytes": 779,
+          "stderr_bytes": 0,
+          "exit_code": 3
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "error": "RuntimeError: step-0 exited 3: \n{\"request_id\":\"aa726562570c487f9292f3e774e4932e\",\"state\":\"reviewing\",\"phase\":\"review\",\"terminal\":false,\"recoverable\":true,\"context_retained\":true,\"operations\":[],\"complete\":false,\"next_index\":0,\"error\":\"[WinError 5] 存取被拒。: '<LOCAL_PATH>' -> '<LOCAL_PATH>'\",\"search_activity\":{\"executed\":0,\"cache_hits\":0},\"outcome_available\":true}\r\n"
+    },
+    {
+      "variant": "candidate",
+      "run": 1,
+      "success": true,
+      "scenario": "group",
+      "stages": {
+        "start": {
+          "wall_seconds": 4.1277062999997725,
+          "git_commands": 69,
+          "tool_calls": 1,
+          "output_bytes": 11562,
+          "stdout_bytes": 11562,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 2.1819603000003553,
+          "git_commands": 3,
+          "tool_calls": 1,
+          "output_bytes": 565,
+          "stdout_bytes": 565,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 1,
+            "cache_hits": 0
+          }
+        },
+        "step-1": {
+          "wall_seconds": 2.2853366999988793,
+          "git_commands": 3,
+          "tool_calls": 1,
+          "output_bytes": 565,
+          "stdout_bytes": 565,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 1,
+            "cache_hits": 1
+          }
+        },
+        "check": {
+          "wall_seconds": 0.3025629999992816,
+          "git_commands": 0,
+          "tool_calls": 1,
+          "output_bytes": 317,
+          "stdout_bytes": 317,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "finish": {
+          "wall_seconds": 2.6219586999995954,
+          "git_commands": 14,
+          "tool_calls": 1,
+          "output_bytes": 3814,
+          "stdout_bytes": 3814,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "evidence_digest": "dea7e78a318847df01e35eb58211db233ec777ef7c1da326488842d832410ef4",
+      "evidence_count": 51,
+      "check_passed": true,
+      "review_complete": true,
+      "review_status": "靜態檢查完成",
+      "blocker_count": 0,
+      "pending_count": 0,
+      "gap_count": 0,
+      "report_published": true,
+      "cleanup_pending": false,
+      "runtime_metrics": {
+        "capture_seconds": 3.7950070000006235,
+        "read_search_seconds": 3.9090823999995337,
+        "step_operation_requests": 51,
+        "step_operations": 51,
+        "step_reused_operations": 0,
+        "step_git_commands": 6,
+        "step_git_seconds": 0.24324070000329812,
+        "step_output_bytes": 18868,
+        "step_batched_blobs": 48,
+        "step_searches": 2,
+        "step_search_cache_hits": 1,
+        "git_commands": 3,
+        "git_seconds": 0.12404109999988577,
+        "git_output_bytes": 11351,
+        "batched_blobs": 26,
+        "validation_seconds": 1.5156325999996625,
+        "searches_executed": 2,
+        "search_cache_hits": 0,
+        "unique_blobs": 52,
+        "unique_citation_files": 52,
+        "validation_publish_seconds": 2.2310770000003686
+      },
+      "repair_seconds": 0.0,
+      "total_seconds": 11.519524999997884
+    },
+    {
+      "variant": "candidate",
+      "run": 2,
+      "success": true,
+      "scenario": "group",
+      "stages": {
+        "start": {
+          "wall_seconds": 4.193866700001308,
+          "git_commands": 69,
+          "tool_calls": 1,
+          "output_bytes": 11562,
+          "stdout_bytes": 11562,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 2.023193099999844,
+          "git_commands": 3,
+          "tool_calls": 1,
+          "output_bytes": 565,
+          "stdout_bytes": 565,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 1,
+            "cache_hits": 0
+          }
+        },
+        "step-1": {
+          "wall_seconds": 2.0551531999990402,
+          "git_commands": 3,
+          "tool_calls": 1,
+          "output_bytes": 565,
+          "stdout_bytes": 565,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 1,
+            "cache_hits": 1
+          }
+        },
+        "check": {
+          "wall_seconds": 0.284637600001588,
+          "git_commands": 0,
+          "tool_calls": 1,
+          "output_bytes": 317,
+          "stdout_bytes": 317,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "finish": {
+          "wall_seconds": 2.537629399999787,
+          "git_commands": 14,
+          "tool_calls": 1,
+          "output_bytes": 3813,
+          "stdout_bytes": 3813,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "evidence_digest": "dea7e78a318847df01e35eb58211db233ec777ef7c1da326488842d832410ef4",
+      "evidence_count": 51,
+      "check_passed": true,
+      "review_complete": true,
+      "review_status": "靜態檢查完成",
+      "blocker_count": 0,
+      "pending_count": 0,
+      "gap_count": 0,
+      "report_published": true,
+      "cleanup_pending": false,
+      "runtime_metrics": {
+        "capture_seconds": 3.8631697000000713,
+        "read_search_seconds": 3.5109713999991072,
+        "step_operation_requests": 51,
+        "step_operations": 51,
+        "step_reused_operations": 0,
+        "step_git_commands": 6,
+        "step_git_seconds": 0.2557744999994611,
+        "step_output_bytes": 18868,
+        "step_batched_blobs": 48,
+        "step_searches": 2,
+        "step_search_cache_hits": 1,
+        "git_commands": 3,
+        "git_seconds": 0.12313370000083523,
+        "git_output_bytes": 11351,
+        "batched_blobs": 26,
+        "validation_seconds": 1.5020150000000285,
+        "searches_executed": 2,
+        "search_cache_hits": 0,
+        "unique_blobs": 52,
+        "unique_citation_files": 52,
+        "validation_publish_seconds": 2.172660899999755
+      },
+      "repair_seconds": 0.0,
+      "total_seconds": 11.094480000001568
+    },
+    {
+      "variant": "baseline",
+      "run": 2,
+      "success": false,
+      "scenario": "group",
+      "stages": {
+        "start": {
+          "wall_seconds": 4.318712799999048,
+          "git_commands": 73,
+          "tool_calls": 1,
+          "output_bytes": 11562,
+          "stdout_bytes": 11562,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 0.8873272999990149,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 779,
+          "stdout_bytes": 779,
+          "stderr_bytes": 0,
+          "exit_code": 3
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "error": "RuntimeError: step-0 exited 3: \n{\"request_id\":\"1f7f044a9f1347d9bc70489f98cf7bef\",\"state\":\"reviewing\",\"phase\":\"review\",\"terminal\":false,\"recoverable\":true,\"context_retained\":true,\"operations\":[],\"complete\":false,\"next_index\":0,\"error\":\"[WinError 5] 存取被拒。: '<LOCAL_PATH>' -> '<LOCAL_PATH>'\",\"search_activity\":{\"executed\":0,\"cache_hits\":0},\"outcome_available\":true}\r\n"
+    },
+    {
+      "variant": "baseline",
+      "run": 3,
+      "success": false,
+      "scenario": "group",
+      "stages": {
+        "start": {
+          "wall_seconds": 4.032373599999119,
+          "git_commands": 73,
+          "tool_calls": 1,
+          "output_bytes": 11562,
+          "stdout_bytes": 11562,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 0.8108406000010291,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 779,
+          "stdout_bytes": 779,
+          "stderr_bytes": 0,
+          "exit_code": 3
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "error": "RuntimeError: step-0 exited 3: \n{\"request_id\":\"3c5034ad80794e82b32e97a4110d1353\",\"state\":\"reviewing\",\"phase\":\"review\",\"terminal\":false,\"recoverable\":true,\"context_retained\":true,\"operations\":[],\"complete\":false,\"next_index\":0,\"error\":\"[WinError 5] 存取被拒。: '<LOCAL_PATH>' -> '<LOCAL_PATH>'\",\"search_activity\":{\"executed\":0,\"cache_hits\":0},\"outcome_available\":true}\r\n"
+    },
+    {
+      "variant": "candidate",
+      "run": 3,
+      "success": true,
+      "scenario": "group",
+      "stages": {
+        "start": {
+          "wall_seconds": 3.9806477000001905,
+          "git_commands": 69,
+          "tool_calls": 1,
+          "output_bytes": 11562,
+          "stdout_bytes": 11562,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 1.9411876000012853,
+          "git_commands": 3,
+          "tool_calls": 1,
+          "output_bytes": 565,
+          "stdout_bytes": 565,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 1,
+            "cache_hits": 0
+          }
+        },
+        "step-1": {
+          "wall_seconds": 2.2507132999999158,
+          "git_commands": 3,
+          "tool_calls": 1,
+          "output_bytes": 565,
+          "stdout_bytes": 565,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 1,
+            "cache_hits": 1
+          }
+        },
+        "check": {
+          "wall_seconds": 0.3017379000011715,
+          "git_commands": 0,
+          "tool_calls": 1,
+          "output_bytes": 317,
+          "stdout_bytes": 317,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "finish": {
+          "wall_seconds": 2.4700094999989233,
+          "git_commands": 14,
+          "tool_calls": 1,
+          "output_bytes": 3813,
+          "stdout_bytes": 3813,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "evidence_digest": "dea7e78a318847df01e35eb58211db233ec777ef7c1da326488842d832410ef4",
+      "evidence_count": 51,
+      "check_passed": true,
+      "review_complete": true,
+      "review_status": "靜態檢查完成",
+      "blocker_count": 0,
+      "pending_count": 0,
+      "gap_count": 0,
+      "report_published": true,
+      "cleanup_pending": false,
+      "runtime_metrics": {
+        "capture_seconds": 3.6531053999988217,
+        "read_search_seconds": 3.651462100000572,
+        "step_operation_requests": 51,
+        "step_operations": 51,
+        "step_reused_operations": 0,
+        "step_git_commands": 6,
+        "step_git_seconds": 0.24589029999697232,
+        "step_output_bytes": 18868,
+        "step_batched_blobs": 48,
+        "step_searches": 2,
+        "step_search_cache_hits": 1,
+        "git_commands": 3,
+        "git_seconds": 0.1252102999987983,
+        "git_output_bytes": 11351,
+        "batched_blobs": 26,
+        "validation_seconds": 1.4316772999991372,
+        "searches_executed": 2,
+        "search_cache_hits": 0,
+        "unique_blobs": 52,
+        "unique_citation_files": 52,
+        "validation_publish_seconds": 2.1040446999995766
+      },
+      "repair_seconds": 0.0,
+      "total_seconds": 10.944296000001486
+    },
+    {
+      "variant": "candidate",
+      "run": 4,
+      "success": true,
+      "scenario": "group",
+      "stages": {
+        "start": {
+          "wall_seconds": 4.243415199998708,
+          "git_commands": 69,
+          "tool_calls": 1,
+          "output_bytes": 11562,
+          "stdout_bytes": 11562,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 2.61592230000133,
+          "git_commands": 3,
+          "tool_calls": 1,
+          "output_bytes": 565,
+          "stdout_bytes": 565,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 1,
+            "cache_hits": 0
+          }
+        },
+        "step-1": {
+          "wall_seconds": 2.2967327999995177,
+          "git_commands": 3,
+          "tool_calls": 1,
+          "output_bytes": 565,
+          "stdout_bytes": 565,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 1,
+            "cache_hits": 1
+          }
+        },
+        "check": {
+          "wall_seconds": 0.29639180000049237,
+          "git_commands": 0,
+          "tool_calls": 1,
+          "output_bytes": 317,
+          "stdout_bytes": 317,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "finish": {
+          "wall_seconds": 2.5297795000005863,
+          "git_commands": 14,
+          "tool_calls": 1,
+          "output_bytes": 3809,
+          "stdout_bytes": 3809,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "evidence_digest": "dea7e78a318847df01e35eb58211db233ec777ef7c1da326488842d832410ef4",
+      "evidence_count": 51,
+      "check_passed": true,
+      "review_complete": true,
+      "review_status": "靜態檢查完成",
+      "blocker_count": 0,
+      "pending_count": 0,
+      "gap_count": 0,
+      "report_published": true,
+      "cleanup_pending": false,
+      "runtime_metrics": {
+        "capture_seconds": 3.920159999999669,
+        "read_search_seconds": 4.274609000000055,
+        "step_operation_requests": 51,
+        "step_operations": 51,
+        "step_reused_operations": 0,
+        "step_git_commands": 6,
+        "step_git_seconds": 0.274810000002617,
+        "step_output_bytes": 18868,
+        "step_batched_blobs": 48,
+        "step_searches": 2,
+        "step_search_cache_hits": 1,
+        "git_commands": 3,
+        "git_seconds": 0.11651239999991958,
+        "git_output_bytes": 11351,
+        "batched_blobs": 26,
+        "validation_seconds": 1.454588499998863,
+        "searches_executed": 2,
+        "search_cache_hits": 0,
+        "unique_blobs": 52,
+        "unique_citation_files": 52,
+        "validation_publish_seconds": 2.1636545000001206
+      },
+      "repair_seconds": 0.0,
+      "total_seconds": 11.982241600000634
+    },
+    {
+      "variant": "baseline",
+      "run": 4,
+      "success": false,
+      "scenario": "group",
+      "stages": {
+        "start": {
+          "wall_seconds": 4.424443600000814,
+          "git_commands": 73,
+          "tool_calls": 1,
+          "output_bytes": 11562,
+          "stdout_bytes": 11562,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 0.8737098000001424,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 779,
+          "stdout_bytes": 779,
+          "stderr_bytes": 0,
+          "exit_code": 3
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "error": "RuntimeError: step-0 exited 3: \n{\"request_id\":\"cd71626c7820401c8e40e91dff5316fc\",\"state\":\"reviewing\",\"phase\":\"review\",\"terminal\":false,\"recoverable\":true,\"context_retained\":true,\"operations\":[],\"complete\":false,\"next_index\":0,\"error\":\"[WinError 5] 存取被拒。: '<LOCAL_PATH>' -> '<LOCAL_PATH>'\",\"search_activity\":{\"executed\":0,\"cache_hits\":0},\"outcome_available\":true}\r\n"
+    },
+    {
+      "variant": "baseline",
+      "run": 5,
+      "success": false,
+      "scenario": "group",
+      "stages": {
+        "start": {
+          "wall_seconds": 4.5780200000008335,
+          "git_commands": 73,
+          "tool_calls": 1,
+          "output_bytes": 11562,
+          "stdout_bytes": 11562,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 0.8819938999986334,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 779,
+          "stdout_bytes": 779,
+          "stderr_bytes": 0,
+          "exit_code": 3
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "error": "RuntimeError: step-0 exited 3: \n{\"request_id\":\"281c662fe7594fa99e7e33d2a3a3a71f\",\"state\":\"reviewing\",\"phase\":\"review\",\"terminal\":false,\"recoverable\":true,\"context_retained\":true,\"operations\":[],\"complete\":false,\"next_index\":0,\"error\":\"[WinError 5] 存取被拒。: '<LOCAL_PATH>' -> '<LOCAL_PATH>'\",\"search_activity\":{\"executed\":0,\"cache_hits\":0},\"outcome_available\":true}\r\n"
+    },
+    {
+      "variant": "candidate",
+      "run": 5,
+      "success": true,
+      "scenario": "group",
+      "stages": {
+        "start": {
+          "wall_seconds": 4.260997800000041,
+          "git_commands": 69,
+          "tool_calls": 1,
+          "output_bytes": 11562,
+          "stdout_bytes": 11562,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 2.0497691000000486,
+          "git_commands": 3,
+          "tool_calls": 1,
+          "output_bytes": 565,
+          "stdout_bytes": 565,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 1,
+            "cache_hits": 0
+          }
+        },
+        "step-1": {
+          "wall_seconds": 2.1011773999998695,
+          "git_commands": 3,
+          "tool_calls": 1,
+          "output_bytes": 565,
+          "stdout_bytes": 565,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 1,
+            "cache_hits": 1
+          }
+        },
+        "check": {
+          "wall_seconds": 0.31282719999944675,
+          "git_commands": 0,
+          "tool_calls": 1,
+          "output_bytes": 317,
+          "stdout_bytes": 317,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "finish": {
+          "wall_seconds": 2.827605999998923,
+          "git_commands": 14,
+          "tool_calls": 1,
+          "output_bytes": 3811,
+          "stdout_bytes": 3811,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "evidence_digest": "dea7e78a318847df01e35eb58211db233ec777ef7c1da326488842d832410ef4",
+      "evidence_count": 51,
+      "check_passed": true,
+      "review_complete": true,
+      "review_status": "靜態檢查完成",
+      "blocker_count": 0,
+      "pending_count": 0,
+      "gap_count": 0,
+      "report_published": true,
+      "cleanup_pending": false,
+      "runtime_metrics": {
+        "capture_seconds": 3.919792199998483,
+        "read_search_seconds": 3.564976800000295,
+        "step_operation_requests": 51,
+        "step_operations": 51,
+        "step_reused_operations": 0,
+        "step_git_commands": 6,
+        "step_git_seconds": 0.25305239999943296,
+        "step_output_bytes": 18868,
+        "step_batched_blobs": 48,
+        "step_searches": 2,
+        "step_search_cache_hits": 1,
+        "git_commands": 3,
+        "git_seconds": 0.129650999997466,
+        "git_output_bytes": 11351,
+        "batched_blobs": 26,
+        "validation_seconds": 1.6401389999991807,
+        "searches_executed": 2,
+        "search_cache_hits": 0,
+        "unique_blobs": 52,
+        "unique_citation_files": 52,
+        "validation_publish_seconds": 2.4177971000008256
+      },
+      "repair_seconds": 0.0,
+      "total_seconds": 11.552377499998329
+    },
+    {
+      "variant": "baseline",
+      "run": 1,
+      "success": false,
+      "scenario": "no-change",
+      "stages": {
+        "start": {
+          "wall_seconds": 3.508532199999536,
+          "git_commands": 54,
+          "tool_calls": 1,
+          "output_bytes": 2790,
+          "stdout_bytes": 2790,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 0.9826336999994965,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 779,
+          "stdout_bytes": 779,
+          "stderr_bytes": 0,
+          "exit_code": 3
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "error": "RuntimeError: step-0 exited 3: \n{\"request_id\":\"14c0196aa6d548608496f64df9f8bf84\",\"state\":\"reviewing\",\"phase\":\"review\",\"terminal\":false,\"recoverable\":true,\"context_retained\":true,\"operations\":[],\"complete\":false,\"next_index\":0,\"error\":\"[WinError 5] 存取被拒。: '<LOCAL_PATH>' -> '<LOCAL_PATH>'\",\"search_activity\":{\"executed\":0,\"cache_hits\":0},\"outcome_available\":true}\r\n"
+    },
+    {
+      "variant": "candidate",
+      "run": 1,
+      "success": true,
+      "scenario": "no-change",
+      "stages": {
+        "start": {
+          "wall_seconds": 3.025665500001196,
+          "git_commands": 52,
+          "tool_calls": 1,
+          "output_bytes": 2790,
+          "stdout_bytes": 2790,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 1.7360190999988845,
+          "git_commands": 2,
+          "tool_calls": 1,
+          "output_bytes": 18382,
+          "stdout_bytes": 18382,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 1,
+            "cache_hits": 0
+          }
+        },
+        "step-1": {
+          "wall_seconds": 1.6096135999996477,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 18862,
+          "stdout_bytes": 18862,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 0,
+            "cache_hits": 1
+          }
+        },
+        "check": {
+          "wall_seconds": 0.25925719999941066,
+          "git_commands": 0,
+          "tool_calls": 1,
+          "output_bytes": 317,
+          "stdout_bytes": 317,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "finish": {
+          "wall_seconds": 1.0810416000003897,
+          "git_commands": 12,
+          "tool_calls": 1,
+          "output_bytes": 3720,
+          "stdout_bytes": 3720,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "evidence_digest": "bbd57665c4607ab7ffbf92f29b5cb15d09d381209889bf704d300cc8d60969b1",
+      "evidence_count": 50,
+      "check_passed": true,
+      "review_complete": true,
+      "review_status": "沒有差異",
+      "blocker_count": 0,
+      "pending_count": 0,
+      "gap_count": 0,
+      "report_published": true,
+      "cleanup_pending": false,
+      "runtime_metrics": {
+        "capture_seconds": 2.730392600000414,
+        "read_search_seconds": 2.8156934999988152,
+        "step_operation_requests": 50,
+        "step_operations": 50,
+        "step_reused_operations": 0,
+        "step_git_commands": 3,
+        "step_git_seconds": 0.11885680000159482,
+        "step_output_bytes": 8917,
+        "step_batched_blobs": 24,
+        "step_searches": 1,
+        "step_search_cache_hits": 1,
+        "git_commands": 1,
+        "git_seconds": 0.045557600000392995,
+        "git_output_bytes": 109,
+        "batched_blobs": 0,
+        "validation_seconds": 0.07769099999859463,
+        "searches_executed": 1,
+        "search_cache_hits": 0,
+        "unique_blobs": 0,
+        "unique_citation_files": 0,
+        "validation_publish_seconds": 0.7260508999988815
+      },
+      "repair_seconds": 0.0,
+      "total_seconds": 7.711596999999529
+    },
+    {
+      "variant": "candidate",
+      "run": 2,
+      "success": true,
+      "scenario": "no-change",
+      "stages": {
+        "start": {
+          "wall_seconds": 3.1843467999988206,
+          "git_commands": 52,
+          "tool_calls": 1,
+          "output_bytes": 2790,
+          "stdout_bytes": 2790,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 1.6799269999992248,
+          "git_commands": 2,
+          "tool_calls": 1,
+          "output_bytes": 18382,
+          "stdout_bytes": 18382,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 1,
+            "cache_hits": 0
+          }
+        },
+        "step-1": {
+          "wall_seconds": 1.571989100000792,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 18862,
+          "stdout_bytes": 18862,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 0,
+            "cache_hits": 1
+          }
+        },
+        "check": {
+          "wall_seconds": 0.2633157999989635,
+          "git_commands": 0,
+          "tool_calls": 1,
+          "output_bytes": 317,
+          "stdout_bytes": 317,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "finish": {
+          "wall_seconds": 1.208298499999728,
+          "git_commands": 12,
+          "tool_calls": 1,
+          "output_bytes": 3720,
+          "stdout_bytes": 3720,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "evidence_digest": "bbd57665c4607ab7ffbf92f29b5cb15d09d381209889bf704d300cc8d60969b1",
+      "evidence_count": 50,
+      "check_passed": true,
+      "review_complete": true,
+      "review_status": "沒有差異",
+      "blocker_count": 0,
+      "pending_count": 0,
+      "gap_count": 0,
+      "report_published": true,
+      "cleanup_pending": false,
+      "runtime_metrics": {
+        "capture_seconds": 2.8663845999999467,
+        "read_search_seconds": 2.7298090000003867,
+        "step_operation_requests": 50,
+        "step_operations": 50,
+        "step_reused_operations": 0,
+        "step_git_commands": 3,
+        "step_git_seconds": 0.11326009999902453,
+        "step_output_bytes": 8917,
+        "step_batched_blobs": 24,
+        "step_searches": 1,
+        "step_search_cache_hits": 1,
+        "git_commands": 1,
+        "git_seconds": 0.041229099999327445,
+        "git_output_bytes": 109,
+        "batched_blobs": 0,
+        "validation_seconds": 0.06693919999997888,
+        "searches_executed": 1,
+        "search_cache_hits": 0,
+        "unique_blobs": 0,
+        "unique_citation_files": 0,
+        "validation_publish_seconds": 0.8420323000009375
+      },
+      "repair_seconds": 0.0,
+      "total_seconds": 7.907877199997529
+    },
+    {
+      "variant": "baseline",
+      "run": 2,
+      "success": false,
+      "scenario": "no-change",
+      "stages": {
+        "start": {
+          "wall_seconds": 3.205352300001323,
+          "git_commands": 54,
+          "tool_calls": 1,
+          "output_bytes": 2790,
+          "stdout_bytes": 2790,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 0.9868430999995326,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 779,
+          "stdout_bytes": 779,
+          "stderr_bytes": 0,
+          "exit_code": 3
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "error": "RuntimeError: step-0 exited 3: \n{\"request_id\":\"f6c5d4c6bf574d0e82d2dbc1b1e43e6d\",\"state\":\"reviewing\",\"phase\":\"review\",\"terminal\":false,\"recoverable\":true,\"context_retained\":true,\"operations\":[],\"complete\":false,\"next_index\":0,\"error\":\"[WinError 5] 存取被拒。: '<LOCAL_PATH>' -> '<LOCAL_PATH>'\",\"search_activity\":{\"executed\":0,\"cache_hits\":0},\"outcome_available\":true}\r\n"
+    },
+    {
+      "variant": "baseline",
+      "run": 3,
+      "success": false,
+      "scenario": "no-change",
+      "stages": {
+        "start": {
+          "wall_seconds": 3.1155031000016606,
+          "git_commands": 54,
+          "tool_calls": 1,
+          "output_bytes": 2790,
+          "stdout_bytes": 2790,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 0.9954505999994581,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 779,
+          "stdout_bytes": 779,
+          "stderr_bytes": 0,
+          "exit_code": 3
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "error": "RuntimeError: step-0 exited 3: \n{\"request_id\":\"9cbe743ce8fe4609978b24b9d7e938ae\",\"state\":\"reviewing\",\"phase\":\"review\",\"terminal\":false,\"recoverable\":true,\"context_retained\":true,\"operations\":[],\"complete\":false,\"next_index\":0,\"error\":\"[WinError 5] 存取被拒。: '<LOCAL_PATH>' -> '<LOCAL_PATH>'\",\"search_activity\":{\"executed\":0,\"cache_hits\":0},\"outcome_available\":true}\r\n"
+    },
+    {
+      "variant": "candidate",
+      "run": 3,
+      "success": true,
+      "scenario": "no-change",
+      "stages": {
+        "start": {
+          "wall_seconds": 2.943056099999012,
+          "git_commands": 52,
+          "tool_calls": 1,
+          "output_bytes": 2790,
+          "stdout_bytes": 2790,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 1.6820697000002838,
+          "git_commands": 2,
+          "tool_calls": 1,
+          "output_bytes": 18382,
+          "stdout_bytes": 18382,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 1,
+            "cache_hits": 0
+          }
+        },
+        "step-1": {
+          "wall_seconds": 1.5426501000001736,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 18862,
+          "stdout_bytes": 18862,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 0,
+            "cache_hits": 1
+          }
+        },
+        "check": {
+          "wall_seconds": 0.2498765000000276,
+          "git_commands": 0,
+          "tool_calls": 1,
+          "output_bytes": 317,
+          "stdout_bytes": 317,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "finish": {
+          "wall_seconds": 1.0920182000008936,
+          "git_commands": 12,
+          "tool_calls": 1,
+          "output_bytes": 3717,
+          "stdout_bytes": 3717,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "evidence_digest": "bbd57665c4607ab7ffbf92f29b5cb15d09d381209889bf704d300cc8d60969b1",
+      "evidence_count": 50,
+      "check_passed": true,
+      "review_complete": true,
+      "review_status": "沒有差異",
+      "blocker_count": 0,
+      "pending_count": 0,
+      "gap_count": 0,
+      "report_published": true,
+      "cleanup_pending": false,
+      "runtime_metrics": {
+        "capture_seconds": 2.627707099998588,
+        "read_search_seconds": 2.7061972999999853,
+        "step_operation_requests": 50,
+        "step_operations": 50,
+        "step_reused_operations": 0,
+        "step_git_commands": 3,
+        "step_git_seconds": 0.1185910000003787,
+        "step_output_bytes": 8917,
+        "step_batched_blobs": 24,
+        "step_searches": 1,
+        "step_search_cache_hits": 1,
+        "git_commands": 1,
+        "git_seconds": 0.039847499998359126,
+        "git_output_bytes": 109,
+        "batched_blobs": 0,
+        "validation_seconds": 0.0633146999989549,
+        "searches_executed": 1,
+        "search_cache_hits": 0,
+        "unique_blobs": 0,
+        "unique_citation_files": 0,
+        "validation_publish_seconds": 0.7372962000008556
+      },
+      "repair_seconds": 0.0,
+      "total_seconds": 7.5096706000003906
+    },
+    {
+      "variant": "candidate",
+      "run": 4,
+      "success": true,
+      "scenario": "no-change",
+      "stages": {
+        "start": {
+          "wall_seconds": 2.9557855000002746,
+          "git_commands": 52,
+          "tool_calls": 1,
+          "output_bytes": 2790,
+          "stdout_bytes": 2790,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 1.604706800000713,
+          "git_commands": 2,
+          "tool_calls": 1,
+          "output_bytes": 18382,
+          "stdout_bytes": 18382,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 1,
+            "cache_hits": 0
+          }
+        },
+        "step-1": {
+          "wall_seconds": 1.6019426000002568,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 18862,
+          "stdout_bytes": 18862,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 0,
+            "cache_hits": 1
+          }
+        },
+        "check": {
+          "wall_seconds": 0.2607554000005621,
+          "git_commands": 0,
+          "tool_calls": 1,
+          "output_bytes": 317,
+          "stdout_bytes": 317,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "finish": {
+          "wall_seconds": 1.1750312999993184,
+          "git_commands": 12,
+          "tool_calls": 1,
+          "output_bytes": 3720,
+          "stdout_bytes": 3720,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "evidence_digest": "bbd57665c4607ab7ffbf92f29b5cb15d09d381209889bf704d300cc8d60969b1",
+      "evidence_count": 50,
+      "check_passed": true,
+      "review_complete": true,
+      "review_status": "沒有差異",
+      "blocker_count": 0,
+      "pending_count": 0,
+      "gap_count": 0,
+      "report_published": true,
+      "cleanup_pending": false,
+      "runtime_metrics": {
+        "capture_seconds": 2.6554653000002872,
+        "read_search_seconds": 2.700868099998843,
+        "step_operation_requests": 50,
+        "step_operations": 50,
+        "step_reused_operations": 0,
+        "step_git_commands": 3,
+        "step_git_seconds": 0.11405200000081095,
+        "step_output_bytes": 8917,
+        "step_batched_blobs": 24,
+        "step_searches": 1,
+        "step_search_cache_hits": 1,
+        "git_commands": 1,
+        "git_seconds": 0.040493800001058844,
+        "git_output_bytes": 109,
+        "batched_blobs": 0,
+        "validation_seconds": 0.06715690000055474,
+        "searches_executed": 1,
+        "search_cache_hits": 0,
+        "unique_blobs": 0,
+        "unique_citation_files": 0,
+        "validation_publish_seconds": 0.8041979000008723
+      },
+      "repair_seconds": 0.0,
+      "total_seconds": 7.598221600001125
+    },
+    {
+      "variant": "baseline",
+      "run": 4,
+      "success": false,
+      "scenario": "no-change",
+      "stages": {
+        "start": {
+          "wall_seconds": 3.353643700000248,
+          "git_commands": 54,
+          "tool_calls": 1,
+          "output_bytes": 2790,
+          "stdout_bytes": 2790,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 1.0021931999999651,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 779,
+          "stdout_bytes": 779,
+          "stderr_bytes": 0,
+          "exit_code": 3
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "error": "RuntimeError: step-0 exited 3: \n{\"request_id\":\"f60121e43e524ff1af3f382ab66a66c6\",\"state\":\"reviewing\",\"phase\":\"review\",\"terminal\":false,\"recoverable\":true,\"context_retained\":true,\"operations\":[],\"complete\":false,\"next_index\":0,\"error\":\"[WinError 5] 存取被拒。: '<LOCAL_PATH>' -> '<LOCAL_PATH>'\",\"search_activity\":{\"executed\":0,\"cache_hits\":0},\"outcome_available\":true}\r\n"
+    },
+    {
+      "variant": "baseline",
+      "run": 5,
+      "success": false,
+      "scenario": "no-change",
+      "stages": {
+        "start": {
+          "wall_seconds": 3.151117500001419,
+          "git_commands": 54,
+          "tool_calls": 1,
+          "output_bytes": 2790,
+          "stdout_bytes": 2790,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 0.987076800000068,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 779,
+          "stdout_bytes": 779,
+          "stderr_bytes": 0,
+          "exit_code": 3
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "error": "RuntimeError: step-0 exited 3: \n{\"request_id\":\"0d77f02495a9451c9072991d3d5ce10e\",\"state\":\"reviewing\",\"phase\":\"review\",\"terminal\":false,\"recoverable\":true,\"context_retained\":true,\"operations\":[],\"complete\":false,\"next_index\":0,\"error\":\"[WinError 5] 存取被拒。: '<LOCAL_PATH>' -> '<LOCAL_PATH>'\",\"search_activity\":{\"executed\":0,\"cache_hits\":0},\"outcome_available\":true}\r\n"
+    },
+    {
+      "variant": "candidate",
+      "run": 5,
+      "success": true,
+      "scenario": "no-change",
+      "stages": {
+        "start": {
+          "wall_seconds": 3.112928999998985,
+          "git_commands": 52,
+          "tool_calls": 1,
+          "output_bytes": 2790,
+          "stdout_bytes": 2790,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "step-0": {
+          "wall_seconds": 1.7182075999990047,
+          "git_commands": 2,
+          "tool_calls": 1,
+          "output_bytes": 18382,
+          "stdout_bytes": 18382,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 1,
+            "cache_hits": 0
+          }
+        },
+        "step-1": {
+          "wall_seconds": 1.645967099999325,
+          "git_commands": 1,
+          "tool_calls": 1,
+          "output_bytes": 18862,
+          "stdout_bytes": 18862,
+          "stderr_bytes": 0,
+          "exit_code": 0,
+          "search_activity": {
+            "executed": 0,
+            "cache_hits": 1
+          }
+        },
+        "check": {
+          "wall_seconds": 0.2798156000008021,
+          "git_commands": 0,
+          "tool_calls": 1,
+          "output_bytes": 317,
+          "stdout_bytes": 317,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        },
+        "finish": {
+          "wall_seconds": 1.1666640999992524,
+          "git_commands": 12,
+          "tool_calls": 1,
+          "output_bytes": 3719,
+          "stdout_bytes": 3719,
+          "stderr_bytes": 0,
+          "exit_code": 0
+        }
+      },
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "expected_review_complete": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "evidence_digest": "bbd57665c4607ab7ffbf92f29b5cb15d09d381209889bf704d300cc8d60969b1",
+      "evidence_count": 50,
+      "check_passed": true,
+      "review_complete": true,
+      "review_status": "沒有差異",
+      "blocker_count": 0,
+      "pending_count": 0,
+      "gap_count": 0,
+      "report_published": true,
+      "cleanup_pending": false,
+      "runtime_metrics": {
+        "capture_seconds": 2.797038700000485,
+        "read_search_seconds": 2.8226783000009164,
+        "step_operation_requests": 50,
+        "step_operations": 50,
+        "step_reused_operations": 0,
+        "step_git_commands": 3,
+        "step_git_seconds": 0.12371700000039709,
+        "step_output_bytes": 8917,
+        "step_batched_blobs": 24,
+        "step_searches": 1,
+        "step_search_cache_hits": 1,
+        "git_commands": 1,
+        "git_seconds": 0.041611100001318846,
+        "git_output_bytes": 109,
+        "batched_blobs": 0,
+        "validation_seconds": 0.06660089999968477,
+        "searches_executed": 1,
+        "search_cache_hits": 0,
+        "unique_blobs": 0,
+        "unique_citation_files": 0,
+        "validation_publish_seconds": 0.793453900001623
+      },
+      "repair_seconds": 0.0,
+      "total_seconds": 7.923583399997369
+    }
+  ]
+}

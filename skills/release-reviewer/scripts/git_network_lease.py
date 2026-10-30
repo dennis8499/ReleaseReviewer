@@ -26,6 +26,20 @@ class LeaseError(OSError):
     pass
 
 
+def extended_windows_path(path):
+    """Return a Win32 path that remains usable beyond the legacy MAX_PATH limit."""
+    value = os.fspath(path)
+    if os.name != "nt" or not isinstance(value, str) or value.startswith("\\\\?\\"):
+        return value
+    value = os.path.abspath(value)
+    units = len(value.encode("utf-16-le", errors="surrogatepass")) // 2
+    if units < 248:
+        return value
+    if value.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + value[2:]
+    return "\\\\?\\" + value
+
+
 def _sharing_retry(operation):
     """Bound Windows reader/replace sharing races without reclaiming ownership."""
     deadline = time.monotonic() + 2
@@ -52,17 +66,26 @@ def runtime_root():
 def _atomic_json(path, value):
     temporary = path.with_name("." + path.name + "-" + uuid.uuid4().hex)
     try:
-        with temporary.open("x", encoding="utf-8") as stream:
+        with open(extended_windows_path(temporary), "x", encoding="utf-8") as stream:
             json.dump(value, stream, separators=(",", ":"))
             stream.write("\n")
-        _sharing_retry(lambda: os.replace(temporary, path))
+        _sharing_retry(lambda: os.replace(extended_windows_path(temporary), extended_windows_path(path)))
     finally:
-        temporary.unlink(missing_ok=True)
+        try:
+            os.unlink(extended_windows_path(temporary))
+        except FileNotFoundError:
+            pass
 
 
 def _plain_directory(path):
     import stat
-    if path.is_symlink() or (path.exists() and getattr(path.lstat(), "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)):
+    path = Path(path)
+    try:
+        info = os.lstat(extended_windows_path(path))
+    except FileNotFoundError:
+        return
+    if (stat.S_ISLNK(info.st_mode)
+            or getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)):
         raise LeaseError(f"Lease directory cannot be a link: {path}")
 
 

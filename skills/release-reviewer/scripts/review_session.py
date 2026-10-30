@@ -15,6 +15,7 @@ import tempfile
 import uuid
 
 sys.dont_write_bytecode = True
+import git_network_lease
 
 OWNER_FILE = ".release-reviewer-owned.json"
 OWNER_SCHEMA = "release-reviewer-session/v1"
@@ -30,13 +31,13 @@ def temp_root() -> Path:
 
 
 def _is_link(path: Path) -> bool:
-    if path.is_symlink():
-        return True
     try:
-        attributes = path.lstat().st_file_attributes
-    except (OSError, AttributeError):
+        info = os.lstat(git_network_lease.extended_windows_path(path))
+    except FileNotFoundError:
         return False
-    return bool(attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+    return (stat.S_ISLNK(info.st_mode)
+            or bool(getattr(info, "st_file_attributes", 0)
+                    & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)))
 
 
 def _path_in_temp(path: Path, root: Path) -> Path:
@@ -148,49 +149,95 @@ def _owned_session(requested: str | Path) -> Path | None:
 
 
 def _remove_tree(path: Path) -> None:
+    path = Path(path)
+
+    def path_units(value: Path) -> int:
+        return len(str(value).encode("utf-16-le", errors="surrogatepass")) // 2
+
+    def needs_extended(value: Path) -> bool:
+        if path_units(value) >= 248:
+            return True
+        target = git_network_lease.extended_windows_path(value)
+        if _is_link(value) or not os.path.isdir(target):
+            return False
+        with os.scandir(target) as entries:
+            names = [entry.name for entry in entries]
+        return any(needs_extended(value / name) for name in names)
+
     def make_writable(function, target: str, _error) -> None:
+        target = git_network_lease.extended_windows_path(target)
         try:
             os.chmod(target, stat.S_IWRITE | stat.S_IREAD)
         except OSError:
             pass
         function(target)
 
+    def remove_one(function, target: str) -> None:
+        try:
+            function(target)
+        except OSError:
+            make_writable(function, target, None)
+
+    def remove_entry(entry: Path) -> None:
+        target = git_network_lease.extended_windows_path(entry)
+        if _is_link(entry):
+            operation = os.rmdir if os.name == "nt" and os.path.isdir(target) else os.unlink
+            operation(target)
+            return
+        if os.path.isdir(target):
+            if not needs_extended(entry):
+                shutil.rmtree(entry, onerror=make_writable)
+                return
+            with os.scandir(target) as children:
+                names = [child.name for child in children]
+            for name in names:
+                remove_entry(entry / name)
+            remove_one(os.rmdir, target)
+            return
+        remove_one(os.unlink, target)
+
     # Keep the verified owner marker until every other child is gone. A pack
     # ACL failure must leave a session that the next cleanup can still own.
     marker = path / OWNER_FILE
-    if not marker.is_file():
+    marker_path = git_network_lease.extended_windows_path(marker)
+    if not os.path.isfile(marker_path):
         # Retain the private helper used by existing verified test-temp cleanup.
         # Public cleanup_session always validates an owned marker first.
         try:
-            shutil.rmtree(path, onerror=make_writable)
+            remove_entry(path)
         except OSError as exc:
             raise SessionError(str(exc)) from exc
         return
-    ownership = marker.read_bytes()
-    identity = (path.stat().st_dev, path.stat().st_ino)
+    with open(marker_path, "rb") as stream:
+        ownership = stream.read()
+    info = os.stat(git_network_lease.extended_windows_path(path))
+    identity = (info.st_dev, info.st_ino)
     try:
-        for child in path.iterdir():
-            if child.name == OWNER_FILE:
+        with os.scandir(git_network_lease.extended_windows_path(path)) as entries:
+            child_names = [entry.name for entry in entries]
+        for name in child_names:
+            if name == OWNER_FILE:
                 continue
-            if child.is_dir() and not _is_link(child):
-                shutil.rmtree(child, onerror=make_writable)
-            else:
-                remove = child.rmdir if os.name == "nt" and _is_link(child) and child.is_dir() else child.unlink
-                try:
-                    remove()
-                except OSError:
-                    if _is_link(child):
-                        raise  # Never chmod the target of a link/junction.
-                    make_writable(lambda target: remove(), str(child), None)
-        marker.unlink()
-        path.rmdir()
+            remove_entry(path / name)
+        if path_units(marker) < 248:
+            marker.unlink()
+        else:
+            remove_one(os.unlink, marker_path)
+        if path_units(path) < 248:
+            path.rmdir()
+        else:
+            remove_one(os.rmdir, git_network_lease.extended_windows_path(path))
     except OSError as exc:
         # Root deletion itself can fail after marker removal. Restore only in
         # the same plain directory; never authorize a replaced or linked tree.
         try:
-            if (path.is_dir() and not _is_link(path)
-                    and (path.stat().st_dev, path.stat().st_ino) == identity and not marker.exists()):
-                with marker.open("xb") as stream:
+            path_value = git_network_lease.extended_windows_path(path)
+            marker_value = git_network_lease.extended_windows_path(marker)
+            restored_info = os.stat(path_value)
+            if (os.path.isdir(path_value) and not _is_link(path)
+                    and (restored_info.st_dev, restored_info.st_ino) == identity
+                    and not os.path.exists(marker_value)):
+                with open(marker_value, "xb") as stream:
                     stream.write(ownership)
         except OSError:
             pass

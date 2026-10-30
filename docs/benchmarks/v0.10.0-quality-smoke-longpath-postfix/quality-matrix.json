@@ -1,0 +1,102 @@
+{
+  "schema": "ReleaseReviewerBlindQualityMatrix/v1",
+  "complete": true,
+  "acceptance_complete": false,
+  "models": {
+    "gpt-6.1-sol": "high"
+  },
+  "conditions": [
+    "candidate"
+  ],
+  "cases": [
+    "safe"
+  ],
+  "runs_per_cell": 1,
+  "seed": 20261029,
+  "codex_cli": "codex.cmd",
+  "baseline_skill_sha256": "0ffe214ea727f54a8d2d03e4f63bbc2c0a89b7f7372e086c46e06afef38a68a4",
+  "candidate_skill_sha256": "d93312371078acfb369e8f9c0fb3ae59546a40294e9c50dd6d66fa176000d8b4",
+  "no_skill_isolation_proven": false,
+  "scoring": "blind reports are preserved; semantic_score requires an oracle-backed independent review",
+  "samples": [
+    {
+      "id": "gpt-6.1-sol-candidate-safe-01",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "condition": "candidate",
+      "case": "safe",
+      "run": 1,
+      "elapsed_seconds": 233.65651419999995,
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "exit_code": 0,
+      "error": null,
+      "report_created": true,
+      "session_error": null,
+      "job_updated_at": "2026-10-29T15:30:50.894828+00:00",
+      "report_path": "reports/gpt-6.1-sol-candidate-safe-01.md",
+      "report_sha256": "c3ef68ad69124e62f52d776a62e4b2fe89ee08027d36148f0da85d1748fc078f",
+      "report_bytes": 10112,
+      "secret_leak": false,
+      "job_state": "published",
+      "cleanup_verified": true,
+      "cleanup_error": null,
+      "network_activity": {
+        "fetch_attempt_count": 0,
+        "fetch_success_count": 0,
+        "requested_ref_count": 0,
+        "synced_ref_count": 0
+      },
+      "network_log": {
+        "reason": "local-branches",
+        "phase": "local-preflight",
+        "fetches": [],
+        "http_requests": null,
+        "ssh_requests": null
+      },
+      "runtime_metrics": {
+        "capture_seconds": 1.498075900000913,
+        "read_search_seconds": 0.5644831999998132,
+        "step_operation_requests": 20,
+        "step_operations": 12,
+        "step_reused_operations": 4,
+        "step_git_commands": 7,
+        "step_git_seconds": 0.19600080000054731,
+        "step_output_bytes": 853,
+        "step_batched_blobs": 5,
+        "step_searches": 2,
+        "step_search_cache_hits": 0,
+        "git_commands": 1,
+        "git_seconds": 0.027036299999963376,
+        "git_output_bytes": 350,
+        "batched_blobs": 2,
+        "validation_seconds": 0.10747769999943557,
+        "searches_executed": 0,
+        "search_cache_hits": 0,
+        "unique_blobs": 3,
+        "unique_citation_files": 3,
+        "validation_publish_seconds": 0.31834100000014587
+      },
+      "review_complete": true,
+      "review_status": "靜態檢查完成",
+      "release_assessment": "no-blockers-found",
+      "blocker_count": 0,
+      "pending_count": 0,
+      "gap_count": 0,
+      "oracle_expected": "Compatible alias: no introduced defect or invented external gap.",
+      "semantic_score": null,
+      "global_skill_isolation": "not proven; user CODEX_HOME remains active",
+      "installed_skill_sha256": "d93312371078acfb369e8f9c0fb3ae59546a40294e9c50dd6d66fa176000d8b4",
+      "signals": {
+        "p0": true,
+        "p1": true,
+        "checklist": true,
+        "ftp": true,
+        "sftp": true,
+        "kafka": true
+      }
+    }
+  ]
+}

@@ -17,6 +17,7 @@ import review_session
 
 SCHEMA = "ReleaseReviewSession/v1"
 LIMIT = 24 * 1024
+VIEW_LIMIT = LIMIT - 1024
 TERMINAL = {"published", "failed", "cancelled"}
 
 
@@ -614,22 +615,120 @@ def artifact_view(context, artifact, pointer="", offset=0, page_size=100, string
         value = value[int(token)] if isinstance(value, list) else value[token]
     if type(offset) is not int or offset < 0 or type(page_size) is not int or not 1 <= page_size <= 1000:
         raise ValueError("invalid view page")
+    def child_pointer(parent, child):
+        token = str(child).replace("~", "~0").replace("/", "~1")
+        return parent + "/" + token
+
+    def continuation(target, *, start=0, text_start=None):
+        result = {"op": "view", "artifact": artifact, "pointer": target,
+                  "offset": start, "page_size": page_size}
+        if text_start is not None:
+            result["string_offset"] = text_start
+        return result
+
     if isinstance(value, list):
+        if offset > len(value):
+            raise ValueError("list offset exceeds available items")
         items = value[offset:offset + page_size]
-        while len(review_runtime.canonical(items)) > LIMIT // 2 and len(items) > 1:
-            items = items[:max(1, len(items) // 2)]
-        end = offset + len(items)
-        return {"artifact": artifact, "pointer": pointer, "items": items, "total": len(value),
-                "next_offset": end if end < len(value) else None, "view_complete": end >= len(value)}
+        while items:
+            end = offset + len(items)
+            response = {"artifact": artifact, "pointer": pointer, "items": items,
+                        "total": len(value), "offset": offset,
+                        "next_offset": end if end < len(value) else None,
+                        "view_complete": offset == 0 and end >= len(value)}
+            if response["next_offset"] is not None:
+                response["continue"] = continuation(pointer, start=end)
+            if len(review_runtime.canonical(response)) <= VIEW_LIMIT:
+                return response
+            if len(items) > 1:
+                items = items[:max(1, len(items) // 2)]
+                continue
+            item = items[0]
+            item_pointer = child_pointer(pointer, offset)
+            if isinstance(item, dict) and item:
+                keys = list(item)
+                key = max(keys, key=lambda candidate: len(review_runtime.canonical(item[candidate])))
+                target = child_pointer(item_pointer, key)
+                response = {"artifact": artifact, "pointer": pointer,
+                            "items": [{"index": offset, "fields": keys[:32]}],
+                            "total": len(value), "offset": offset, "next_offset": offset + 1,
+                            "view_complete": False, "continue": continuation(target)}
+                if offset + 1 < len(value):
+                    response["next_page"] = continuation(pointer, start=offset + 1)
+                while len(review_runtime.canonical(response)) > VIEW_LIMIT and response["items"][0]["fields"]:
+                    response["items"][0]["fields"] = response["items"][0]["fields"][:
+                        len(response["items"][0]["fields"]) // 2]
+                if len(review_runtime.canonical(response)) <= VIEW_LIMIT:
+                    return response
+                raise ValueError("oversized item key cannot be represented as a JSON pointer")
+            if isinstance(item, list):
+                response = {"artifact": artifact, "pointer": pointer,
+                            "items": [{"index": offset, "item_count": len(item)}],
+                            "total": len(value), "offset": offset, "next_offset": offset + 1,
+                            "view_complete": False, "continue": continuation(item_pointer)}
+                if offset + 1 < len(value):
+                    response["next_page"] = continuation(pointer, start=offset + 1)
+                if len(review_runtime.canonical(response)) <= VIEW_LIMIT:
+                    return response
+                raise ValueError("oversized list pointer cannot be represented")
+            if isinstance(item, str):
+                page = artifact_view(context, artifact, item_pointer, string_offset=string_offset)
+                response = {"artifact": artifact, "pointer": pointer,
+                            "items": [{"index": offset, "text": page["text"],
+                                       "string_offset": page["string_offset"],
+                                       "next_string_offset": page["next_string_offset"]}],
+                            "total": len(value), "offset": offset, "next_offset": offset + 1,
+                            "view_complete": page["view_complete"] and offset == 0 and len(value) == 1}
+                if page.get("continue"):
+                    response["continue"] = page["continue"]
+                if offset + 1 < len(value):
+                    response["next_page"] = continuation(pointer, start=offset + 1)
+                if len(review_runtime.canonical(response)) <= VIEW_LIMIT:
+                    return response
+                raise ValueError("oversized string page cannot be represented")
+            response = {"artifact": artifact, "pointer": pointer,
+                        "items": [{"index": offset, "value": item}], "total": len(value),
+                        "offset": offset, "next_offset": None,
+                        "view_complete": offset == 0 and len(value) == 1}
+            if len(review_runtime.canonical(response)) <= VIEW_LIMIT:
+                return response
+            raise ValueError("oversized scalar item cannot be paged")
+        return {"artifact": artifact, "pointer": pointer, "items": [], "total": len(value),
+                "offset": offset, "next_offset": None, "view_complete": offset == 0 and not value}
     if isinstance(value, str):
-        if type(string_offset) is not int or string_offset < 0:
+        if type(string_offset) is not int or string_offset < 0 or string_offset > len(value):
             raise ValueError("invalid string offset")
-        text = value[string_offset:string_offset + 2048]
-        end = string_offset + len(text)
-        return {"artifact": artifact, "pointer": pointer, "text": text,
-                "next_string_offset": end if end < len(value) else None, "view_complete": end >= len(value)}
-    return {"artifact": artifact, "pointer": pointer, "value": value,
-            "fields": list(value) if isinstance(value, dict) else None}
+        width = min(2048, len(value) - string_offset)
+        while width > 0:
+            text = value[string_offset:string_offset + width]
+            end = string_offset + len(text)
+            response = {"artifact": artifact, "pointer": pointer, "text": text,
+                        "string_offset": string_offset,
+                        "next_string_offset": end if end < len(value) else None,
+                        "view_complete": string_offset == 0 and end >= len(value)}
+            if response["next_string_offset"] is not None:
+                response["continue"] = continuation(pointer, text_start=end)
+            if len(review_runtime.canonical(response)) <= VIEW_LIMIT:
+                return response
+            width //= 2
+        raise ValueError("string view could not be bounded")
+    response = {"artifact": artifact, "pointer": pointer, "value": value,
+                "fields": list(value)[:32] if isinstance(value, dict) else None}
+    if len(review_runtime.canonical(response)) <= VIEW_LIMIT:
+        return response
+    if isinstance(value, dict) and value:
+        key = max(value, key=lambda candidate: len(review_runtime.canonical(value[candidate])))
+        target = child_pointer(pointer, key)
+        fields = list(value)[:32]
+        response = {"artifact": artifact, "pointer": pointer, "fields": fields,
+                    "view_complete": False, "continue": continuation(target)}
+        while len(review_runtime.canonical(response)) > VIEW_LIMIT and fields:
+            fields = fields[:len(fields) // 2]
+            response["fields"] = fields
+        if len(review_runtime.canonical(response)) <= VIEW_LIMIT:
+            return response
+        raise ValueError("oversized object key cannot be represented as a JSON pointer")
+    return response
 
 
 def compact(value, context):
@@ -637,12 +736,36 @@ def compact(value, context):
     if len(review_runtime.canonical(inline)) < LIMIT:
         return inline
     artifact = review_runtime.store_view(context, value)
+    preferred = ("operations", "results", "matches", "reads", "files", "contents")
+    pointer = ""
+    if isinstance(value, dict):
+        candidates = [key for key in preferred if isinstance(value.get(key), (list, dict, str))]
+        nonempty = [key for key in candidates if value[key]]
+        selected = max(nonempty or candidates, key=lambda key: len(review_runtime.canonical(value[key])),
+                       default=None)
+        if selected is None and value:
+            selected = max(value, key=lambda key: len(review_runtime.canonical(value[key])))
+        if selected is not None:
+            token = str(selected).replace("~", "~0").replace("/", "~1")
+            pointer = "/" + token
+    first_view = artifact_view(context, artifact, pointer, page_size=100)
+    next_request = first_view.get("continue")
+    if next_request is None and not first_view.get("view_complete", False):
+        next_request = {"op": "view", "artifact": artifact, "pointer": pointer,
+                        "offset": 0, "page_size": 100}
     summary = {"schema": "ReleaseReviewEvidenceSummary/v1", "artifact": artifact,
             "evidence_complete": True, "view_complete": False,
             **{key: value[key] for key in ("request_id", "runtime_root", "context_dir", "draft_path", "state", "complete", "next_index", "error") if key in value},
-            "fields": list(value), "continue": {"op": "view", "artifact": artifact, "pointer": "", "offset": 0, "page_size": 100}}
-    if len(review_runtime.canonical(summary)) >= LIMIT:
+            "fields": list(value)[:48], "continue": next_request or
+            {"op": "view", "artifact": artifact, "pointer": pointer, "offset": 0, "page_size": 100}}
+    if first_view.get("next_page"):
+        summary["next_page"] = first_view["next_page"]
+    while len(review_runtime.canonical(summary)) > VIEW_LIMIT and summary["fields"]:
+        summary["fields"] = summary["fields"][:len(summary["fields"]) // 2]
+    if len(review_runtime.canonical(summary)) > VIEW_LIMIT:
         summary.pop("error", None)  # The complete error remains in the artifact.
+    if len(review_runtime.canonical(summary)) > VIEW_LIMIT:
+        raise ValueError("artifact continuation does not fit the response limit")
     return summary
 
 
@@ -765,7 +888,7 @@ def step(root, identifier, operations=None, *, requests_file=None, worklist=None
                         return input_failure(coordination.safe_error(exc))
                 if not isinstance(operations, list) or (not operations and worklist is None):
                     return input_failure("operations must be a nonempty array", "authoring.invalid-operations", "")
-                with ev.operation_cache(manifest, context, persistent=True):
+                with ev.operation_cache(manifest, context, persistent=True) as operation_metrics:
                     prefetched_repos = set()
                     for index, operation in enumerate(operations):
                         active.check()
@@ -849,11 +972,25 @@ def step(root, identifier, operations=None, *, requests_file=None, worklist=None
                         outcome = {"operations": results, "complete": True, "next_index": len(operations)}
                     cache = ev._cache(manifest, context)
                     outcome["search_activity"] = {"executed": cache["search_runs"], "cache_hits": cache["search_hits"]}
+                    operation_metrics["metrics"].update(
+                        searches_executed=cache["search_runs"], search_cache_hits=cache["search_hits"],
+                        unique_blobs=len(cache["blobs"]), unique_citation_files=len(cache["metadata"]))
                 if changed:
                     review_runtime.save_manifest(context, manifest)
+            step_metrics = operation_metrics["metrics"]
             update(root, identifier, state="reviewing", phase="review", last_step={key: outcome[key] for key in ("complete", "next_index")},
                    errors=[],
-                   metrics={**job.get("metrics", {}), "read_search_seconds": job.get("metrics", {}).get("read_search_seconds", 0) + time.perf_counter() - began})
+                   metrics={**job.get("metrics", {}),
+                            "read_search_seconds": job.get("metrics", {}).get("read_search_seconds", 0) + time.perf_counter() - began,
+                            "step_operation_requests": job.get("metrics", {}).get("step_operation_requests", 0) + len(operations),
+                            "step_operations": job.get("metrics", {}).get("step_operations", 0) + sum(not item.get("reused", False) for item in results),
+                            "step_reused_operations": job.get("metrics", {}).get("step_reused_operations", 0) + sum(item.get("reused", False) for item in results),
+                            "step_git_commands": job.get("metrics", {}).get("step_git_commands", 0) + step_metrics["git_commands"],
+                            "step_git_seconds": job.get("metrics", {}).get("step_git_seconds", 0.0) + step_metrics["git_seconds"],
+                            "step_output_bytes": job.get("metrics", {}).get("step_output_bytes", 0) + step_metrics["git_output_bytes"],
+                            "step_batched_blobs": job.get("metrics", {}).get("step_batched_blobs", 0) + step_metrics["batched_blobs"],
+                            "step_searches": job.get("metrics", {}).get("step_searches", 0) + step_metrics["searches_executed"],
+                            "step_search_cache_hits": job.get("metrics", {}).get("step_search_cache_hits", 0) + step_metrics["search_cache_hits"]})
             result = {"request_id": identifier, "state": "reviewing", "phase": "review", "terminal": False,
                       "recoverable": not outcome["complete"], "context_retained": True, **outcome}
             if response_format == "auto":
@@ -927,9 +1064,12 @@ def finish(root, identifier):
             raise ValueError("Session cannot be published.")
         active = coordination.Coordination(root, identifier)
         validated_outcome = None
+        validation_metrics = {}
         def reviewed(outcome):
             nonlocal validated_outcome
             validated_outcome = outcome
+        def measured(metrics):
+            validation_metrics.update(metrics)
         def staged(output, body):
             active.check()
             if validated_outcome is None:
@@ -951,11 +1091,14 @@ def finish(root, identifier):
             with active.activate():
                 report = release_report.publish_report(context, context / "review-result-draft.json",
                     retain_on_validation_error=True, on_stage=staged, on_published=published,
-                    on_review_outcome=reviewed, cleanup_context=False)
-            update(root, identifier, metrics={**job.get("metrics", {}), "validation_publish_seconds": time.perf_counter() - began})
+                    on_review_outcome=reviewed, on_validation_metrics=measured, cleanup_context=False)
+            update(root, identifier, metrics={**job.get("metrics", {}), **validation_metrics,
+                                             "validation_publish_seconds": time.perf_counter() - began})
             return clean_published(root, identifier, context)
         except release_report.DraftValidationError as exc:
-            update(root, identifier, state="reviewing", phase="draft-repair", errors=[str(exc)])
+            update(root, identifier, state="reviewing", phase="draft-repair", errors=[str(exc)],
+                   metrics={**job.get("metrics", {}), **validation_metrics,
+                            "validation_publish_seconds": time.perf_counter() - began})
             result = check(root, identifier)
             if not result["errors"]:
                 result["errors"] = [{"code": "full_validation", "pointer": "", "message": str(exc)}]
@@ -964,7 +1107,10 @@ def finish(root, identifier):
         except BaseException as exc:
             if coordination.read_json(path)["state"] == "published":
                 raise
-            update(root, identifier, state="cancelled" if active.cancelled() else "failed", phase="terminal", error=coordination.safe_error(exc), finished_at_epoch=time.time())
+            update(root, identifier, state="cancelled" if active.cancelled() else "failed", phase="terminal",
+                   error=coordination.safe_error(exc), finished_at_epoch=time.time(),
+                   metrics={**job.get("metrics", {}), **validation_metrics,
+                            "validation_publish_seconds": time.perf_counter() - began})
             if context.exists():
                 review_session.cleanup_session(context)
             raise

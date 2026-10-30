@@ -1,0 +1,5 @@
+WARNING: failed to clean up stale arg0 temp dirs: 存取被拒。 (os error 5)
+WARNING: proceeding, even though we could not create PATH aliases: 存取被拒。 (os error 5) at path "<USER_HOME>\\.codex\\tmp\\arg0-windows\\codex-arg0XsSefl"
+2026-10-29T14:25:29.367453Z  WARN codex_state::runtime: failed to open state db at <USER_HOME>\.codex\state_5.sqlite: failed to open state DB at <USER_HOME>\.codex\state_5.sqlite: error returned from database: (code: 14) unable to open database file
+2026-10-29T14:25:29.367543Z  WARN codex_rollout::state_db: failed to initialize state runtime: failed to initialize state runtime at <USER_HOME>\.codex: failed to open state DB at <USER_HOME>\.codex\state_5.sqlite: error returned from database: (code: 14) unable to open database file: error returned from database: (code: 14) unable to open database file: (code: 14) unable to open database file
+Error: failed to initialize in-process app-server client: 存取被拒。 (os error 5)

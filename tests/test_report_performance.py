@@ -19,11 +19,15 @@ class ReportPerformanceTests(RepoTest):
         with patch.object(evidence, "command", wraps=evidence.command) as commands, \
                 patch.object(release_report, "preview_snapshot", wraps=release_report.preview_snapshot) as snapshots, \
                 patch.object(evidence.hashlib, "sha256", wraps=evidence.hashlib.sha256) as hashes:
-            first = release_report.validate_result(draft, manifest, context)
-            reads = [(call.args[0]["repo"], tuple(call.args[1])) for call in commands.call_args_list
-                     if call.args[1][0] == "cat-file"]
-            self.assertEqual(5, len(reads))
-            self.assertEqual(len(reads), len(set(reads)))
+            metrics = {}
+            first = release_report.validate_result(draft, manifest, context, on_metrics=metrics.update)
+            reads = [call for call in commands.call_args_list if call.args[1][0] == "cat-file"]
+            self.assertEqual(1, len(reads))
+            self.assertEqual(["cat-file", "--batch"], reads[0].args[1])
+            self.assertGreater(metrics["batched_blobs"], 0)
+            self.assertGreaterEqual(metrics["unique_citation_files"], metrics["batched_blobs"])
+            self.assertGreater(metrics["git_commands"], 0)
+            self.assertGreater(metrics["git_output_bytes"], 0)
             self.assertEqual(6, snapshots.call_count)
             self.assertEqual(2, sum(call.args[0] == HEAD_FILES["src/service.py"].encode()
                                     for call in hashes.call_args_list))
@@ -32,7 +36,7 @@ class ReportPerformanceTests(RepoTest):
             hashes.reset_mock()
             second = release_report.validate_result(draft, manifest, context)
             self.assertEqual(first, second)
-            self.assertEqual(5, sum(call.args[1][0] == "cat-file" for call in commands.call_args_list))
+            self.assertEqual(1, sum(call.args[1] == ["cat-file", "--batch"] for call in commands.call_args_list))
             self.assertEqual(6, snapshots.call_count)
             self.assertEqual(2, sum(call.args[0] == HEAD_FILES["src/service.py"].encode()
                                     for call in hashes.call_args_list))

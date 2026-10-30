@@ -13,6 +13,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
 import subprocess
 import sys
+import time
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -23,6 +24,7 @@ import review_runtime
 SHA = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 SEARCH_FLAGS = ("grep", "--no-textconv", "--full-name", "-I", "-n", "-z", "-F")
 _CACHE = ContextVar("release_evidence_operation", default=None)
+_METRICS = ContextVar("release_evidence_metrics", default=None)
 
 
 @contextmanager
@@ -32,12 +34,17 @@ def operation_cache(manifest: dict, context: Path, *, persistent=False):
     A nested operation receives its own cache. All public readers still validate
     source, Repo, SHA and path before consulting cached data.
     """
-    token = _CACHE.set({"manifest": manifest, "context": Path(context),
-                         "sources": {}, "blobs": {}, "metadata": {}, "searches": {}, "path_indexes": {},
-                         "persistent": persistent, "search_hits": 0, "search_runs": 0})
+    state = {"manifest": manifest, "context": Path(context),
+             "sources": {}, "blobs": {}, "metadata": {}, "searches": {}, "path_indexes": {},
+             "persistent": persistent, "search_hits": 0, "search_runs": 0,
+             "metrics": {"git_commands": 0, "git_seconds": 0.0, "git_output_bytes": 0,
+                         "batched_blobs": 0}}
+    token = _CACHE.set(state)
+    metric_token = _METRICS.set(state["metrics"])
     try:
-        yield
+        yield state
     finally:
+        _METRICS.reset(metric_token)
         _CACHE.reset(token)
 
 
@@ -222,8 +229,17 @@ def command(manifest: dict, args: list[str], *, env=None, acceptable=(0,), input
     location = env["GIT_DIR"] if env and manifest.get("snapshot_policy") is not None else manifest["repo"]
     command_env = dict(env) if env else {**os.environ, "GIT_OPTIONAL_LOCKS": "0", "GIT_TERMINAL_PROMPT": "0"}
     command_env.update(GIT_NO_LAZY_FETCH="1", GIT_ALLOW_PROTOCOL="")
-    result = subprocess.run(["git", "-C", str(location), *args], capture_output=True, input=input_bytes,
-                            timeout=timeout, env=command_env)
+    metrics = _METRICS.get()
+    began = time.perf_counter()
+    try:
+        result = subprocess.run(["git", "-C", str(location), *args], capture_output=True, input=input_bytes,
+                                timeout=timeout, env=command_env)
+    finally:
+        if metrics is not None:
+            metrics["git_commands"] += 1
+            metrics["git_seconds"] += time.perf_counter() - began
+    if metrics is not None:
+        metrics["git_output_bytes"] += len(result.stdout) + len(result.stderr)
     if result.returncode not in acceptable:
         raise ValueError("無法讀取固定 Git 證據：" + result.stderr.decode("utf-8", errors="replace").strip())
     return result.stdout
@@ -306,8 +322,9 @@ def search(manifest: dict, context: Path, source: str, query: str, *, ignore_cas
     if persistent:
         try:
             require(cache_file.is_file(), "Search cache miss.")
-            require(not cache_file.is_symlink() and not cache_file.parent.is_symlink(), "Linked search cache.")
-            envelope = json.loads(cache_file.read_text(encoding="utf-8"))
+            require(not review_runtime.path_is_symlink(cache_file)
+                    and not review_runtime.path_is_symlink(cache_file.parent), "Linked search cache.")
+            envelope = json.loads(review_runtime.path_read_text(cache_file, encoding="utf-8"))
             cached = review_runtime.load_view(context, envelope["artifact"])
             require(cached["identity"] == identity, "Search cache source differs.")
             result = cached["result"]
@@ -360,7 +377,7 @@ def search(manifest: dict, context: Path, source: str, query: str, *, ignore_cas
         import review_coordinator
         try:
             review_coordinator.plain(cache_file.parent)
-            cache_file.parent.mkdir(exist_ok=True)
+            review_runtime.path_mkdir(cache_file.parent, exist_ok=True)
             artifact = review_runtime.store_view(context, {"identity": identity, "result": result})
             review_coordinator.atomic(cache_file, {"artifact": artifact})
         except (OSError, ValueError):
@@ -373,12 +390,21 @@ def search(manifest: dict, context: Path, source: str, query: str, *, ignore_cas
 def record_search(context: Path, result: dict) -> str:
     identifier = hashlib.sha256(canonical(result)).hexdigest()
     directory = context / "searches"
-    require(not directory.is_symlink(), "搜尋紀錄目錄不能是符號連結。")
-    directory.mkdir(exist_ok=True)
+    require(not review_runtime.path_is_symlink(directory), "搜尋紀錄目錄不能是符號連結。")
+    review_runtime.path_mkdir(directory, exist_ok=True)
     path = directory / f"{identifier}.json"
-    require(not path.is_symlink(), "搜尋紀錄不能是符號連結。")
-    if not path.exists():
-        path.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    require(not review_runtime.path_is_symlink(path), "搜尋紀錄不能是符號連結。")
+    raw = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
+    if review_runtime.path_exists(path):
+        require(review_runtime.path_read_text(path, encoding="utf-8") == raw,
+                "搜尋紀錄 ID 已存在但內容不同。")
+    else:
+        try:
+            review_runtime.path_write_text(path, raw, encoding="utf-8", exclusive=True)
+        except FileExistsError:
+            require(not review_runtime.path_is_symlink(path)
+                    and review_runtime.path_read_text(path, encoding="utf-8") == raw,
+                    "搜尋紀錄 ID 已存在但內容不同。")
     return identifier
 
 
@@ -386,8 +412,9 @@ def validate_search(context: Path, manifest: dict, identifier: str, *, source="b
     require(isinstance(identifier, str) and re.fullmatch(r"[a-f0-9]{64}", identifier), "基礎搜尋紀錄 ID 無效。")
     directory = context / "searches"
     path = directory / f"{identifier}.json"
-    require(not directory.is_symlink() and not path.is_symlink(), "搜尋紀錄不能是符號連結。")
-    record = json.loads(path.read_text(encoding="utf-8"))
+    require(not review_runtime.path_is_symlink(directory)
+            and not review_runtime.path_is_symlink(path), "搜尋紀錄不能是符號連結。")
+    record = json.loads(review_runtime.path_read_text(path, encoding="utf-8"))
     require(hashlib.sha256(canonical(record)).hexdigest() == identifier, "基礎搜尋紀錄摘要不符。")
     fixed, _ = source_version(manifest, context, source,
                               ref=record.get("ref") if source == "merge-parent" else None, repo=repo)
@@ -406,12 +433,12 @@ def validate_baseline_search(context: Path, manifest: dict, identifier: str) -> 
 def validate_recorded_searches(context: Path, manifest: dict):
     """Replay the authoritative ledger with the fresh publication-local cache."""
     directory = context / "searches"
-    require(not directory.is_symlink(), "搜尋紀錄目錄不能是符號連結。")
-    if not directory.exists():
+    require(not review_runtime.path_is_symlink(directory), "搜尋紀錄目錄不能是符號連結。")
+    if not review_runtime.path_exists(directory):
         return
-    for path in sorted(directory.glob("*.json")):
-        require(not path.is_symlink(), "搜尋紀錄不能是符號連結。")
-        record = json.loads(path.read_text(encoding="utf-8"))
+    for path in sorted(review_runtime.path_children(directory, suffix=".json")):
+        require(not review_runtime.path_is_symlink(path), "搜尋紀錄不能是符號連結。")
+        record = json.loads(review_runtime.path_read_text(path, encoding="utf-8"))
         validate_search(context, manifest, path.stem, source=record.get("source"), repo=record.get("repo"))
 
 
@@ -539,7 +566,10 @@ def _prefetch_reads(manifest, context, requests):
                    env.get("GIT_OBJECT_DIRECTORY"), env.get("GIT_ALTERNATE_OBJECT_DIRECTORIES"))
             if key in state["blobs"]:
                 continue
-            group = groups.setdefault(selected["id"], {"repo": selected, "env": env, "items": [], "keys": []})
+            environment_key = (selected["id"], env.get("GIT_DIR"), env.get("GIT_OBJECT_DIRECTORY"),
+                               env.get("GIT_ALTERNATE_OBJECT_DIRECTORIES"))
+            group = groups.setdefault(environment_key,
+                                      {"repo": selected, "env": env, "items": [], "keys": []})
             # The fixed tree inventory already binds each path to its blob OID.
             # Read each distinct object only once even across refs and paths.
             oid = found["object"]
@@ -556,6 +586,7 @@ def _prefetch_reads(manifest, context, requests):
             continue
         for key, expression in group["keys"]:
             state["blobs"][key] = bodies[expression]
+        state["metrics"]["batched_blobs"] += len(bodies)
 
 
 def load_requests(value: str) -> list:

@@ -300,6 +300,13 @@ class ResourceTests(RepoTest):
         self.assertTrue(all(c["status"] == "待確認" and not c["owner"] and not c["evidence"] for c in checks))
         for operation in ("configuration", "schema", "migration", "permissions", "network", "passive-channel", "host-key", "namespace", "topic", "consumer-group", "contract"):
             self.assertIn(operation, {c["operation"] for c in checks})
+        for dependency in result["external_changes"]:
+            network_check = next(c for c in checks
+                                 if c["dependency_id"] == dependency["id"] and c["operation"] == "network")
+            self.assertEqual(dependency["name"], network_check["resource"])
+            self.assertEqual(dependency["connection"], network_check["connection"])
+            self.assertIn(dependency["name"], network_check["question"])
+            self.assertIn(dependency["connection"], network_check["question"])
         self.assertTrue(result["review_complete"])
         self.assertEqual(result["environment_status"], "待人工核對")
         draft["external_changes"][0]["resolution"] = "unknown"

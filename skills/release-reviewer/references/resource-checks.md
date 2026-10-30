@@ -16,13 +16,19 @@ Topic 與 payload 契約已辨識、僅 provider 實作未知時，以 `kind=oth
 | --- | --- | --- |
 | 設定 | 必要性、預設值、檔案路徑、部署注入與載入程式 | 確認目標環境提供設定，路徑與預設行為適用 |
 | DB | 連線／DB／schema／Table／欄位／View／procedure，實際操作 | 確認建立／套用、migration 順序、鎖與回填、新舊相容性、服務帳號權限 |
-| FTP | 主機邏輯識別、連接埠、模式、帳號用途、目錄及操作 | 防火牆與資料通道、認證、目錄存在與讀寫／搬移／刪除權限 |
-| SFTP | 帳號／金鑰來源、主機金鑰、目錄與操作 | 防火牆、認證部署、主機金鑰核對、目錄及檔案權限 |
+| FTP | 固定來源已揭露的主機／IP、連接埠、主動／被動模式、帳號用途、目錄及檔案操作 | 防火牆與資料通道、認證、目錄存在與讀寫／搬移／刪除權限 |
+| SFTP | 固定來源已揭露的主機／IP、連接埠、帳號／金鑰來源、主機金鑰、目錄與操作 | 防火牆、認證部署、主機金鑰核對、目錄及檔案權限 |
 | Redis | DB、key prefix／channel、命令、TTL、序列化 | 網路、認證與 ACL、隔離、保留策略、新舊相容性及必要初始化 |
 | Kafka | 已辨識的 Kafka provider、Topic、Producer／Consumer／Group、事件 key／schema、offset | Broker 網路與認證、Topic 配置、ACL、重送與冪等、新舊事件相容性 |
 | 其他 | 已知的服務與資源識別、實際操作、契約 | 網路／DNS／TLS、建立資源、帳號權限及契約；未知部分列限制 |
 
 表中網路、DNS、TLS 與初始化等依實際條件核對，不適用由人工填理由。helpers 為每個提醒產生固定必要問題，不以「已有設定」或「其他服務已可用」自動勾完成。
+
+## 保留可核對的實際目標
+
+若固定程式碼、部署定義或設定已明確提供非機密主機／IP、port、protocol、FTP 模式或目錄，將可確認的原值寫入現有依賴 `connection`、`description` 或 `recommendation`；`connection` 同時保留邏輯連線鍵及服務身分。不要只寫「固定邏輯端點」「目標主機」或只列遠端路徑而省略已知 endpoint。Checklist 的 network／transport 問題須連回該依賴，並指出其已知目標與連線／服務身分，讓核對人能直接確認 DNS、防火牆、port、資料通道及操作權限。
+
+若 endpoint 由環境設定、secret store 或注入值決定而固定證據無法解析，列出設定鍵／邏輯連線並明確標示實際值待環境核對；不要猜測。不得把密碼、token、私鑰或完整連線字串寫入依賴、Checklist 或報告。不同主機、DB／schema、目錄或服務身分仍分開記錄。
 
 每項提醒至少一個入口 base 搜尋紀錄及 baseline_reason，說明如何排除既有使用與別名；最終證據引用實際使用、目標變更或此次部署定義。config_changes 與 db_changes 沿用主規則，外部類型使用 external_changes。動態目標無法辨識時保留已知邏輯名稱及 resolution=unknown，不猜主機、DB、Topic 或 key。
 

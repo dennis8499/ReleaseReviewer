@@ -1,0 +1,2 @@
+2026-10-29T16:35:30.422512Z  WARN codex_core::shell_snapshot: Failed to create shell snapshot for powershell: Shell snapshot not supported yet for PowerShell
+2026-10-29T16:36:00.135497Z ERROR codex_core::tools::router: error=exec_command failed: CreateProcess { message: "Rejected(\"`\\\"<LOCAL_PATH>\\\" -Command \\\"Get-Content -LiteralPath '<LOCAL_PATH>' -TotalCount 260\\\"` rejected: blocked by policy\")" }

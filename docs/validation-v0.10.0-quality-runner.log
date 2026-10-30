@@ -1,0 +1,8 @@
+test_failed_job_without_report_retains_error_and_cleanup_fields (test_quality_matrix_runner.QualityMatrixJobTests.test_failed_job_without_report_retains_error_and_cleanup_fields) ... ok
+test_report_hash_matches_exact_utf8_artifact_bytes (test_quality_matrix_runner.QualityMatrixJobTests.test_report_hash_matches_exact_utf8_artifact_bytes) ... ok
+test_report_match_wins_over_a_newer_unpublished_failure (test_quality_matrix_runner.QualityMatrixJobTests.test_report_match_wins_over_a_newer_unpublished_failure) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.027s
+
+OK

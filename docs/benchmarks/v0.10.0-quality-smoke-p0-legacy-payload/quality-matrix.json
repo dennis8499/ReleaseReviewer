@@ -1,0 +1,57 @@
+{
+  "schema": "ReleaseReviewerBlindQualityMatrix/v1",
+  "complete": true,
+  "models": {
+    "gpt-6.1-sol": "high"
+  },
+  "conditions": [
+    "candidate"
+  ],
+  "cases": [
+    "p0"
+  ],
+  "runs_per_cell": 1,
+  "seed": 20261029,
+  "codex_cli": "codex.cmd",
+  "baseline_skill_sha256": "0ffe214ea727f54a8d2d03e4f63bbc2c0a89b7f7372e086c46e06afef38a68a4",
+  "candidate_skill_sha256": "b2b5911d93bbe28ea71e2161faea9cc9979e5b2792c73c5f1f587af25ad6e7fc",
+  "scoring": "blind reports are preserved; semantic_score requires an oracle-backed independent review",
+  "samples": [
+    {
+      "id": "gpt-6.1-sol-candidate-p0-01",
+      "model": "gpt-6.1-sol",
+      "reasoning_effort": "high",
+      "condition": "candidate",
+      "case": "p0",
+      "run": 1,
+      "elapsed_seconds": 299.0937220999999,
+      "model_tokens": null,
+      "agent_seconds": null,
+      "http_requests": null,
+      "ssh_requests": null,
+      "exit_code": 0,
+      "error": null,
+      "report_created": true,
+      "report_path": "reports/gpt-6.1-sol-candidate-p0-01.md",
+      "report_sha256": "110a0209eb6b5823a34f12ca32e1ee5761be1a25435a420e3bee8b2399acb77c",
+      "report_bytes": 17741,
+      "secret_leak": false,
+      "network_activity": null,
+      "runtime_metrics": null,
+      "review_complete": null,
+      "review_status": null,
+      "oracle_expected": "Startup deletes all orders; direct P0 blocker.",
+      "semantic_score": null,
+      "global_skill_isolation": "workspace skill varies by condition; user CODEX_HOME remains active for authentication",
+      "installed_skill_sha256": "b2b5911d93bbe28ea71e2161faea9cc9979e5b2792c73c5f1f587af25ad6e7fc",
+      "signals": {
+        "p0": true,
+        "p1": true,
+        "checklist": true,
+        "ftp": true,
+        "sftp": true,
+        "kafka": true
+      }
+    }
+  ]
+}

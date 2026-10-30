@@ -124,6 +124,17 @@ class PublishedOutcomeTests(RepoTest):
         self.assertEqual(original, retried["review_outcome"])
         self.assertFalse(retried["review_complete"])
 
+    def test_report_publication_falls_back_to_atomic_rename_when_hardlinks_are_denied(self):
+        _, root, identifier, context = self.request(incomplete=True)
+        with patch.object(release_report.os, "link", side_effect=PermissionError("hard links denied")):
+            published, code = flow.finish(root, identifier)
+
+        self.assertEqual(0, code)
+        self.assertEqual("published", published["state"])
+        self.assertTrue(Path(published["report_path"]).is_file())
+        self.assertFalse(context.exists())
+        self.assertFalse(list(Path(published["report_path"]).parent.glob(".release-report-*.tmp")))
+
     def test_staged_receipt_saves_outcome_before_report_link_and_recovers(self):
         _, root, identifier, _ = self.request(incomplete=True)
         real_link = release_report.os.link

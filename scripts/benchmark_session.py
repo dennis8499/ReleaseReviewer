@@ -56,13 +56,18 @@ def expand_response(value, context):
 def worker(skill, scenario, auto):
     base = Path(tempfile.mkdtemp(prefix="release-review-session-bench-")).resolve()
     result = {"success": False, "scenario": scenario, "stages": {}, "model_tokens": None,
-              "agent_seconds": None, "http_requests": None, "ssh_requests": None}
+              "agent_seconds": None, "http_requests": None, "ssh_requests": None,
+              "expected_review_complete": True, "cleanup_error": None}
+    peer_search_id = None
     try:
         repo = support.fixture(base)
         for number in range(24):
             support.write(repo, f"bench/file-{number:02}.py", (f"value_{number} = {number}\n" * 24))
         support.git(repo, "add", ".")
         support.git(repo, "commit", "-m", "session benchmark inputs")
+        if scenario == "no-change":
+            # Keep both branches on the same commit while retaining all read fixtures.
+            support.git(repo, "update-ref", "refs/heads/main", "refs/heads/feature")
         if scenario == "group":
             peer = support.init_repo(base, "consumer")
             for number in range(24):
@@ -93,10 +98,12 @@ def worker(skill, scenario, auto):
                     except json.JSONDecodeError:
                         pass
             result["stages"][stage] = {"wall_seconds": elapsed, "git_commands": count,
-                                       "tool_calls": 1, "output_bytes": len(completed.stdout),
+                                       "tool_calls": 1, "output_bytes": len(completed.stdout) + len(completed.stderr),
+                                       "stdout_bytes": len(completed.stdout), "stderr_bytes": len(completed.stderr),
                                        "exit_code": completed.returncode}
             if completed.returncode:
-                raise RuntimeError(stage + ": " + completed.stderr.decode("utf-8", errors="replace")[-3000:])
+                diagnostic = (completed.stderr + b"\n" + completed.stdout).decode("utf-8", errors="replace")
+                raise RuntimeError(f"{stage} exited {completed.returncode}: {diagnostic[-5000:]}")
             output = json.loads(completed.stdout.decode("utf-8"))
             if output.get("schema") == "ReleaseReviewEvidenceSummary/v1":
                 context = context or Path(output["context_dir"])
@@ -134,25 +141,53 @@ def worker(skill, scenario, auto):
             result["stages"]["step-" + str(round_number)]["search_activity"] = response.get("search_activity")
             if not response["complete"]:
                 raise ValueError("step did not complete")
+            if scenario == "group" and round_number == 1:
+                peer_row = next((row for row in response["operations"] if row["id"] == "peer-search"), None)
+                peer_search_id = (peer_row or {}).get("result", {}).get("search_id")
+                if not peer_search_id:
+                    raise ValueError("group fixture did not save its whole-Repo peer search")
             evidence_rows.extend(row["result"] for row in response["operations"])
         draft = support.draft_for(manifest)
+        if scenario == "no-change":
+            for row in draft["dependency_coverage"]:
+                row.update(status="not-applicable",
+                           reason="固定 base/head 及乾淨合併預覽證明本次沒有新增差異。", evidence=[])
         if peer_id:
-            skeleton = json.loads((context / "review-result-draft.json").read_text(encoding="utf-8"))
-            draft["supporting_coverage"] = skeleton["supporting_coverage"]
+            draft["supporting_coverage"] = [{
+                "repo": peer_id, "status": "unrelated",
+                "reason": "合成 benchmark 的 peer Repo 刻意建立為與入口 Repo 無契約關係。",
+                "searches": [peer_search_id], "evidence": [],
+            }]
         (context / "review-result-draft.json").write_text(json.dumps(draft, ensure_ascii=False), encoding="utf-8")
         check = invoke("check", ["check", *common], context)
         finish = invoke("finish", ["finish", *common], context)
-        result.update(success=True, evidence_digest=digest(evidence_rows), evidence_count=len(evidence_rows),
-                      check_passed=check["precheck_passed"], review_complete=finish.get("review_complete"),
-                      repair_seconds=0.0,
+        outcome = finish.get("review_outcome") if isinstance(finish.get("review_outcome"), dict) else {}
+        blocker_count = finish.get("blocker_count", outcome.get("blocker_count"))
+        pending_count = finish.get("pending_count", outcome.get("pending_count"))
+        gap_count = finish.get("gap_count", outcome.get("gap_count"))
+        result.update(evidence_digest=digest(evidence_rows), evidence_count=len(evidence_rows),
+                      check_passed=check.get("precheck_passed"), review_complete=finish.get("review_complete"),
+                      review_status=finish.get("review_status", outcome.get("review_status")),
+                      blocker_count=blocker_count, pending_count=pending_count, gap_count=gap_count,
+                      report_published=finish.get("publication_complete"), cleanup_pending=finish.get("cleanup_pending", False),
+                      runtime_metrics=finish.get("metrics"), repair_seconds=0.0,
                       total_seconds=sum(stage["wall_seconds"] for stage in result["stages"].values()))
+        result["success"] = bool(check.get("precheck_passed") is True
+                                  and finish.get("publication_complete") is True
+                                  and finish.get("review_complete") is True
+                                  and blocker_count == 0
+                                  and gap_count == 0
+                                  and not finish.get("cleanup_pending", False))
+        if not result["success"]:
+            result["error"] = "benchmark completed without the expected complete, blocker-free review and cleanup"
     except Exception as exc:
         result["error"] = f"{type(exc).__name__}: {exc}"
     finally:
         try:
             support.review_session._remove_tree(base)
         except Exception as exc:
-            result.update(success=False, error=f"cleanup: {exc}")
+            result["success"] = False
+            result["cleanup_error"] = f"{type(exc).__name__}: {exc}"
     return result
 
 
@@ -160,7 +195,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline-skill-dir", type=Path)
     parser.add_argument("--runs", type=int, default=5)
-    parser.add_argument("--scenario", action="append", choices=("repository", "group"))
+    parser.add_argument("--scenario", action="append", choices=("repository", "group", "no-change"))
     parser.add_argument("--output", type=Path)
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--skill", type=Path, help=argparse.SUPPRESS)
@@ -176,7 +211,8 @@ def main():
                    "baseline_payload_sha256": payload_digest(args.baseline_skill_dir),
                    "candidate_payload_sha256": payload_digest(ROOT / "skills/release-reviewer")}
     samples = []
-    for scenario in args.scenario or ("repository", "group"):
+    scenarios = args.scenario or ("repository", "group", "no-change")
+    for scenario in scenarios:
         for number in range(args.runs):
             order = ("baseline", "candidate") if number % 2 == 0 else ("candidate", "baseline")
             for variant in order:
@@ -197,11 +233,13 @@ def main():
                     temporary.write_text(json.dumps(partial, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
                     os.replace(temporary, args.output)
     summary = {}
-    for scenario in args.scenario or ("repository", "group"):
+    for scenario in scenarios:
         items = [item for item in samples if item["scenario"] == scenario]
         valid = len(items) == args.runs * 2 and all(item["success"] for item in items)
         equivalent = valid and len({item["evidence_digest"] for item in items}) == 1
-        report = {"success": bool(equivalent), "all_samples_succeeded": valid, "evidence_equivalent": equivalent}
+        target_ratio = 1.05 if scenario == "no-change" else 0.80
+        report = {"success": False, "all_samples_succeeded": valid, "evidence_equivalent": equivalent,
+                  "helper_target_ratio": target_ratio}
         if equivalent:
             for variant in ("baseline", "candidate"):
                 runs = [item for item in items if item["variant"] == variant]
@@ -210,6 +248,15 @@ def main():
                                    "step_git_commands": statistics.median(sum(item["stages"][f"step-{i}"]["git_commands"] for i in range(2)) for item in runs)}
             report["total_ratio"] = report["candidate"]["total_seconds"] / report["baseline"]["total_seconds"]
             report["step_ratio"] = report["candidate"]["step_seconds"] / report["baseline"]["step_seconds"]
+            stage_names = sorted(set.intersection(*(set(item["stages"]) for item in items)))
+            report["stage_medians_seconds"] = {
+                variant: {stage: statistics.median(item["stages"][stage]["wall_seconds"]
+                                                    for item in items if item["variant"] == variant)
+                          for stage in stage_names}
+                for variant in ("baseline", "candidate")}
+            report["target_met"] = report["total_ratio"] <= report["helper_target_ratio"]
+            report["success"] = bool(valid and equivalent and report["target_met"])
+        report["pair_count"] = args.runs
         summary[scenario] = report
     unchanged = (environment["baseline_payload_sha256"] == payload_digest(args.baseline_skill_dir)
                  and environment["candidate_payload_sha256"] == payload_digest(ROOT / "skills/release-reviewer"))
@@ -219,7 +266,7 @@ def main():
             report["payload_changed_during_run"] = True
     value = {"schema": "ReleaseReviewSessionBenchmark/v1", "complete": True,
              "scope": "Synthetic helper CLI only; not an agent or semantic-quality measurement.",
-             "method": "Alternating independent processes; start, two 24-read steps with searches, check and finish; all samples retained.",
+             "method": "Alternating independent processes; start, two 24-read steps with searches, check and finish; no-change uses identical base/head; all samples retained.",
              "environment": environment,
              "summary": summary, "samples": samples}
     text = json.dumps(value, ensure_ascii=False, indent=2) + "\n"

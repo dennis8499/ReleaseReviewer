@@ -1,0 +1,15 @@
+{
+  "schema": "ReleaseReviewerBlindQualitySummary/v1",
+  "semantic_scoring_complete": false,
+  "cells": {
+    "gpt-6.1-sol/safe": {
+      "candidate": {
+        "runs": 1,
+        "median_seconds": 172.69018959999994,
+        "reports_created": 1,
+        "secret_leaks": 0,
+        "semantic_score": null
+      }
+    }
+  }
+}

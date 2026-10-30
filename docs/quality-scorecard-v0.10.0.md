@@ -1,6 +1,6 @@
 # ReleaseReviewer 0.10.0 blind-review scorecard
 
-Codex Code Review guidance is checked on four axes: **coverage**, **restraint**, **retention** of ordinary bug finding, and **actionability**. The evaluation includes intended violations, safe counterexamples, and unrelated changes; repository guidance should be scoped and show the safe path. See [OpenAI's Code Review rules evaluation](http<LOCAL_PATH>
+Codex Code Review guidance is checked on four axes: **coverage**, **restraint**, **retention** of ordinary bug finding, and **actionability**. The evaluation includes intended violations, safe counterexamples, and unrelated changes; repository guidance should be scoped and show the safe path. See [OpenAI's Code Review rules evaluation](https://developers.openai.com/blog/custom-code-review-rules-for-codex).
 
 ## Per-report scores
 

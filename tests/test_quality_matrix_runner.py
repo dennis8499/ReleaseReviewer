@@ -68,6 +68,7 @@ class QualityMatrixJobTests(unittest.TestCase):
             "workspace": r"C:\Users\reviewer\OneDrive\Desktop\ReleaseReviewer",
             "fixture": r"D:\scratch\fixture\workspace",
             "owner": Path.home().name,
+            "docs": "https://developers.openai.com/blog/custom-code-review-rules-for-codex",
         })
 
         sanitized = run_quality_matrix.redact_local_paths(raw)
@@ -76,6 +77,7 @@ class QualityMatrixJobTests(unittest.TestCase):
         self.assertNotIn("D:\\", sanitized)
         self.assertNotIn(Path.home().name.lower(), sanitized.lower())
         self.assertIn("<LOCAL_PATH>", sanitized)
+        self.assertIn("https://developers.openai.com/blog/custom-code-review-rules-for-codex", sanitized)
 
     def test_report_path_redaction_recomputes_static_integrity_metadata(self):
         body = ("# 上版檢查\n\nRepo: C:\\Users\\reviewer\\OneDrive\\project\n\n"

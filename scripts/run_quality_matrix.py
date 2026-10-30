@@ -60,7 +60,7 @@ def redact_local_paths(raw: str) -> str:
             raw = raw.replace(variant, label)
     # Event streams can contain JSON-escaped paths (with repeated backslashes),
     # and fixture roots may live outside the current user's home directory.
-    raw = re.sub(r"(?i)[A-Z]:(?:\\+|/+)[^\\/\"'\s]+(?:(?:\\+|/+)[^\\/\"'\s]+)*",
+    raw = re.sub(r"(?i)(?<![A-Z0-9+.-])[A-Z]:(?:\\+|/+)[^\\/\"'\s]+(?:(?:\\+|/+)[^\\/\"'\s]+)*",
                  "<LOCAL_PATH>", raw)
     user_name = Path.home().name
     if user_name:

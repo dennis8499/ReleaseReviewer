@@ -8,4 +8,4 @@
 
 Helper normal／large 各五次交替重播，使用本輪初始 HEAD；只正規化擷取身分、generation 與空的 parent ledger，固定來源、引用、覆蓋、非空必要 parent 義務、問題及報告保持等價。報告端到端、helper、輸出 bytes 與 token 計量分開；取得不到 tokens 時填 null。
 
-本輪證據留在 `.tmp/reviewer-runtime-*`。既有 performance.md 的舊樣本與 A/B 原始資料保留，不能代替現行候選結果。新模型盲測未完成前不宣稱語意品質已驗收；本機版本與 ZIP 不代表發布或正式上版核准。
+本輪證據留在 `.tmp/reviewer-runtime-*`。既有 performance.md 的舊樣本與 A/B 原始資料保留，不能代替本輪 0.6.0 候選結果。新模型盲測未完成前不宣稱語意品質已驗收；本機版本與 ZIP 不代表發布或正式上版核准。

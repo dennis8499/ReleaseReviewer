@@ -6,7 +6,7 @@
 
 - `python -X utf8 -B -m unittest discover -s tests -v`：48 項通過。
 - 移除 context 的舊 JSON 格式選項後，再執行 `test_context.py`：16 項通過；直接比較、JSON、Tag、commit、HEAD 與 revision expression 均拒絕。
-- 新增 VSCode multi-root JSONC／Git worktree 測試：1 項通過；只讀取明確工作區根目錄，仍固定本機預設分支。目前共 49 項測試均已執行通過。
+- 新增 VSCode multi-root JSONC／Git worktree 測試：1 項通過；只讀取明確工作區根目錄，仍固定本機預設分支。最終共 49 項測試均已執行通過。
 - 最後補強空白／未知 Repo 引用的拒絕檢查，對應證據測試重跑通過；最終 0.2.0 ZIP SHA-256 為 `0042d7519827a9ad350b8259ee111588cab7e4c70311158d9447872973f78179`。
 - skill-creator `quick_validate.py`：通過。
 - 獨立封裝解壓後，在清空 PYTHONPATH 的程序擷取版本並產生報告，無其他 Skill 執行期依賴；ZIP 可重複產生相同 bytes。
@@ -33,8 +33,8 @@
 - `npm.cmd run test:behavior`：63 項畫面測試、40 個行為情境通過；編譯與 Webview 型別檢查通過。
 - 整包回歸已通過 26 項發行工具、18 項舊工具安裝器、11 項整包安裝器、20 項交易／回復、7 項 profile、6 項 ReleaseReviewer、21 項 AutoHook、1 項已安裝 Group 工作流程、10 項 MergeReviewer 測試，及三個需求探索回歸腳本。
 - 最終固定來源更新後，6 項 ReleaseReviewer 整合再次通過：兩種 profile 的報告與 Checklist、本機修改隔離、預設分支版本、逐檔封裝一致、未知修改拒絕，以及 0.19.1 升級／回復。
-- 完整 `test:release` 初次執行在最後的交付證據測試載入失敗，原因是舊測試 helper 硬編碼 MergeReviewer 0.9.0，缺少目前 0.10.0 的 legacy adapter。已改為從實際 Group 封裝讀取並核對逐檔雜湊；未改 MergeReviewer 行為。最後一組獨立重跑，26 項交付證據測試通過。
-- 已產生 [獨立 Skill ZIP](../dist/release-reviewer-0.2.0.zip)、[VSIX](../../GitlabWorkSpace/dist/gitlab-workspace-0.20.0.vsix) 與 [整包 ZIP](../../GitlabWorkSpace/dist/gitlab-workspace-kit-0.20.0.zip)。`verify-vsix.py` 通過，VSIX 內 TAR.XZ 與整包 ZIP 的兩種 profile 逐檔一致，SHA256SUMS 有效；舊發行包保留。
+- 完整 `test:release` 初次執行在最後的交付證據測試載入失敗，原因是舊測試 helper 硬編碼 MergeReviewer 0.9.0，缺少當時 0.10.0 的 legacy adapter。已改為從實際 Group 封裝讀取並核對逐檔雜湊；未改 MergeReviewer 行為。最後一組獨立重跑，26 項交付證據測試通過。
+- 當時產生的附件名稱為 `dist/release-reviewer-0.2.0.zip`、`GitlabWorkSpace/dist/gitlab-workspace-0.20.0.vsix` 與 `GitlabWorkSpace/dist/gitlab-workspace-kit-0.20.0.zip`；這些二進位檔未保存在目前工作樹。當時 `verify-vsix.py` 通過，VSIX 內 TAR.XZ 與整包 ZIP 的兩種 profile 逐檔一致，SHA256SUMS 有效；此處保留為歷史驗證紀錄。
 
 ## 驗證界線
 

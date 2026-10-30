@@ -1,12 +1,12 @@
 # Release Reviewer｜上版檢查
 
-獨立 Codex Skill **0.10.0**。只接受 Repo、基礎分支、比較分支，固定合併前審查。檢查直接阻止上版的 P0／P1、相關功能鏈與新增部署依賴，在 VSCode 受審 Repo/review-reports 產生**一份含可填寫 Checklist 的繁體中文 Release Report**。本版依已確認進度發行，完整 Agent 端到端效能與三模型語意矩陣仍待驗收；整體改善目標維持未完成。GitHub tag release 會先通過 Windows／Python 3.10、3.14 CI 與封包驗證，再發布正式 Release。
+獨立 Codex Skill **0.10.1**。只接受 Repo、基礎分支、比較分支，固定合併前審查。檢查直接阻止上版的 P0／P1、相關功能鏈與新增部署依賴，在 VSCode 受審 Repo/review-reports 產生**一份含可填寫 Checklist 的繁體中文 Release Report**。本補丁版只修正文檔與驗證證據記載，執行行為及資料格式維持 0.10.0；完整 Agent 端到端效能與三模型語意矩陣仍待驗收。GitHub tag release 會先通過 Windows／Python 3.10、3.14 CI 與封包驗證，再發布正式 Release。
 
 ## 安裝與使用
 
 需要 Python 3.10+、Git 及可使用本機 Skills 的 Codex。Git 須支援 merge-tree --write-tree 與 --merge-base；缺少乾淨預覽時保留缺口，不改用直接比較。
 
-將 skills/release-reviewer 複製到 Codex Skills 目錄，或解壓 dist/release-reviewer-0.10.0.zip。CODEX_HOME 有設定時使用其 skills 子目錄，否則使用使用者的 .codex/skills。
+將 skills/release-reviewer 複製到 Codex Skills 目錄，或解壓 dist/release-reviewer-0.10.1.zip。CODEX_HOME 有設定時使用其 skills 子目錄，否則使用使用者的 .codex/skills。
 
 ~~~text
 $release-reviewer Repo=OrderService 基礎分支=origin/main 比較分支=origin/feature/payment
@@ -25,7 +25,11 @@ $release-reviewer Repo=C:\projects\OrderService 基礎分支=main 比較分支=f
 
 祖先豁免另需 capture 封存的 `ancestor_path` commit 證據，由發布器驗證 hash 與 parent 連線；草稿不能自行宣告祖先關係。
 
-## 0.10.0 更新
+## 0.10.1 更新
+
+本補丁版核對並修正文檔與 v0.10.0 程式、設定、CI 及歷史產出之間的差異，並標明無法由保存日誌證實的測試執行紀錄。沒有執行行為或資料格式變更，細節見[0.10.1 發行紀錄](docs/releases/v0.10.1.md)。
+
+## 0.10.0 更新（歷史）
 
 固定版本擷取與發布驗證加入 tree、AGENTS.md、引用 blob 批次讀取，同來源仍逐筆核對。Session 保存階段秒數、Git 操作數、輸出 bytes、搜尋與批次計數；大型單一欄位可依 JSON pointer／字串 offset 續讀，回應上限維持 24 KiB。技能入口縮短，Group、資源類型及恢復範例按情境載入。Context／Draft／Report v3、舊格式與單一報告保持相容。
 

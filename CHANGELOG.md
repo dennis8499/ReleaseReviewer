@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.10.1 - 2026-10-30
+
+- Reconcile current and historical documentation with the v0.10.0 source, configuration, CI workflow and retained artifacts; clarify archived attachment references and validation limits. This documentation-only patch does not change runtime behavior or data formats.
+
 ## 0.10.0 - 2026-10-30
 
 - Batch frozen commit-to-tree resolution, `AGENTS.md` blob reads and publication citation reads while retaining per-source hash, path, line and search validation.
@@ -9,6 +13,7 @@
 - Keep local reviews offline, explicit remote fetches scoped to one request and one operation per remote, and same-request continuation offline; preserve fetch reasons and separate Git command metrics from transport requests.
 - Shorten the always-loaded skill and disclose Group, resource and recovery details by scenario. Keep Context, Draft and Report v3 and legacy response compatibility.
 - Expand blind source-only fixtures for Table, FTP, SFTP, target changes, permissions and cross-Repo contract breaks; add a Codex matrix runner that retains redacted reports and leaves semantic scoring explicitly incomplete pending independent oracle review.
+- Preserve HTTP/HTTPS URLs while redacting local Windows drive paths in benchmark artifacts; add regression coverage and restore the scorecard link.
 - Publish the 0.10.0 Skill ZIP after the tag workflow validates the complete Windows/Python 3.10 and 3.14 matrix and canonical asset bytes. Helper performance targets pass; full paired Agent timing and three-model semantic scoring remain known acceptance limits. See the [release notes](docs/releases/v0.10.0.md) and [acceptance record](docs/optimization-candidate-v0.10.0.md).
 
 ## 0.9.0 - 2026-10-28

@@ -1,6 +1,6 @@
 # 驗證紀錄
 
-目前 0.2.0 的驗證見 [v2 驗證紀錄](verification-v2.md)。以下保留 0.1.0 發行時的歷史紀錄。
+本頁保留 ReleaseReviewer 0.1.0 發行時的歷史驗證紀錄；後續版本見 [0.2.0 驗證紀錄](verification-v2.md) 與 [0.3.0 驗證紀錄](verification-v3.md)。
 
 日期：2026-10-10（Asia/Taipei）
 
@@ -30,10 +30,10 @@
 
 示範保留 base/head 原始檔，確認另一檔案已用過的 CoreDb.dbo.Orders 不重複列出；BillingDb 只有 schema 定義，首次程式使用仍列提醒。自建 fixture 的除以零與缺少設定例外已最小重現；未查詢 DB 或外部服務。
 
-語意判斷由建立 Skill 的 agent 完成，未做獨立模型盲測。35 項測試驗證 helpers 與輸出契約，不證明語意審查沒有漏報。尚未使用使用者的實際 Repo 驗收。本頁記錄本機驗證；Linux、Windows 及 Python 3.10、3.14 的持續驗證結果，請見 [GitHub Actions](https://github.com/dennis8499/ReleaseReviewer/actions/workflows/ci.yml)。
+語意判斷由建立 Skill 的 agent 完成，未做獨立模型盲測。35 項測試驗證 helpers 與輸出契約，不證明語意審查沒有漏報。尚未使用使用者的實際 Repo 驗收。本頁記錄本機驗證；v0.1.0 tag 所附 CI workflow 的矩陣為 Linux／Windows × Python 3.10／3.14，歷史執行紀錄見 [GitHub Actions](https://github.com/dennis8499/ReleaseReviewer/actions/workflows/ci.yml)。
 
 GitlabWorkSpace 與既有 MergeReviewer 不在此階段修改範圍；整合留待獨立試用確認後另行處理。
 
-## 目前版本
+## 後續版本
 
-0.3.0 的單一 Release Report、v3 契約與工作區根目錄驗證見 [verification-v3.md](verification-v3.md)。本文件保留原始歷史驗證紀錄。
+0.3.0 的單一 Release Report、v3 契約與工作區根目錄驗證見 [verification-v3.md](verification-v3.md)。本頁只記錄 0.1.0 的驗證結果。

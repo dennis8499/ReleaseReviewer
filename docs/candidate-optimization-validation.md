@@ -49,7 +49,7 @@ GitlabWorkSpace 的相關 8 項隔離單元測試及完整 TypeScript `--noEmit`
 
 - `gpt-6.1-sol/high`、`gpt-6-astra/high`、`gpt-6-luna/max` 各比較無技能、0.8.0、候選；關鍵案例各三次，保留完整模型及工具記錄。此環境沒有可用 Codex CLI、OpenAI SDK 或 API 憑證，尚未執行。
 - 單 Repo 與 Group 各六組完整 Agent 有效配對；全部配對耗時比中位數 ≤ 0.85，各類中位數不得退步超過 5%。失敗與修稿成本均記錄，helper 秒數不能替代 Agent 秒數。
-- Windows／Linux 各以 Python 3.10／3.14 執行完整回歸與獨立套件測試；目前環境僅確認 Windows Python 3.14，WSL 不可用。
+- Windows／Linux 各以 Python 3.10／3.14 執行完整回歸與獨立套件測試；本次驗證環境僅確認 Windows Python 3.14，WSL 不可用。
 - WorkflowKit payload、工作台安裝來源與實際安裝的 Skill 本次未自動更新；若後續更新，須依正常發布流程逐檔核對內容。
 
 此工作區核對時，全域安裝版本為 0.3.1，其 `review_session.py` 只有 cleanup；WorkflowKit 離線 payload 為 0.8.0，具有 start／step session 但沒有 capabilities 命令。封存包的 27 個檔案均與 `da8796b` 的正規化來源一致，其中 9 個檔案與本次候選不同。WorkflowKit 的既有安裝測試確認安裝內容與封存包一致，既有兩種 Reviewer 的 session 續跑、發布重試及取消測試也通過；這不代表候選已安裝。工作台先探測已安裝入口：能力命令不存在時檢查 session help，支援舊版介面才回退；cleanup-only 版拒絕。對已宣告時間預算能力的 ReleaseReviewer 使用 `unlimited`，未宣告能力的舊版不傳該選項。

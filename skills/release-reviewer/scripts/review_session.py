@@ -273,7 +273,7 @@ def cleanup_if_owned(requested: str | Path) -> bool:
 
 def main(argv: list[str] | None = None) -> int:
     values = sys.argv[1:] if argv is None else argv
-    if values and values[0] in ("start", "step", "check", "finish", "status", "cancel"):
+    if values and values[0] in ("start", "step", "check", "finish", "status", "view", "capabilities", "cancel"):
         from review_flow import main as flow_main
         return flow_main(values)
     parser = argparse.ArgumentParser(description=__doc__)

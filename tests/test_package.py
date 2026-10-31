@@ -32,6 +32,18 @@ class PackageTests(RepoTest):
             self.assertFalse(any("tests/" in n or "__pycache__" in n for n in names))
             self.assertIn("release-reviewer/scripts/git_support.py", names)
 
+    def test_packaged_capabilities_hash_matches_the_canonical_installed_payload(self):
+        archive = packaging.build_release(SKILL, self.root / "capability-dist")
+        with ZipFile(archive) as zipped:
+            zipped.extractall(self.root / "capability-install")
+        script = self.root / "capability-install/release-reviewer/scripts/review_session.py"
+        result = python(script, "capabilities", "--workspace", self.root)
+        self.assertEqual(0, result.returncode, result.stderr)
+        capability = json.loads(result.stdout)
+        self.assertEqual((SKILL / "VERSION").read_text(encoding="utf-8").strip(), capability["skill_version"])
+        self.assertEqual(64, len(capability["payload_sha256"]))
+        self.assertTrue(capability["features"]["read_window"])
+
     def test_unpacked_skill_captures_and_publishes_without_merge_reviewer(self):
         archive = packaging.build_release(SKILL, self.root / "dist")
         with ZipFile(archive) as zipped:

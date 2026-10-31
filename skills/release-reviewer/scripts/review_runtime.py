@@ -173,19 +173,22 @@ def _view_unlink(path):
         pass
 
 
-def _views(context):
+def _views(context, *, create=False):
     root = Path(context).resolve()
     directory = root / "views"
     if path_is_symlink(directory) or (path_exists(directory) and directory.resolve() != directory):
         raise ValueError("Evidence view directory cannot be a link")
-    path_mkdir(directory, exist_ok=True)
+    if create:
+        path_mkdir(directory, exist_ok=True)
+    elif not directory.is_dir():
+        raise FileNotFoundError(directory)
     return directory
 
 
 def store_view(context, value):
     raw = canonical(value)
     identifier = hashlib.sha256(raw).hexdigest()
-    target = _views(context) / (identifier + ".json")
+    target = _views(context, create=True) / (identifier + ".json")
     if _view_is_symlink(target):
         raise ValueError("Evidence view cannot be a link")
     temporary = target.with_name(".view-" + uuid.uuid4().hex)

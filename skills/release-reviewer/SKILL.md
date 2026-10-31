@@ -17,7 +17,7 @@ description: Review direct pre-release blockers and new deployment dependencies 
 python -X utf8 -B "<skill-dir>/scripts/review_session.py" start --workspace "<工作區>" --project "<Repo path>" --base "<基礎分支>" --head "<比較分支>"
 ~~~
 
-保存回傳的 request_id、runtime_root、context_dir、draft_path 與 files。先讀 owned workspace instructions 和所有固定 Repo 的適用 AGENTS.md 證據，再開始語意審查。從頭到尾沿用同一 request、固定 SHA、證據及搜尋紀錄；完整 capture 後才進入語意審查。
+Workbench 提供 `--request-id` 時照原樣攜帶；重試沿用同一 ID，明確重新同步才建立新 ID。保存回傳的 request_id、runtime_root、context_dir、draft_path 與 files。先讀 owned workspace instructions 和所有固定 Repo 的適用 AGENTS.md 證據，再開始語意審查。從頭到尾沿用同一 request、固定 SHA、證據及搜尋紀錄；完整 capture 後才進入語意審查。
 
 短分支名稱只解析本機分支，保持離線。只有明確的遠端 base/head 才在本機預檢成功後依 remote 精確 fetch 一次；同步失敗保留錯誤或缺口，絕不以舊 ref 替代。Supporting Repo 只固定擷取當下已提交 HEAD，不 fetch。capture 完成後，step、修稿、check、finish 和重試都不得新增網路讀取或 lazy fetch。啟動流程見[session 操作](references/session-workflow.md)；遇到修稿或錯誤再讀[續跑細節](references/session-details.md)。
 
@@ -30,7 +30,7 @@ python -X utf8 -B "<skill-dir>/scripts/review_session.py" start --workspace "<�
 - 新依賴以入口 base 的整個 Repo 為基準，查首次使用、部署定義、目標及操作權限。已使用資源、未使用設定、等價搬移與其他 Repo 已使用的資源，按既有語意判斷；單次搜尋零命中不足以排除關聯。未知 provider 不推定為 Kafka。
 - 對七類依賴與每個 supporting Repo 明確完成語意判斷或保留缺口。靜態檢查與實際環境確認分開；Checklist 的確認須有核對人、日期及驗證證據，不適用須寫理由。新增資源本身不自動成為程式阻擋。
 
-先使用 capture 產生的 worklist，之後依發現的 caller、consumer、alias 和契約批次讀取／搜尋。逐筆核對 Repo、source、ref、path、SHA 及行號。大型回應依 artifact 的 JSON pointer 和 continuation 續讀；完整證據已保存不代表 reviewer 已讀完。需要完整操作與 JSON 範例時載入[續跑細節](references/session-details.md)及[證據操作](references/evidence-workflow.md)。
+先使用 capture 產生的 worklist，之後依發現的 caller、consumer、alias 和契約批次讀取／搜尋。逐筆核對 Repo、source、ref、path、SHA 及行號。大型回應依 artifact 的 JSON pointer 和 continuation 續讀；摘要未回傳內容時，先從 offset 0 讀第一頁，再沿各自的字串與後續項目游標續讀。完整證據已保存不代表 reviewer 已讀完。需要完整操作與 JSON 範例時載入[快速續跑](references/fast-session.md)、[續跑細節](references/session-details.md)及[證據操作](references/evidence-workflow.md)。
 
 ~~~powershell
 python -X utf8 -B "<skill-dir>/scripts/review_session.py" step --runtime-root "<runtime>" --request-id "<id>" --worklist "<context>/review-worklist.json" --response-format auto
@@ -38,7 +38,7 @@ python -X utf8 -B "<skill-dir>/scripts/review_session.py" step --runtime-root "<
 
 ## 3. 完成草稿、核對並發布
 
-完成 context 內的 ReleaseReviewDraft/v3 草稿。只在逐項審查後標記 reviewed；保留結構、來源、搜尋、merge-parent、依賴與 Group 契約缺口。只記非機密鍵名和邏輯識別，勿將密碼、Token、金鑰或完整連線字串寫入草稿或報告。預檢欄位與 validator 規則以[審查規則](references/review-rules.md)為準；遇到預檢錯誤，依訊息修稿，不得把缺口改成完成。
+完成 context 內的 ReleaseReviewDraft/v3 草稿。具備 `ReleaseReviewUpdates/v1` 時，以小型 UTF-8 更新檔保存已讀證據上的判斷及續讀進度；先提交草稿更新，再執行下一批證據操作。只有明確完成語意審查時才標記 reviewed；操作成功或證據已保存都不代表審查完成。保留結構、來源、搜尋、merge-parent、依賴與 Group 契約缺口。只記非機密鍵名和邏輯識別，勿將密碼、Token、金鑰或完整連線字串寫入草稿或報告。預檢欄位與 validator 規則以[審查規則](references/review-rules.md)為準；遇到預檢錯誤，依訊息修稿，不得把缺口改成完成。
 
 完成後依序執行：
 

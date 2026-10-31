@@ -8,7 +8,7 @@ Use the request facade for new reviews. The original `git_review_context.py`, `e
 python -X utf8 -B "<skill>/scripts/review_session.py" start --workspace "<group>" --project "<repo>" --base "main" --head "feature"
 ```
 
-Supply `--workspace-file` for a declared saved workspace. Group requests default to `.release-review-runtime/` outside all repositories. A workspace that is itself a Git repository needs `--runtime-root` outside every Git root. Keep the returned `request_id`, `runtime_root`, `context_dir`, `draft_path` and `files` paths. An optional `--request-id` is 32 lowercase hexadecimal characters; repeating it with identical inputs resumes that request, while different inputs are rejected.
+Supply `--workspace-file` for a declared saved workspace. Group requests default to `.release-review-runtime/` outside all repositories. A workspace that is itself a Git repository needs `--runtime-root` outside every Git root. Keep the returned `request_id`, `runtime_root`, `context_dir`, `draft_path` and `files` paths. An optional `--request-id` is 32 lowercase hexadecimal characters; repeating it with identical inputs resumes that request, while different inputs are rejected. Workbench prompts carry a generated ID; retries retain it and a requested resync gets a new ID.
 
 The runtime marker is `.release-reviewer-runtime.json`, schema `ReleaseReviewRuntime/v1`. Each `jobs/<id>.json` uses `ReleaseReviewSession/v1`. New contexts use an owned `release-reviewer-session/v2` marker under `sessions/<id>/`; legacy v1 sessions retain their system-temp boundary. This runtime belongs only to Release Reviewer. Each request fetches its explicit remote branches and seals its own snapshots. `--refresh` and `--auth-scope` are accepted for workbench routing; they do not enable a shared fetch or pack cache.
 
@@ -18,7 +18,7 @@ The runtime marker is `.release-reviewer-runtime.json`, schema `ReleaseReviewRun
 
 ## Ordered rounds
 
-Save a UTF-8 JSON array and invoke:
+Save a UTF-8 JSON array and invoke. A one-operation file is still `[ { ... } ]`; do not put a large request body or draft in argv. PowerShell can write the file and call step in the same shell invocation:
 
 ```powershell
 python -X utf8 -B "<skill>/scripts/review_session.py" step --runtime-root "<runtime>" --request-id "<id>" --requests-file "<context>/round-1.json"
@@ -33,7 +33,23 @@ python -X utf8 -B "<skill>/scripts/review_session.py" step --runtime-root "<runt
 ]
 ```
 
+```powershell
+$requestsFile = Join-Path $context "round-2.json"
+$json = @'
+[
+  {"id":"billing-base","op":"search","source":"base","query":"BillingDb"},
+  {"id":"service-window","op":"read-window","source":"head","path":"src/service.py","line_start":1,"line_count":80}
+]
+'@
+[System.IO.File]::WriteAllText($requestsFile, $json, [System.Text.UTF8Encoding]::new($false))
+python -X utf8 -B $script step --runtime-root $runtime --request-id $requestId --requests-file $requestsFile --response-format auto
+```
+
 For the initial reads use `step --worklist <context>/review-worklist.json --response-format auto`. The helper derives stable operation IDs from each complete worklist request; repeating the same worklist reuses checkpoints. `--worklist` and `--requests-file` are mutually exclusive. The worklist retains all parent-view metadata, but initially reads only `required_merge_views`; other captured parents remain available for follow-up. For later rounds save the ordered operations above. Reads support inclusive line bounds; supporting sources use the fixed catalog Repo ID and `source="supporting"`. Merge-parent reads include its captured full `ref`. `list` returns fixed paths, `patch` accepts `diff.patch`, `release.patch` or `merge-output.txt`. `instructions` returns the entry's final clean merge-preview tree (or head if no preview) or the supporting Repo's captured HEAD; apply root and nested instructions only to their applicable paths. Workspace-ancestor instructions are separate frozen files; the mutable Repo worktree cannot replace fixed Repo instructions.
+
+`read-window` accepts `line_start >= 1` and `1 <= line_count <= 1000`. It returns the actual `line_count`, `line_end`, `total_lines`, `content_sha256`, `requested_line_count`, and `next_line_start`/`next_window`; the window is shortened at EOF. A start beyond EOF returns an empty `lines` array with no next cursor. Existing `read` line bounds stay strict and inclusive. Consecutive case-sensitive literal searches that share Repo, source and ref can be sent together; the helper uses one multi-pattern Git grep call and still records each query separately. `ignore_case=true` uses the existing path.
+
+When supported, use `step --updates-file <file>` with a UTF-8 `ReleaseReviewUpdates/v1` document no larger than 1 MiB. It contains this `request_id`, `expected_revision`, unique `update_id`, `draft_updates` JSON pointer/value pairs, and optional progress fields `read_evidence_ids`, `unread_cursor`, `excluded_questions`, and `next_action`; saved progress is capped at 256 KiB. Draft updates commit atomically before the evidence batch. If an operation later fails, the update remains saved with the successful operation prefix. Repeating an identical update ID and content returns the previous revision; changed content requires a new ID and current revision. A conflict points to `/expected_revision`; reload status, merge deliberately, and do not overwrite a newer draft. Progress tracks reading and next actions; it does not mark coverage or semantic findings reviewed automatically.
 
 Each new context records the full start validation and binds its source description, directory inventory and every snapshot file hash to the request. Each round checks that receipt against the complete contents and structure of each used Repo, once per Repo, before reusing the prior structural validation. Added loose objects, changed controls, source descriptors, pack or index are terminal damage. Older contexts without the policy perform the original full validation. Successful IDs are checkpoints: identical input returns the saved artifact and does not append another logical result. A failed operation has no checkpoint and may be corrected under its original ID. `complete=false`, `next_index` and the valid prefix identify what remains. Changing an already successful ID's input is an error; use a new ID for new work.
 
@@ -43,15 +59,25 @@ Search computation may be reused across rounds inside one frozen context. Source
 
 `--response-format auto` selects the smaller response. In `ReleaseReviewStep/v2`, a full read retains its Repo, source, ref and path, and its `content_id` is the SHA-256 of its original blob bytes and points to `contents[content_id].lines`; different sources remain distinct evidence even when their lines are shared. Bounded reads retain their own line numbers. The default legacy response remains unchanged.
 
-The CLI response is bounded to 24 KiB. If it returns an artifact, navigate the complete saved result with operations such as:
+The CLI response is bounded to 24 KiB. When a summary omits content, its `continue` starts at the original content pointer and offset zero. Read that first page before following its nested string/field cursor. Track a page's `next_page` separately so large fields and later sibling items are both visited. If a summary includes `fields_continue`, follow it too; all reported offsets are relative to the selected list or object. Large strings use the largest prefix that fits the actual serialized UTF-8 byte limit.
+
+If a step response returns an artifact, navigate the complete saved result with operations such as:
 
 ```json
 [{"id":"page-1","op":"view","artifact":"<64-hex>","pointer":"/operations/0/result/lines","offset":0,"page_size":100}]
 ```
 
-Use `next_offset` or `next_string_offset` until the selected content is read. A large single field can return a direct JSON pointer, a `continue` request, and a `next_page` request for later sibling items. Copy the selected request, assign a new unique operation `id`, and submit it as a `view` operation in the same session; repeat this for each continuation. `string_offset` resumes a segmented string. `evidence_complete` means the full result was saved, not that semantic review is complete or that the reviewer has read it. Pure saved-artifact views and draft checks execute zero Git commands.
+Use `next_offset` or `next_string_offset` until the selected content is read. The standalone `view --runtime-root <runtime> --request-id <id> --artifact <id> --pointer <pointer> --offset <n> --page-size <n> --string-offset <n>` reads and hash-validates a page without checkpointing it. The older step `op="view"` remains available and saves an operation checkpoint. `evidence_complete` means the full result was saved, not that semantic review is complete or that the reviewer has read it. Both view modes execute zero Git commands; standalone `view` does not write artifact or manifest files.
+
+`status --summary --runtime-root <runtime> --request-id <id>` returns request identity and phase, completed/remaining worklist counts, draft path/revision, durable progress, and publication outcome. It reads metadata and draft diagnostics only: no Git, artifact write, or manifest update. Older helpers without this capability retain regular `status`.
 
 For a shared response navigate `/contents/<content_id>/lines`; for a legacy response navigate `/operations/<index>/result/lines`. The saved artifact contains the entire result, even if the first response is only a summary.
+
+Patch operations retain the captured raw patch bytes and SHA-256; their display is segmented by file header and hunk with byte offsets. UTF-8, UTF-16 and UTF-32 BOMs are decoded explicitly. When needed, pass a known codec using `{"id":"patch-1","op":"patch","path":"diff.patch","encoding":"cp1252"}`. Unknown or invalid bytes are rendered with reversible byte escapes and `display_has_byte_escapes=true`; do not treat those escaped lines as a fully decoded source excerpt.
+
+## Measurements
+
+`capture_seconds` retains its original whole-capture meaning. New fields separate capture phase timings, capture Git command time/output bytes, fetch time, network-lock wait, pack creation, index creation, snapshot validation, request-owner and manifest-lock wait, evidence reads, searches, publication verification and cleanup. `step_output_bytes` keeps its existing Git-output meaning; `cli_stdout_bytes`/`cli_stderr_bytes` measure serialized stateful CLI output. Pure read-only `view`, `status --summary` and `capabilities` do not persist metrics. Agent tool round trips, model tokens, and HTTP/SSH request counts remain `null` when the host does not expose them. Do not infer an efficiency gain from helper Git counters alone.
 
 ## Check, finish and cancel
 

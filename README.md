@@ -1,12 +1,12 @@
 # Release Reviewer｜上版檢查
 
-獨立 Codex Skill **0.10.1**。只接受 Repo、基礎分支、比較分支，固定合併前審查。檢查直接阻止上版的 P0／P1、相關功能鏈與新增部署依賴，在 VSCode 受審 Repo/review-reports 產生**一份含可填寫 Checklist 的繁體中文 Release Report**。本補丁版只修正文檔與驗證證據記載，執行行為及資料格式維持 0.10.0；完整 Agent 端到端效能與三模型語意矩陣仍待驗收。GitHub tag release 會先通過 Windows／Python 3.10、3.14 CI 與封包驗證，再發布正式 Release。
+Standalone Codex Skill **0.11.0** for fixed-branch pre-release review. It reports P0/P1 blockers, functional-chain breaks and deployment dependencies in one Traditional Chinese report with a human-editable checklist. The staged helper features ship with explicit limits: the optional supporting snapshot cache, end-to-end timing, Agent tool-call counts and the three-model semantic matrix remain gated or unmeasured. See [0.11.0 release notes](docs/releases/v0.11.0.md).
 
 ## 安裝與使用
 
 需要 Python 3.10+、Git 及可使用本機 Skills 的 Codex。Git 須支援 merge-tree --write-tree 與 --merge-base；缺少乾淨預覽時保留缺口，不改用直接比較。
 
-將 skills/release-reviewer 複製到 Codex Skills 目錄，或解壓 dist/release-reviewer-0.10.1.zip。CODEX_HOME 有設定時使用其 skills 子目錄，否則使用使用者的 .codex/skills。
+將 skills/release-reviewer 複製到 Codex Skills 目錄，或解壓 dist/release-reviewer-0.11.0.zip。CODEX_HOME 有設定時使用其 skills 子目錄，否則使用使用者的 .codex/skills。
 
 ~~~text
 $release-reviewer Repo=OrderService 基礎分支=origin/main 比較分支=origin/feature/payment
@@ -25,9 +25,9 @@ $release-reviewer Repo=C:\projects\OrderService 基礎分支=main 比較分支=f
 
 祖先豁免另需 capture 封存的 `ancestor_path` commit 證據，由發布器驗證 hash 與 parent 連線；草稿不能自行宣告祖先關係。
 
-## 0.10.1 更新
+## 0.11.0 Updates
 
-本補丁版核對並修正文檔與 v0.10.0 程式、設定、CI 及歷史產出之間的差異，並標明無法由保存日誌證實的測試執行紀錄。沒有執行行為或資料格式變更，細節見[0.10.1 發行紀錄](docs/releases/v0.10.1.md)。
+This release fixes response pagination, adds phase-level measurements, read windows, read-only status/view, revisioned draft progress updates, structured repair diagnostics and compatible literal-search batching. It preserves Context/Draft/Report v3 and existing strict reads. The supporting snapshot cache stays disabled until isolation tests and the paired performance gates pass; helper counters are not an end-to-end or semantic-quality claim.
 
 ## 0.10.0 更新（歷史）
 

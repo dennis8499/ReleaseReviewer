@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import time
 
 import git_support as git
 import review_runtime
@@ -249,7 +250,9 @@ def seal(context: Path, record: dict, refs: list[str], *, env=None, extra_commit
     finally:
         temporary.unlink(missing_ok=True)
     before = receipt_inputs(context, record)
+    validation_started = time.perf_counter()
     validate(context, record)
+    git.record_capture_stage("snapshot_validation_seconds", time.perf_counter() - validation_started)
     after = receipt_inputs(context, record)
     require(before == after, "完整快照驗證期間來源或檔案已變動。")
     record["validation_receipt"] = after

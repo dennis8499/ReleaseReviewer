@@ -21,6 +21,23 @@ ACTIVE = ContextVar("review_coordination", default=None)
 RUNTIME_SCHEMA = "ReleaseReviewRuntime/v1"
 IDENTIFIER = re.compile(r"^[a-f0-9]{32}$")
 DIGEST = re.compile(r"^[a-f0-9]{64}$")
+LOCK_METRICS = ContextVar("release_review_lock_metrics", default=None)
+
+
+@contextmanager
+def measure_lock_wait():
+    metrics = {"local_lock_wait_seconds": 0.0}
+    token = LOCK_METRICS.set(metrics)
+    try:
+        yield metrics
+    finally:
+        LOCK_METRICS.reset(token)
+
+
+def record_lock_wait(seconds):
+    metrics = LOCK_METRICS.get()
+    if metrics is not None:
+        metrics["local_lock_wait_seconds"] += max(0.0, float(seconds))
 
 
 class Cancelled(OSError):
@@ -55,6 +72,7 @@ class FileLock:
     def __init__(self, path, timeout=180, cancelled=None):
         self.path, self.timeout = Path(path), timeout
         self.cancelled, self.stream = cancelled, None
+        self.wait_seconds = 0.0
 
     def acquire(self, blocking=True):
         plain(self.path)
@@ -64,7 +82,8 @@ class FileLock:
         if not stream.tell():
             stream.write(b"\0")
             stream.flush()
-        deadline = time.monotonic() + self.timeout
+        wait_started = time.monotonic()
+        deadline = wait_started + self.timeout
         while True:
             if self.cancelled and self.cancelled():
                 stream.close()
@@ -78,6 +97,8 @@ class FileLock:
                     import fcntl
                     fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 self.stream = stream
+                self.wait_seconds = time.monotonic() - wait_started
+                record_lock_wait(self.wait_seconds)
                 return self
             except OSError as exc:
                 if not blocking:

@@ -170,3 +170,18 @@ def write_worklist(context: Path, manifest):
     for name, data in (("review-worklist.json", worklist), ("review-result-draft.json", draft)):
         with (context / name).open("x", encoding="utf-8", newline="\n") as stream:
             stream.write(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+    owner_path = context / ".release-reviewer-owned.json"
+    if owner_path.is_file():
+        try:
+            owner = json.loads(owner_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            owner = {}
+        identifier = owner.get("request_id") if owner.get("schema") == "release-reviewer-session/v2" else None
+        if isinstance(identifier, str) and len(identifier) == 32:
+            progress = {"schema": "ReleaseReviewProgress/v1", "request_id": identifier,
+                        "revision": 0,
+                        "progress": {"read_evidence_ids": [], "unread_cursor": None,
+                                     "excluded_questions": [], "next_action": ""},
+                        "applied_updates": {}}
+            with (context / "review-progress.json").open("x", encoding="utf-8", newline="\n") as stream:
+                stream.write(json.dumps(progress, ensure_ascii=False, indent=2) + "\n")

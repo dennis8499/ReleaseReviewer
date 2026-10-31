@@ -9,6 +9,7 @@ from __future__ import annotations
 
 
 import argparse
+from contextlib import contextmanager
 
 
 import contextvars
@@ -43,6 +44,7 @@ import sys
 
 
 import tempfile
+import time
 
 
 from dataclasses import dataclass
@@ -120,6 +122,7 @@ GIT_TIMEOUT_SECONDS = contextvars.ContextVar(
 NETWORK_ACTIVITY = contextvars.ContextVar("release_reviewer_network_activity", default=None)
 NETWORK_LOG = contextvars.ContextVar("release_reviewer_network_log", default=None)
 CAPTURE_PHASE = contextvars.ContextVar("release_reviewer_capture_phase", default="local-preflight")
+CAPTURE_METRICS = contextvars.ContextVar("release_reviewer_capture_metrics", default=None)
 
 
 def empty_network_activity() -> dict[str, int]:
@@ -143,11 +146,64 @@ def network_log():
 
 
 def capture_phase(value: str) -> None:
+    metrics = CAPTURE_METRICS.get()
+    if metrics is not None:
+        current = time.perf_counter()
+        previous = metrics.get("_phase_started")
+        if previous is not None:
+            previous_name = CAPTURE_PHASE.get()
+            metrics["phase_seconds"][previous_name] = metrics["phase_seconds"].get(previous_name, 0.0) + current - previous
+        metrics["_phase_started"] = current
     CAPTURE_PHASE.set(value)
     import review_coordinator
     active = review_coordinator.ACTIVE.get()
     if active:
         active.phase(value)
+
+
+@contextmanager
+def measure_capture():
+    """Collect capture-stage Git cost without changing evidence or Git output."""
+    metrics = {"phase_seconds": {}, "git_commands": 0, "git_seconds": 0.0,
+               "git_output_bytes": 0, "fetch_seconds": 0.0,
+               "network_lock_wait_seconds": 0.0, "pack_seconds": 0.0,
+               "index_seconds": 0.0, "snapshot_validation_seconds": 0.0}
+    token = CAPTURE_METRICS.set(metrics)
+    started = time.perf_counter()
+    CAPTURE_PHASE.set("local-preflight")
+    try:
+        yield metrics
+    finally:
+        current = time.perf_counter()
+        previous = metrics.pop("_phase_started", None)
+        if previous is not None:
+            phase = CAPTURE_PHASE.get()
+            metrics["phase_seconds"][phase] = metrics["phase_seconds"].get(phase, 0.0) + current - previous
+        metrics["capture_instrumented_seconds"] = current - started
+        CAPTURE_METRICS.reset(token)
+
+
+def _record_capture_git(args, elapsed, output_bytes, lock_wait=0.0):
+    metrics = CAPTURE_METRICS.get()
+    if metrics is None:
+        return
+    command = args[0] if args else ""
+    metrics["git_commands"] += 1
+    metrics["git_seconds"] += elapsed
+    metrics["git_output_bytes"] += output_bytes
+    if command == "fetch":
+        metrics["network_lock_wait_seconds"] += lock_wait
+        metrics["fetch_seconds"] += max(0.0, elapsed - lock_wait)
+    elif command == "pack-objects":
+        metrics["pack_seconds"] += elapsed
+    elif command == "index-pack":
+        metrics["index_seconds"] += elapsed
+
+
+def record_capture_stage(name, seconds):
+    metrics = CAPTURE_METRICS.get()
+    if metrics is not None and name in metrics:
+        metrics[name] += max(0.0, float(seconds))
 
 
 def capture_diagnostic(exc: Exception) -> dict[str, Any]:
@@ -180,6 +236,8 @@ def run_git(
     if not (args and args[0] == "fetch"):
         # Older Git ignores GIT_NO_LAZY_FETCH; deny implicit transports too.
         command_env["GIT_ALLOW_PROTOCOL"] = ""
+    started = time.perf_counter()
+    output_start = output_file.tell() if output_file is not None else 0
     try:
         runner = git_network_lease.run if args and args[0] == "fetch" else subprocess.run
         completed = runner(
@@ -192,10 +250,17 @@ def run_git(
             timeout=GIT_TIMEOUT_SECONDS.get(),
         )
     except subprocess.TimeoutExpired as exc:
+        _record_capture_git(args, time.perf_counter() - started, 0)
         raise ReviewContextError(
             f"Git 指令逾時（{GIT_TIMEOUT_SECONDS.get():g} 秒）：git {' '.join(args)}",
             hint="請確認 repository、磁碟或遠端連線狀態；可使用 --git-timeout 增加等待時間後重試。",
         ) from exc
+    output_bytes = len(completed.stdout or b"") + len(completed.stderr or b"")
+    if output_file is not None:
+        output_file.flush()
+        output_bytes += max(0, output_file.tell() - output_start)
+    _record_capture_git(args, time.perf_counter() - started, output_bytes,
+                        getattr(completed, "network_lock_wait_seconds", 0.0))
     if check and completed.returncode != 0:
         stderr = completed.stderr.decode("utf-8", errors="replace")
         raise GitCommandError(args, completed.returncode, stderr)
@@ -219,6 +284,7 @@ def run_git_capture(
     command_env["GIT_NO_LAZY_FETCH"] = "1"
     command_env["GIT_NO_REPLACE_OBJECTS"] = "1"
     command_env["GIT_ALLOW_PROTOCOL"] = ""
+    started = time.perf_counter()
     try:
         completed = subprocess.run(
             ["git", "-C", str(repo), *args],
@@ -229,11 +295,14 @@ def run_git_capture(
             timeout=GIT_TIMEOUT_SECONDS.get(),
         )
     except subprocess.TimeoutExpired as exc:
+        _record_capture_git(args, time.perf_counter() - started, 0)
         message = (
             f"Git 指令逾時（{GIT_TIMEOUT_SECONDS.get():g} 秒）："
             f"git {' '.join(args)}"
         )
         return 124, "", message
+    _record_capture_git(args, time.perf_counter() - started,
+                        len(completed.stdout or b"") + len(completed.stderr or b""))
     return (
         completed.returncode,
         completed.stdout.decode("utf-8", errors="replace"),

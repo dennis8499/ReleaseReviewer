@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.11.0 - 2026-11-01
+
+- Fix summary pagination so the first omitted page is reachable; size artifact and string pages by serialized UTF-8 JSON bytes and keep sibling-item cursors visible.
+- Record capture phases, Git command/output cost, fetch and network-lock time, pack/index time, snapshot validation, evidence reads, searches, publication verification, cleanup, and CLI output bytes. Keep unobservable Agent round trips, model tokens and HTTP/SSH requests `null`.
+- Add `read-window`, hash-checked read-only `view`, bounded `status --summary`, revisioned idempotent draft updates and durable review progress. Preserve strict `read`, v3 artifacts, legacy CLI and same-request offline continuation.
+- Batch compatible case-sensitive literal searches into one Git grep while preserving each query's result and search ID. Publication still independently replays the saved search ledger.
+- Decode patch BOMs and explicit codecs without changing captured bytes; unknown bytes use reversible escapes. Add structured operation-field repair diagnostics and concise session examples.
+- The supporting snapshot pack cache remains withheld until the isolated-cache tests and paired warm/cold performance gates can be measured. No end-to-end time, Agent-tool-call, or semantic-quality improvement is claimed by helper counters alone.
+
 ## 0.10.1 - 2026-10-30
 
 - Reconcile current and historical documentation with the v0.10.0 source, configuration, CI workflow and retained artifacts; clarify archived attachment references and validation limits. This documentation-only patch does not change runtime behavior or data formats.

@@ -69,3 +69,10 @@ python -X utf8 -B "<skill-dir>/scripts/evidence.py" view --context-dir "<context
 篩選只選 batch 的 `results[].result.search_id` 或單筆搜尋 artifact。同一 ID 對應多個 batch index 時全部保留，維持原始順序及 index；重複指定 ID 不重複追加項目。未知 ID、非法 ID 或非搜尋 artifact 報錯。先篩選再對 matches 分頁，batch 的所有 error 項及原 `complete` 都保留，未被引用的 `contents` 只從回傳視圖移除。原 artifact ID／path／hash、完整檔案與 `searches/<id>.json` 搜尋紀錄不改；未指定 ID 沿用原本 view 格式。
 
 快取只存在單次操作內，跨命令重新驗證固定來源；發佈前仍核對搜尋紀錄與原始版本。單次發佈驗證共用相同內容及路徑分類的整檔快照分析，引用仍逐筆核對來源與行號；私鑰、設定值及認證遮蔽規則相同。diff.patch／release.patch 維持既有生成條件。由同一主流程依序落盤，所有證據操作結束後才發佈或清理 context。
+
+
+## Session windows and efficient request files
+
+When `features.read_window` is true, the session facade accepts `read-window` with `line_start >= 1` and `line_count` from 1 through 1000. Otherwise keep using strict `read`. It returns the actual line range, total lines, and a next-window cursor; a request beyond EOF returns an empty window. Keep legacy `read` bounds strict. When `features.literal_search_batch` is true, consecutive case-sensitive literal searches for the same Repo/source/ref can share a Git grep call while retaining one result and search ID per query.
+
+Write every request file as a UTF-8 JSON array, including a single operation, then create it and call `step` in the same shell invocation. See [session workflow](session-workflow.md) for the ready-to-run PowerShell form, revisioned draft updates, read-only status/view, and recovery behavior.

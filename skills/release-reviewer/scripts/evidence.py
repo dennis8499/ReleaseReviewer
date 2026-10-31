@@ -25,6 +25,7 @@ SHA = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 SEARCH_FLAGS = ("grep", "--no-textconv", "--full-name", "-I", "-n", "-z", "-F")
 _CACHE = ContextVar("release_evidence_operation", default=None)
 _METRICS = ContextVar("release_evidence_metrics", default=None)
+_NO_RAW_OVERRIDE = object()
 
 
 @contextmanager
@@ -290,14 +291,11 @@ def list_files(manifest: dict, context: Path, source: str, ref=None, repo=None) 
     return _list_files(manifest, context, source, ref, repo)[1]
 
 
-def search(manifest: dict, context: Path, source: str, query: str, *, ignore_case=False, ref=None, repo=None) -> dict:
-    require(isinstance(query, str) and query and "\0" not in query and "\n" not in query,
-            "搜尋字串須為非空白的單行 literal。")
+def _search_identity(manifest, context, source, query, ignore_case, ref, repo):
     reference, env = source_version(manifest, context, source, ref, repo)
     selected_repo = repository(manifest, repo)
     effective = dict(env) if env else dict(os.environ)
     effective.update(GIT_NO_LAZY_FETCH="1", GIT_ALLOW_PROTOCOL="")
-    # Bind output-affecting Git settings without persisting possible credentials.
     environment_fingerprint = hashlib.sha256(json.dumps(
         {name: value for name, value in effective.items() if name.startswith("GIT_")},
         sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
@@ -306,19 +304,28 @@ def search(manifest: dict, context: Path, source: str, query: str, *, ignore_cas
            query, bool(ignore_case), flags, environment_fingerprint, effective.get("GIT_DIR"),
            effective.get("GIT_OBJECT_DIRECTORY"), effective.get("GIT_ALTERNATE_OBJECT_DIRECTORIES"))
     state = _cache(manifest, context)
-    if state is not None and key in state["searches"]:
-        cached = state["searches"][key]
-        return {**cached, "matches": [match.copy() for match in cached["matches"]]}
     persistent = bool(state is not None and state.get("persistent") and manifest.get("snapshot_policy"))
     snapshot = selected_repo.get("snapshot", {})
     identity = {"schema": "ReleaseSearchInput/v1", "repo": selected_repo["id"], "repo_path": selected_repo["path"], "source": source,
                 "context": str(Path(context).resolve()), "git_dir": effective.get("GIT_DIR"),
                 "git_environment_sha256": environment_fingerprint, "flags": list(flags),
-                "ref": reference, "snapshot": {key: snapshot.get(key) for key in ("policy", "git_dir", "object_format")},
+                "ref": reference, "snapshot": {name: snapshot.get(name) for name in ("policy", "git_dir", "object_format")},
                 "tree": snapshot.get("sources", {}).get(reference, {}).get("tree"),
                 "query": query, "ignore_case": bool(ignore_case)}
     cache_key = hashlib.sha256(canonical(identity)).hexdigest()
     cache_file = context / "search-cache" / (cache_key + ".json")
+    return reference, env, selected_repo, effective, flags, key, state, persistent, identity, cache_file
+
+
+def search(manifest: dict, context: Path, source: str, query: str, *, ignore_case=False, ref=None, repo=None,
+           _raw_override=_NO_RAW_OVERRIDE) -> dict:
+    require(isinstance(query, str) and query and "\0" not in query and "\n" not in query,
+            "搜尋字串須為非空白的單行 literal。")
+    (reference, env, selected_repo, effective, flags, key, state, persistent,
+     identity, cache_file) = _search_identity(manifest, context, source, query, ignore_case, ref, repo)
+    if state is not None and key in state["searches"]:
+        cached = state["searches"][key]
+        return {**cached, "matches": [match.copy() for match in cached["matches"]]}
     if persistent:
         try:
             require(cache_file.is_file(), "Search cache miss.")
@@ -344,11 +351,14 @@ def search(manifest: dict, context: Path, source: str, query: str, *, ignore_cas
             # This optional accelerator is rebuilt; authoritative search records
             # remain unchanged and publication independently replays them.
             pass
-    args = list(flags)
-    args += ["-e", query, reference, "--"]
-    selected = {**manifest, "repo": selected_repo["path"]}
-    raw = command(selected, args, env=env, acceptable=(0, 1))
-    if state is not None:
+    if _raw_override is _NO_RAW_OVERRIDE:
+        args = list(flags)
+        args += ["-e", query, reference, "--"]
+        selected = {**manifest, "repo": selected_repo["path"]}
+        raw = command(selected, args, env=env, acceptable=(0, 1))
+    else:
+        raw = _raw_override
+    if state is not None and _raw_override is _NO_RAW_OVERRIDE:
         state["search_runs"] += 1
     matches = []
     offset = 0
@@ -385,6 +395,62 @@ def search(manifest: dict, context: Path, source: str, query: str, *, ignore_cas
             # still saves and later verifies the authoritative search record.
             pass
     return result
+
+
+def search_many(manifest: dict, context: Path, source: str, queries: list[str], *, ref=None, repo=None) -> list[dict]:
+    """Batch consecutive case-sensitive literal searches without changing ledgers."""
+    require(isinstance(queries, list) and queries, "search_many requires a nonempty query array.")
+    require(all(isinstance(query, str) and query and "\0" not in query and "\n" not in query
+                for query in queries), "Each search query must be a nonempty single-line literal.")
+    unique = list(dict.fromkeys(queries))
+    if len(unique) > 32 or sum(len(query.encode("utf-8")) + 3 for query in unique) > 8192:
+        return [search(manifest, context, source, query, ref=ref, repo=repo) for query in queries]
+
+    # Reuse the exact prior cache path/identity rules. If any query might hit
+    # either cache, let the existing serial path load it without a Git command.
+    for query in unique:
+        (_reference, _env, _selected, _effective, _flags, key, state,
+         persistent, _identity, cache_file) = _search_identity(
+             manifest, context, source, query, False, ref, repo)
+        if ((state is not None and key in state["searches"])
+                or (persistent and cache_file.exists())):
+            return [search(manifest, context, source, item, ref=ref, repo=repo) for item in queries]
+
+    reference, env = source_version(manifest, context, source, ref, repo)
+    selected_repo = repository(manifest, repo)
+    args = list(SEARCH_FLAGS)
+    for query in unique:
+        args.extend(("-e", query))
+    args.extend((reference, "--"))
+    raw = command({**manifest, "repo": selected_repo["path"]}, args, env=env, acceptable=(0, 1))
+    state = _cache(manifest, context)
+    if state is not None:
+        state["search_runs"] += 1
+    prefix = reference.encode() + b":"
+    rows = []
+    offset = 0
+    while offset < len(raw):
+        filename_end = raw.find(b"\0", offset)
+        require(filename_end >= 0, "Git grep output is incomplete.")
+        number_end = raw.find(b"\0", filename_end + 1)
+        require(number_end >= 0, "Git grep output is incomplete.")
+        line_end = raw.find(b"\n", number_end + 1)
+        record_end = len(raw) if line_end < 0 else line_end + 1
+        filename = raw[offset:filename_end]
+        number = raw[filename_end + 1:number_end]
+        line = raw[number_end + 1:len(raw) if line_end < 0 else line_end]
+        require(filename.startswith(prefix) and number.isdigit(), "Git grep output identity is invalid.")
+        rows.append((raw[offset:record_end], line))
+        offset = record_end
+
+    by_query = {}
+    for query in unique:
+        literal = query.encode("utf-8")
+        selected = b"".join(record for record, line in rows if literal in line)
+        by_query[query] = search(manifest, context, source, query, ref=ref, repo=repo,
+                                 _raw_override=selected)
+    return [{**by_query[query], "matches": [match.copy() for match in by_query[query]["matches"]]}
+            for query in queries]
 
 
 def record_search(context: Path, result: dict) -> str:
@@ -443,7 +509,8 @@ def validate_recorded_searches(context: Path, manifest: dict):
 
 
 SOURCES = ("base", "head", "merge-base", "merge-preview", "merge-parent", "supporting")
-REQUEST_FIELDS = {"action", "source", "ref", "repo", "path", "query", "ignore_case", "line_start", "line_end"}
+REQUEST_FIELDS = {"action", "source", "ref", "repo", "path", "query", "ignore_case",
+                  "line_start", "line_end", "line_count"}
 EVIDENCE_ERRORS = (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired)
 
 
@@ -452,8 +519,21 @@ def request_result(manifest: dict, context: Path, request: dict, *, contents=Non
     require(isinstance(request, dict), "batch request 必須是物件。")
     require(not request.keys() - REQUEST_FIELDS, "batch request 含未知欄位。")
     action = request.get("action")
-    require(action in ("list", "read", "search"), "未知的證據操作。")
-    bounded = "line_start" in request or "line_end" in request
+    require(action in ("list", "read", "read-window", "search"), "未知的證據操作。")
+    has_line_range = "line_start" in request or "line_end" in request
+    require(not has_line_range or action in ("read", "read-window"),
+            "line_start／line_end 僅適用於 read 或 read-window。")
+    bounded = action == "read" and has_line_range
+    windowed = action == "read-window"
+    if windowed:
+        start, count = request.get("line_start"), request.get("line_count")
+        require(type(start) is int and start >= 1,
+                "read-window line_start must be an integer of at least 1.")
+        require(type(count) is int and 1 <= count <= 1000,
+                "read-window line_count must be between 1 and 1000; reduce the window size.")
+        require("line_end" not in request, "read-window does not accept line_end; use line_count.")
+    elif "line_count" in request:
+        require(False, "line_count is only valid for read-window.")
     if bounded:
         require(action == "read", "line_start／line_end 僅適用於 read。")
         start, end = request.get("line_start"), request.get("line_end")
@@ -469,10 +549,26 @@ def request_result(manifest: dict, context: Path, request: dict, *, contents=Non
     if action == "list":
         reference, paths = _list_files(manifest, context, source, ref, repo)
         return {"source": source, "ref": reference, "repo": repo, "paths": paths}
-    if action == "read":
+    if action in ("read", "read-window"):
         reference, _, content = _read_blob(manifest, context, source, path, ref, repo)
         require(b"\0" not in content, "二進位內容請列為 metadata-only，不能當作文字讀取。")
         identity = {"repo": repo, "source": source, "ref": reference, "path": path}
+        if windowed:
+            lines = text_lines(content)
+            start, count = request["line_start"], request["line_count"]
+            selected = lines[start - 1:start - 1 + count]
+            end = start + len(selected) - 1 if selected else None
+            next_start = end + 1 if end is not None and end < len(lines) else None
+            result = {**identity, "content_sha256": hashlib.sha256(content).hexdigest(),
+                      "line_start": start, "line_end": end, "line_count": len(selected),
+                      "requested_line_count": count,
+                      "total_lines": len(lines), "lines": selected,
+                      "next_line_start": next_start}
+            if next_start is not None:
+                result["next_window"] = {"op": "read-window", "repo": repo, "source": source,
+                                         "ref": reference, "path": path,
+                                         "line_start": next_start, "line_count": count}
+            return result
         if bounded:
             lines = text_lines(content)
             require(end <= len(lines), f"line_end 超過固定檔案總行數：{len(lines)}。")
@@ -547,7 +643,7 @@ def _prefetch_reads(manifest, context, requests):
         return
     groups = {}
     for request in requests:
-        if not isinstance(request, dict) or request.get("action") != "read":
+        if not isinstance(request, dict) or request.get("action") not in ("read", "read-window"):
             continue
         path = request.get("path")
         if not safe_path(path) or "\n" in path or "\r" in path:
@@ -647,7 +743,9 @@ def main(argv=None):
             with operation_cache(manifest, context):
                 result = request_result(manifest, context,
                                          {key: getattr(args, key) for key in REQUEST_FIELDS
-                                          if key not in {"line_start", "line_end"} or getattr(args, key) is not None})
+                                          if hasattr(args, key) and
+                                          (key not in {"line_start", "line_end", "line_count"} or
+                                           getattr(args, key) is not None)})
         failed = args.action == "batch" and not result["complete"]
         if args.page_size and args.action != "view":
             result = review_runtime.page(result, context, size=args.page_size, offset=args.offset)

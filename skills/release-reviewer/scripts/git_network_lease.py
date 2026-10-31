@@ -99,6 +99,7 @@ class DirectoryLease:
                       "state": "reserved", "childPid": None, "childStartedAt": None,
                       "processTreeConfirmed": False}
         self.acquired = False
+        self.wait_seconds = 0.0
 
     def acquire(self):
         if self.timeout <= 0:
@@ -106,7 +107,8 @@ class DirectoryLease:
         self.root.mkdir(parents=True, exist_ok=True)
         for parent in (self.root, *self.root.parents):
             _plain_directory(parent)
-        deadline = time.monotonic() + self.timeout
+        wait_started = time.monotonic()
+        deadline = wait_started + self.timeout
         while True:
             if self.cancelled and self.cancelled():
                 raise LeaseError("Git network admission cancelled")
@@ -119,6 +121,7 @@ class DirectoryLease:
                 time.sleep(min(0.1 + random.random() * 0.025, max(0, deadline - time.monotonic())))
                 continue
             self.acquired = True
+            self.wait_seconds = time.monotonic() - wait_started
             try:
                 _atomic_json(self.path / "owner.json", self.owner)
             except BaseException:
@@ -242,6 +245,7 @@ def run(command, *, input=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
                         break
                     time.sleep(0.02)
         result = subprocess.CompletedProcess(command, process.returncode, output, error)
+        result.network_lock_wait_seconds = lease.wait_seconds
         if check:
             result.check_returncode()
         return result

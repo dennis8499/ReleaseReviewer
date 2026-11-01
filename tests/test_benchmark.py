@@ -46,8 +46,9 @@ class BenchmarkTests(unittest.TestCase):
             root = Path(temporary)
             with self.assertRaisesRegex(ValueError, "outside"):
                 benchmark.validate_output_path(root / "candidate/results.json", (root / "candidate",))
-            self.assertEqual(benchmark.validate_output_path(root / "results.json", (root / "candidate",)),
-                             root / "results.json")
+            validated = benchmark.validate_output_path(root / "results.json", (root / "candidate",))
+            self.assertEqual("results.json", validated.name)
+            self.assertTrue(validated.parent.samefile(root))
 
     def test_report_normalization_checks_both_hashes_before_ignoring_run_fields(self):
         body = "fixed evidence\n- 擷取時間（UTC）：now\n- 快照擷取：now → later（UTC）。\n- 適用版本：fixed\n"

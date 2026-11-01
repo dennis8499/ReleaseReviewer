@@ -17,6 +17,38 @@ SPEC.loader.exec_module(benchmark)
 
 
 class BenchmarkTests(unittest.TestCase):
+    def test_dense_search_uses_three_expected_literal_queries_and_hit_counts(self):
+        requests = benchmark.dense_search_requests()
+        self.assertEqual(tuple(row["query"] for row in requests), benchmark.DENSE_SEARCH_QUERIES)
+        self.assertTrue(all(row["action"] == "search" and row["source"] == "base" for row in requests))
+        benchmark.validate_dense_search_results([
+            {"matches": range(benchmark.DENSE_LINES)},
+            {"matches": range(1000)},
+            {"matches": range(1)},
+        ])
+        with self.assertRaisesRegex(RuntimeError, "hit counts"):
+            benchmark.validate_dense_search_results([
+                {"matches": range(benchmark.DENSE_LINES)}, {"matches": range(999)}, {"matches": range(1)}])
+
+    def test_measurements_record_git_grep_calls_separately(self):
+        measured = benchmark.Measurements()
+        with mock.patch.object(benchmark.subprocess, "run", return_value=SimpleNamespace(returncode=0)):
+            with measured.count_git(), measured.stage("evidence"):
+                benchmark.subprocess.run(["git", "grep", "-F", "needle"])
+                benchmark.subprocess.run(["git", "status", "--short"])
+        stage = measured.stages["evidence"]
+        self.assertEqual(stage["git_subprocesses"], 2)
+        self.assertEqual(stage["git_grep_subprocesses"], 1)
+        self.assertGreaterEqual(stage["git_grep_seconds"], 0)
+
+    def test_benchmark_output_cannot_live_inside_a_payload(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with self.assertRaisesRegex(ValueError, "outside"):
+                benchmark.validate_output_path(root / "candidate/results.json", (root / "candidate",))
+            self.assertEqual(benchmark.validate_output_path(root / "results.json", (root / "candidate",)),
+                             root / "results.json")
+
     def test_report_normalization_checks_both_hashes_before_ignoring_run_fields(self):
         body = "fixed evidence\n- 擷取時間（UTC）：now\n- 快照擷取：now → later（UTC）。\n- 適用版本：fixed\n"
         metadata = {"generated_at": "now", "context_sha256": "context-hash", "head_sha": "commit",

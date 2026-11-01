@@ -37,7 +37,7 @@ class AutoContentTests(RepoTest):
                 self.assertEqual(min(sizes), len(evidence.compact_json(auto).encode("utf-8")))
                 self.assertEqual(choose_shared, "contents" in auto)
 
-    def test_requests_execute_once_and_bodies_decode_once_with_same_git_calls(self):
+    def test_requests_run_once_and_bodies_decode_once_with_same_git_calls(self):
         context, manifest = self.capture()
         requests = [{"action": "read", "source": source, "path": "src/service.py"}
                     for source in ("head", "merge-preview", "head")] + [
@@ -47,10 +47,12 @@ class AutoContentTests(RepoTest):
             normal = evidence.batch(manifest, context, requests)
         with patch.object(evidence, "command", wraps=evidence.command) as auto_git, \
                 patch.object(evidence, "request_result", wraps=evidence.request_result) as execute, \
+                patch.object(evidence, "search_many", wraps=evidence.search_many) as batch_search, \
                 patch.object(evidence, "text_lines", wraps=evidence.text_lines) as decode:
             auto = evidence.batch(manifest, context, requests, auto_content=True)
         self.assertEqual(normal, expand(auto))
-        self.assertEqual(len(requests), execute.call_count)
+        self.assertEqual(3, execute.call_count)
+        self.assertEqual(1, batch_search.call_count)
         self.assertEqual(1, decode.call_count)
         self.assertEqual(normal_git.call_args_list, auto_git.call_args_list)
 

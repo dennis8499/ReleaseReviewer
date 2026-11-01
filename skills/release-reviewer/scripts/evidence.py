@@ -418,8 +418,14 @@ def search_many(manifest: dict, context: Path, source: str, queries: list[str], 
 
     reference, env = source_version(manifest, context, source, ref, repo)
     selected_repo = repository(manifest, repo)
+    # When one literal is contained in every query, it is a complete superset
+    # search by itself. Avoid asking Git to evaluate redundant patterns (which
+    # can be much slower on dense results), then partition its rows below.
+    covering_query = min((candidate for candidate in unique
+                          if all(candidate in query for query in unique)),
+                         key=len, default=None)
     args = list(SEARCH_FLAGS)
-    for query in unique:
+    for query in ([covering_query] if covering_query is not None else unique):
         args.extend(("-e", query))
     args.extend((reference, "--"))
     raw = command({**manifest, "repo": selected_repo["path"]}, args, env=env, acceptable=(0, 1))
@@ -618,13 +624,41 @@ def batch(manifest: dict, context: Path, requests: list, *, shared_content=False
     contents = {} if shared_content or auto_content else None
     with operation_cache(manifest, context):
         _prefetch_reads(manifest, context, requests)
-        for index, request in enumerate(requests):
+        index = 0
+        while index < len(requests):
+            request = requests[index]
+            group_key = _literal_search_group_key(request)
+            end = index + 1
+            if group_key is not None:
+                while end < len(requests) and _literal_search_group_key(requests[end]) == group_key:
+                    end += 1
+            if group_key is not None and end - index > 1:
+                try:
+                    searched = search_many(
+                        manifest, context, group_key[0],
+                        [requests[position].get("query") for position in range(index, end)],
+                        ref=group_key[1], repo=group_key[2])
+                except EVIDENCE_ERRORS:
+                    # Preserve the established per-operation errors and allow
+                    # valid queries around one malformed query to succeed.
+                    searched = None
+                if searched is not None:
+                    for offset, result in enumerate(searched):
+                        try:
+                            result["search_id"] = record_search(context, result)
+                        except EVIDENCE_ERRORS as exc:
+                            results.append({"index": index + offset, "ok": False, "error": str(exc)})
+                        else:
+                            results.append({"index": index + offset, "ok": True, "result": result})
+                    index = end
+                    continue
             try:
                 result = request_result(manifest, context, request, contents=contents)
             except EVIDENCE_ERRORS as exc:
                 results.append({"index": index, "ok": False, "error": str(exc)})
             else:
                 results.append({"index": index, "ok": True, "result": result})
+            index += 1
     result = {"results": results, "complete": all(item["ok"] for item in results)}
     if shared_content or auto_content:
         result.update(schema="ReleaseReviewEvidenceBatch/v1", contents=contents)
@@ -634,6 +668,16 @@ def batch(manifest: dict, context: Path, requests: list, *, shared_content=False
         if len(compact_json(normal).encode("utf-8")) <= len(compact_json(result).encode("utf-8")):
             return normal
     return result
+
+
+def _literal_search_group_key(request):
+    """Return the common source identity only for compatible literal searches."""
+    if not isinstance(request, dict) or request.get("action") != "search":
+        return None
+    allowed = {"action", "source", "ref", "repo", "query", "ignore_case"}
+    if request.keys() - allowed or request.get("ignore_case", False) is not False:
+        return None
+    return (request.get("source", "base"), request.get("ref"), request.get("repo", "entry"))
 
 
 def _prefetch_reads(manifest, context, requests):

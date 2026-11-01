@@ -13,6 +13,7 @@ import io
 import json
 import os
 from pathlib import Path
+import platform
 import re
 import statistics
 import subprocess
@@ -27,6 +28,7 @@ SCENARIOS = (*DEFAULT_SCENARIOS, "large")
 STAGES = ("capture", "evidence", "validate", "publish")
 DENSE_LINES = 25000
 REPETITIONS = 12
+DENSE_SEARCH_QUERIES = ("DENSE_MATCH_", "DENSE_MATCH_00", "DENSE_MATCH_24999")
 
 
 def normalize(value, replacements=()):
@@ -106,6 +108,7 @@ def normalized_report(markdown, report, replacements, expected_context_sha256=No
 class Measurements:
     def __init__(self):
         self.stages = {name: dict(wall_seconds=0.0, git_subprocesses=0,
+                                  git_grep_subprocesses=0, git_grep_seconds=0.0,
                                   helper_commands=0, output_bytes=0, artifact_bytes=0)
                        for name in STAGES}
         self.active = None
@@ -140,10 +143,20 @@ class Measurements:
         original = subprocess.run
 
         def measured(command, *args, **kwargs):
+            started = time.perf_counter()
+            is_git = (isinstance(command, (list, tuple)) and command
+                      and Path(str(command[0])).name.lower() in {"git", "git.exe"})
+            is_git_grep = is_git and any(str(argument).lower() == "grep" for argument in command[1:])
             if (self.active is not None and isinstance(command, (list, tuple))
                     and Path(str(command[0])).name.lower() in {"git", "git.exe"}):
                 self.stages[self.active]["git_subprocesses"] += 1
-            return original(command, *args, **kwargs)
+            try:
+                return original(command, *args, **kwargs)
+            finally:
+                if self.active is not None and is_git_grep:
+                    stage = self.stages[self.active]
+                    stage["git_grep_subprocesses"] += 1
+                    stage["git_grep_seconds"] += time.perf_counter() - started
 
         subprocess.run = measured
         try:
@@ -238,6 +251,18 @@ def create_fixture(scenario, support, source_fixture=None):
     return case
 
 
+def dense_search_requests():
+    return [{"action": "search", "source": "base", "query": query}
+            for query in DENSE_SEARCH_QUERIES]
+
+
+def validate_dense_search_results(results):
+    expected = (DENSE_LINES, 1000, 1)
+    actual = tuple(len(row["matches"]) for row in results[-len(expected):])
+    if actual != expected:
+        raise RuntimeError(f"Dense literal search returned hit counts {actual}; expected {expected}.")
+
+
 def run_evidence(measurements, evidence, context, requests, shared_content=False):
     if hasattr(evidence, "batch"):
         auto = "auto_content" in inspect.signature(evidence.batch).parameters
@@ -322,10 +347,10 @@ def worker(skill_dir, scenario, shared_content=False, artifact_path=None, source
                             [{"action": "read", **{key: proof[key] for key in ("repo", "source", "ref", "path")}}
                              for proof in citations(draft)])
                 if scenario == "dense-search":
-                    requests.append({"action": "search", "source": "base", "query": "DENSE_MATCH_"})
+                    requests.extend(dense_search_requests())
                 results = run_evidence(measured, evidence, context, requests, shared_content)
-                if scenario == "dense-search" and len(results[-1]["matches"]) != DENSE_LINES:
-                    raise RuntimeError("Dense search lost matches.")
+                if scenario == "dense-search":
+                    validate_dense_search_results(results)
                 draft_path = support.save_draft(context, draft)
                 # Retain both default patches as part of the compatibility gate.
                 patches = {path.relative_to(context).as_posix(): path.read_bytes().hex()
@@ -433,9 +458,33 @@ def summarize(samples):
     return {"success": bool(samples) and all_passed, "scenarios": summary}
 
 
+def payload_digest(skill_dir):
+    root = Path(skill_dir).resolve()
+    value = hashlib.sha256()
+    for path in sorted(root.rglob("*")):
+        if path.is_file() and "__pycache__" not in path.parts and path.suffix not in {".pyc", ".pyo"}:
+            value.update(path.relative_to(root).as_posix().encode("utf-8") + b"\0")
+            value.update(hashlib.sha256(path.read_bytes()).digest())
+    return value.hexdigest()
+
+
+def validate_output_path(output, payload_dirs):
+    """Prevent benchmark output from changing a payload while it is measured."""
+    if output is None:
+        return None
+    resolved = Path(output).resolve()
+    for payload_dir in payload_dirs:
+        root = Path(payload_dir).resolve()
+        if resolved == root or root in resolved.parents:
+            raise ValueError("benchmark output must be outside the baseline and candidate payload directories")
+    return resolved
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline-skill-dir", type=Path)
+    parser.add_argument("--candidate-skill-dir", type=Path,
+                        help="Use an unpacked release payload instead of the source checkout.")
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--artifact-dir", type=Path, help="Keep normalized manifests, reports and patch bytes for each run.")
@@ -460,10 +509,19 @@ def main(argv=None):
         parser.error("--runs must be positive")
     if "large" in (args.scenario or ()) and (args.source_fixture is None or args.review_scenario is None):
         parser.error("--scenario large requires --source-fixture and --review-scenario; no semantic draft is generated")
-    current = ROOT / "skills/release-reviewer"
+    current = args.candidate_skill_dir or ROOT / "skills/release-reviewer"
+    try:
+        payload_dirs = (args.baseline_skill_dir, current)
+        args.output = validate_output_path(args.output, payload_dirs)
+        args.artifact_dir = validate_output_path(args.artifact_dir, payload_dirs)
+    except ValueError as exc:
+        parser.error(str(exc))
     for path in (args.baseline_skill_dir, current):
         if not (path / "scripts/git_review_context.py").is_file():
             parser.error(f"skill scripts are missing: {path}")
+    environment = {"platform": platform.platform(), "python": sys.version,
+                   "baseline_payload_sha256": payload_digest(args.baseline_skill_dir),
+                   "candidate_payload_sha256": payload_digest(current)}
     samples = []
     expected_digests = {}
     failed_fast = None
@@ -492,6 +550,8 @@ def main(argv=None):
                 break
         if failed_fast:
             break
+    unchanged = (environment["baseline_payload_sha256"] == payload_digest(args.baseline_skill_dir)
+                 and environment["candidate_payload_sha256"] == payload_digest(current))
     result = {"schema": "ReleaseReviewHelperBenchmark/v1",
               "scope": "Helper workflow only; no LLM or agent end-to-end measurement.",
               "methodology": {"runs": args.runs, "summary": "median",
@@ -501,8 +561,16 @@ def main(argv=None):
                   "fail_fast": "Stop on the first failed worker, absent digest or normalized artifact mismatch, preserving partial evidence.",
                   "stages": "Capture, evidence/draft preparation, one nested publish validation, and publish excluding that validation.",
                   "output_bytes": "UTF-8 bytes of captured helper stdout; report file bytes are artifact_bytes.",
+                  "git_grep": "Count and wall time for each git grep subprocess, reported per stage separately from total Git subprocesses.",
+                  "dense_search_queries": list(DENSE_SEARCH_QUERIES),
                   "dense_lines": DENSE_LINES, "citation_repetitions": REPETITIONS},
+              "environment": environment, "payloads_unchanged_during_run": unchanged,
               "summary": summarize(samples), "samples": samples}
+    if not unchanged:
+        result["summary"]["success"] = False
+        for item in result["summary"]["scenarios"].values():
+            item["success"] = False
+            item["payload_changed_during_run"] = True
     if failed_fast:
         result["failed_fast"] = failed_fast
     encoded = json.dumps(result, ensure_ascii=False, indent=2) + "\n"

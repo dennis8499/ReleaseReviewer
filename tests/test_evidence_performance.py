@@ -42,6 +42,45 @@ class EvidencePerformanceTests(RepoTest):
             record = evidence.validate_search(context, manifest, item["search_id"])
             self.assertEqual(record, {key: value for key, value in item.items() if key != "search_id"})
 
+    def test_batch_groups_consecutive_case_sensitive_literal_searches(self):
+        context, manifest = self.capture()
+        requests = [{"action": "search", "query": "COREDB"},
+                    {"action": "search", "query": "SERVICE"},
+                    {"action": "search", "query": "MISSING_BATCH_TOKEN"}]
+        expected = [evidence.request_result(manifest, context, request) for request in requests]
+        with mock.patch.object(evidence, "command", wraps=evidence.command) as command:
+            result = evidence.batch(manifest, context, requests)
+        self.assertTrue(result["complete"])
+        self.assertEqual(command.call_count, 1)
+        self.assertEqual([row["result"] for row in result["results"]], expected)
+        self.assertEqual([len(row["matches"]) for row in expected[-1:]], [0])
+
+    def test_batch_uses_a_single_covering_literal_for_nested_searches(self):
+        context, manifest = self.capture()
+        ref = manifest["base_sha"]
+        texts = ("DENSE_MATCH_00000", "DENSE_MATCH_00999", "DENSE_MATCH_24999")
+        raw = b"".join(f"{ref}:dense.txt\0{number}\0{text}\n".encode("utf-8")
+                       for number, text in enumerate(texts, 1))
+        requests = [{"action": "search", "query": query} for query in
+                    ("DENSE_MATCH_", "DENSE_MATCH_00", "DENSE_MATCH_24999")]
+        with mock.patch.object(evidence, "command", return_value=raw) as command:
+            result = evidence.batch(manifest, context, requests)
+        self.assertTrue(result["complete"])
+        self.assertEqual(command.call_count, 1)
+        args = command.call_args.args[1]
+        self.assertEqual(args.count("-e"), 1)
+        self.assertIn("DENSE_MATCH_", args)
+        self.assertEqual([len(row["result"]["matches"]) for row in result["results"]], [3, 2, 1])
+
+    def test_batch_keeps_case_insensitive_searches_on_the_existing_path(self):
+        context, manifest = self.capture()
+        requests = [{"action": "search", "query": "coredb", "ignore_case": True},
+                    {"action": "search", "query": "service", "ignore_case": True}]
+        with mock.patch.object(evidence, "command", wraps=evidence.command) as command:
+            result = evidence.batch(manifest, context, requests)
+        self.assertTrue(result["complete"])
+        self.assertEqual(command.call_count, 2)
+
     def test_batch_exposes_every_error_and_continues(self):
         context, _ = self.capture()
         requests = [

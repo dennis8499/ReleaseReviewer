@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.11.1 - 2026-11-01
+
+- Route consecutive compatible case-sensitive literal searches through the grouped Git grep path while preserving per-query results, search IDs, ordering and per-operation errors.
+- Add six-pair helper session and dense-search benchmark evidence for the exact release payload. These measurements cover helper workflows only; Agent tool-call counts, end-to-end Agent time and model-quality scoring remain unmeasured.
+- Keep the supporting Repo snapshot cache disabled pending isolated-cache tests and its warm/cold performance gate.
+
 ## 0.11.0 - 2026-11-01
 
 - Fix summary pagination so the first omitted page is reachable; size artifact and string pages by serialized UTF-8 JSON bytes and keep sibling-item cursors visible.

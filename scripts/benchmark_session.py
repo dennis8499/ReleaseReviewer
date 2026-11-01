@@ -191,9 +191,30 @@ def worker(skill, scenario, auto):
     return result
 
 
+def helper_target_ratio(scenario):
+    """Helper-only session runs may regress by at most five percent."""
+    if scenario not in {"repository", "group", "no-change"}:
+        raise ValueError(f"unknown benchmark scenario: {scenario}")
+    return 1.05
+
+
+def validate_output_path(output, payload_dirs):
+    """Keep a partial results file from mutating either measured payload."""
+    if output is None:
+        return None
+    resolved_output = Path(output).resolve()
+    for payload_dir in payload_dirs:
+        root = Path(payload_dir).resolve()
+        if resolved_output == root or root in resolved_output.parents:
+            raise ValueError("benchmark output must be outside the baseline and candidate payload directories")
+    return resolved_output
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline-skill-dir", type=Path)
+    parser.add_argument("--candidate-skill-dir", type=Path,
+                        help="Use an unpacked release payload instead of the source checkout.")
     parser.add_argument("--runs", type=int, default=5)
     parser.add_argument("--scenario", action="append", choices=("repository", "group", "no-change"))
     parser.add_argument("--output", type=Path)
@@ -207,16 +228,21 @@ def main():
         return 0 if value["success"] else 2
     if not args.baseline_skill_dir or args.runs < 1:
         parser.error("--baseline-skill-dir and positive --runs are required")
+    candidate_skill = args.candidate_skill_dir or ROOT / "skills/release-reviewer"
+    try:
+        args.output = validate_output_path(args.output, (args.baseline_skill_dir, candidate_skill))
+    except ValueError as exc:
+        parser.error(str(exc))
     environment = {"platform": platform.platform(), "python": sys.version,
                    "baseline_payload_sha256": payload_digest(args.baseline_skill_dir),
-                   "candidate_payload_sha256": payload_digest(ROOT / "skills/release-reviewer")}
+                   "candidate_payload_sha256": payload_digest(candidate_skill)}
     samples = []
     scenarios = args.scenario or ("repository", "group", "no-change")
     for scenario in scenarios:
         for number in range(args.runs):
             order = ("baseline", "candidate") if number % 2 == 0 else ("candidate", "baseline")
             for variant in order:
-                skill = args.baseline_skill_dir if variant == "baseline" else ROOT / "skills/release-reviewer"
+                skill = args.baseline_skill_dir if variant == "baseline" else candidate_skill
                 proc = subprocess.run([sys.executable, "-X", "utf8", "-B", __file__, "--worker", "--skill", str(skill),
                                        "--scenario", scenario, *(["--auto"] if variant == "candidate" else [])],
                                       capture_output=True, encoding="utf-8", errors="replace")
@@ -237,7 +263,7 @@ def main():
         items = [item for item in samples if item["scenario"] == scenario]
         valid = len(items) == args.runs * 2 and all(item["success"] for item in items)
         equivalent = valid and len({item["evidence_digest"] for item in items}) == 1
-        target_ratio = 1.05 if scenario == "no-change" else 0.80
+        target_ratio = helper_target_ratio(scenario)
         report = {"success": False, "all_samples_succeeded": valid, "evidence_equivalent": equivalent,
                   "helper_target_ratio": target_ratio}
         if equivalent:
@@ -259,7 +285,7 @@ def main():
         report["pair_count"] = args.runs
         summary[scenario] = report
     unchanged = (environment["baseline_payload_sha256"] == payload_digest(args.baseline_skill_dir)
-                 and environment["candidate_payload_sha256"] == payload_digest(ROOT / "skills/release-reviewer"))
+                 and environment["candidate_payload_sha256"] == payload_digest(candidate_skill))
     if not unchanged:
         for report in summary.values():
             report["success"] = False

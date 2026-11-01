@@ -1,0 +1,920 @@
+{
+  "schema": "ReleaseReviewHelperBenchmark/v1",
+  "scope": "Helper workflow only; no LLM or agent end-to-end measurement.",
+  "methodology": {
+    "runs": 6,
+    "summary": "median",
+    "processes": "One fresh process per variant, scenario and run; fixture setup and interpreter startup excluded.",
+    "helper_commands": "In-process helper main() invocations; per-command Python startup is not measured.",
+    "oracle": "JSON parsing remains measured for both variants. Shared-content format restoration is excluded from evidence wall time and recorded as oracle_seconds; report/hash normalization also runs outside measured stages.",
+    "fail_fast": "Stop on the first failed worker, absent digest or normalized artifact mismatch, preserving partial evidence.",
+    "stages": "Capture, evidence/draft preparation, one nested publish validation, and publish excluding that validation.",
+    "output_bytes": "UTF-8 bytes of captured helper stdout; report file bytes are artifact_bytes.",
+    "git_grep": "Count and wall time for each git grep subprocess, reported per stage separately from total Git subprocesses.",
+    "dense_search_queries": [
+      "DENSE_MATCH_",
+      "DENSE_MATCH_00",
+      "DENSE_MATCH_24999"
+    ],
+    "dense_lines": 25000,
+    "citation_repetitions": 12
+  },
+  "environment": {
+    "platform": "Windows-11-10.0.26300-SP0",
+    "python": "3.14.7 (tags/v3.14.7:823f032, Aug  5 2026, 10:51:32) [MSC v.1944 64 bit (AMD64)]",
+    "baseline_payload_sha256": "f01807cb17d5b8bc85b5bc7ca36422a1e29297eec986f93c394dcd98805466eb",
+    "candidate_payload_sha256": "a2701262ef46f6d24bca34aab98cd80dcaee1a56f219eacfc67fde16045ac03b"
+  },
+  "payloads_unchanged_during_run": true,
+  "summary": {
+    "success": true,
+    "scenarios": {
+      "dense-search": {
+        "success": true,
+        "workers_succeeded": true,
+        "semantic_equivalent": true,
+        "baseline": {
+          "total": {
+            "wall_seconds": 3.086328700010199,
+            "git_subprocesses": 72.0,
+            "git_grep_subprocesses": 10.0,
+            "git_grep_seconds": 0.3281194500013953,
+            "helper_commands": 3.0,
+            "output_bytes": 22892.0,
+            "artifact_bytes": 12990.0
+          },
+          "stages": {
+            "capture": {
+              "wall_seconds": 1.7076434999908088,
+              "git_subprocesses": 49.0,
+              "git_grep_subprocesses": 0.0,
+              "git_grep_seconds": 0.0,
+              "helper_commands": 1.0,
+              "output_bytes": 4475.0,
+              "artifact_bytes": 0.0
+            },
+            "evidence": {
+              "wall_seconds": 0.6543783499801066,
+              "git_subprocesses": 12.0,
+              "git_grep_subprocesses": 5.0,
+              "git_grep_seconds": 0.17061630000534933,
+              "helper_commands": 1.0,
+              "output_bytes": 18242.0,
+              "artifact_bytes": 0.0
+            },
+            "validate": {
+              "wall_seconds": 0.44320359999255743,
+              "git_subprocesses": 6.0,
+              "git_grep_subprocesses": 5.0,
+              "git_grep_seconds": 0.15803434999543242,
+              "helper_commands": 0.0,
+              "output_bytes": 0.0,
+              "artifact_bytes": 0.0
+            },
+            "publish": {
+              "wall_seconds": 0.2167477500042878,
+              "git_subprocesses": 5.0,
+              "git_grep_subprocesses": 0.0,
+              "git_grep_seconds": 0.0,
+              "helper_commands": 1.0,
+              "output_bytes": 175.0,
+              "artifact_bytes": 12990.0
+            }
+          }
+        },
+        "current": {
+          "total": {
+            "wall_seconds": 3.0556901000090875,
+            "git_subprocesses": 70.0,
+            "git_grep_subprocesses": 8.0,
+            "git_grep_seconds": 0.2695710000261897,
+            "helper_commands": 3.0,
+            "output_bytes": 22892.0,
+            "artifact_bytes": 12990.0
+          },
+          "stages": {
+            "capture": {
+              "wall_seconds": 1.6995556999900145,
+              "git_subprocesses": 49.0,
+              "git_grep_subprocesses": 0.0,
+              "git_grep_seconds": 0.0,
+              "helper_commands": 1.0,
+              "output_bytes": 4475.0,
+              "artifact_bytes": 0.0
+            },
+            "evidence": {
+              "wall_seconds": 0.6453627500304719,
+              "git_subprocesses": 10.0,
+              "git_grep_subprocesses": 3.0,
+              "git_grep_seconds": 0.10396369999216404,
+              "helper_commands": 1.0,
+              "output_bytes": 18242.0,
+              "artifact_bytes": 0.0
+            },
+            "validate": {
+              "wall_seconds": 0.45845879999978933,
+              "git_subprocesses": 6.0,
+              "git_grep_subprocesses": 5.0,
+              "git_grep_seconds": 0.1634345000202302,
+              "helper_commands": 0.0,
+              "output_bytes": 0.0,
+              "artifact_bytes": 0.0
+            },
+            "publish": {
+              "wall_seconds": 0.22926155000459403,
+              "git_subprocesses": 5.0,
+              "git_grep_subprocesses": 0.0,
+              "git_grep_seconds": 0.0,
+              "helper_commands": 1.0,
+              "output_bytes": 175.0,
+              "artifact_bytes": 12990.0
+            }
+          }
+        },
+        "speedup": 1.0100267366775906
+      }
+    }
+  },
+  "samples": [
+    {
+      "variant": "baseline",
+      "run": 1,
+      "success": true,
+      "scenario": "dense-search",
+      "semantic_digest": "a271312d3c0ac6cea8e82c43436b45613abf7315c7a7a57735d5b6296c93d496",
+      "artifact_digests": {
+        "manifest": "2fea6ba0e38aa9d08973eebae0e9c380b3f3d1cca78bd072a2f531c519e52fd5",
+        "evidence": "c94b5afea77feb76f9a0d592be661f6456c200d0e7c06928120a36d4752f9a0a",
+        "draft": "1cd24e8eb5a8f29edb5cf7db0fb273cdaffe6eca51ea009be0842b1fea045fb2",
+        "result": "1c19c1c6ba7c6393bb5d077921349287aee6465b2c6e3996d968a4119911a4a1",
+        "patches": "86e02b1c69a7117c7ba56b57d7fc005d44ec2e730ab56b912513082b21a293c1",
+        "report": "af9800764b0ed78753f79635dfde4c9c04bee12fd557d6a2de09c308df5857be"
+      },
+      "request_count": 19,
+      "dense_matches": 25000,
+      "stages": {
+        "capture": {
+          "wall_seconds": 1.3984087999851909,
+          "git_subprocesses": 49,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 4475,
+          "artifact_bytes": 0
+        },
+        "evidence": {
+          "wall_seconds": 0.5498194000101648,
+          "git_subprocesses": 12,
+          "git_grep_subprocesses": 5,
+          "git_grep_seconds": 0.14813959997263737,
+          "helper_commands": 1,
+          "output_bytes": 18242,
+          "artifact_bytes": 0
+        },
+        "validate": {
+          "wall_seconds": 0.3772082000214141,
+          "git_subprocesses": 6,
+          "git_grep_subprocesses": 5,
+          "git_grep_seconds": 0.13446610001847148,
+          "helper_commands": 0,
+          "output_bytes": 0,
+          "artifact_bytes": 0
+        },
+        "publish": {
+          "wall_seconds": 0.1881678999925498,
+          "git_subprocesses": 5,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 175,
+          "artifact_bytes": 12990
+        }
+      },
+      "total": {
+        "wall_seconds": 2.5136043000093196,
+        "git_subprocesses": 72,
+        "git_grep_subprocesses": 10,
+        "git_grep_seconds": 0.28260569999110885,
+        "helper_commands": 3,
+        "output_bytes": 22892,
+        "artifact_bytes": 12990
+      },
+      "oracle_seconds": 0.032698099996196106
+    },
+    {
+      "variant": "current",
+      "run": 1,
+      "success": true,
+      "scenario": "dense-search",
+      "semantic_digest": "a271312d3c0ac6cea8e82c43436b45613abf7315c7a7a57735d5b6296c93d496",
+      "artifact_digests": {
+        "manifest": "2fea6ba0e38aa9d08973eebae0e9c380b3f3d1cca78bd072a2f531c519e52fd5",
+        "evidence": "c94b5afea77feb76f9a0d592be661f6456c200d0e7c06928120a36d4752f9a0a",
+        "draft": "1cd24e8eb5a8f29edb5cf7db0fb273cdaffe6eca51ea009be0842b1fea045fb2",
+        "result": "1c19c1c6ba7c6393bb5d077921349287aee6465b2c6e3996d968a4119911a4a1",
+        "patches": "86e02b1c69a7117c7ba56b57d7fc005d44ec2e730ab56b912513082b21a293c1",
+        "report": "af9800764b0ed78753f79635dfde4c9c04bee12fd557d6a2de09c308df5857be"
+      },
+      "request_count": 19,
+      "dense_matches": 25000,
+      "stages": {
+        "capture": {
+          "wall_seconds": 1.423193700000411,
+          "git_subprocesses": 49,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 4475,
+          "artifact_bytes": 0
+        },
+        "evidence": {
+          "wall_seconds": 0.5347009999968577,
+          "git_subprocesses": 10,
+          "git_grep_subprocesses": 3,
+          "git_grep_seconds": 0.09162669998477213,
+          "helper_commands": 1,
+          "output_bytes": 18242,
+          "artifact_bytes": 0
+        },
+        "validate": {
+          "wall_seconds": 0.3933211000112351,
+          "git_subprocesses": 6,
+          "git_grep_subprocesses": 5,
+          "git_grep_seconds": 0.13505300003453158,
+          "helper_commands": 0,
+          "output_bytes": 0,
+          "artifact_bytes": 0
+        },
+        "publish": {
+          "wall_seconds": 0.18483589999959804,
+          "git_subprocesses": 5,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 175,
+          "artifact_bytes": 12990
+        }
+      },
+      "total": {
+        "wall_seconds": 2.5360517000081018,
+        "git_subprocesses": 70,
+        "git_grep_subprocesses": 8,
+        "git_grep_seconds": 0.2266797000193037,
+        "helper_commands": 3,
+        "output_bytes": 22892,
+        "artifact_bytes": 12990
+      },
+      "oracle_seconds": 0.0347120999940671
+    },
+    {
+      "variant": "current",
+      "run": 2,
+      "success": true,
+      "scenario": "dense-search",
+      "semantic_digest": "a271312d3c0ac6cea8e82c43436b45613abf7315c7a7a57735d5b6296c93d496",
+      "artifact_digests": {
+        "manifest": "2fea6ba0e38aa9d08973eebae0e9c380b3f3d1cca78bd072a2f531c519e52fd5",
+        "evidence": "c94b5afea77feb76f9a0d592be661f6456c200d0e7c06928120a36d4752f9a0a",
+        "draft": "1cd24e8eb5a8f29edb5cf7db0fb273cdaffe6eca51ea009be0842b1fea045fb2",
+        "result": "1c19c1c6ba7c6393bb5d077921349287aee6465b2c6e3996d968a4119911a4a1",
+        "patches": "86e02b1c69a7117c7ba56b57d7fc005d44ec2e730ab56b912513082b21a293c1",
+        "report": "af9800764b0ed78753f79635dfde4c9c04bee12fd557d6a2de09c308df5857be"
+      },
+      "request_count": 19,
+      "dense_matches": 25000,
+      "stages": {
+        "capture": {
+          "wall_seconds": 1.5656900999892969,
+          "git_subprocesses": 49,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 4475,
+          "artifact_bytes": 0
+        },
+        "evidence": {
+          "wall_seconds": 0.5922124999924563,
+          "git_subprocesses": 10,
+          "git_grep_subprocesses": 3,
+          "git_grep_seconds": 0.0981832999677863,
+          "helper_commands": 1,
+          "output_bytes": 18242,
+          "artifact_bytes": 0
+        },
+        "validate": {
+          "wall_seconds": 0.4292184000078123,
+          "git_subprocesses": 6,
+          "git_grep_subprocesses": 5,
+          "git_grep_seconds": 0.15260569998645224,
+          "helper_commands": 0,
+          "output_bytes": 0,
+          "artifact_bytes": 0
+        },
+        "publish": {
+          "wall_seconds": 0.20347619999665767,
+          "git_subprocesses": 5,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 175,
+          "artifact_bytes": 12990
+        }
+      },
+      "total": {
+        "wall_seconds": 2.790597199986223,
+        "git_subprocesses": 70,
+        "git_grep_subprocesses": 8,
+        "git_grep_seconds": 0.25078899995423853,
+        "helper_commands": 3,
+        "output_bytes": 22892,
+        "artifact_bytes": 12990
+      },
+      "oracle_seconds": 0.03726560002542101
+    },
+    {
+      "variant": "baseline",
+      "run": 2,
+      "success": true,
+      "scenario": "dense-search",
+      "semantic_digest": "a271312d3c0ac6cea8e82c43436b45613abf7315c7a7a57735d5b6296c93d496",
+      "artifact_digests": {
+        "manifest": "2fea6ba0e38aa9d08973eebae0e9c380b3f3d1cca78bd072a2f531c519e52fd5",
+        "evidence": "c94b5afea77feb76f9a0d592be661f6456c200d0e7c06928120a36d4752f9a0a",
+        "draft": "1cd24e8eb5a8f29edb5cf7db0fb273cdaffe6eca51ea009be0842b1fea045fb2",
+        "result": "1c19c1c6ba7c6393bb5d077921349287aee6465b2c6e3996d968a4119911a4a1",
+        "patches": "86e02b1c69a7117c7ba56b57d7fc005d44ec2e730ab56b912513082b21a293c1",
+        "report": "af9800764b0ed78753f79635dfde4c9c04bee12fd557d6a2de09c308df5857be"
+      },
+      "request_count": 19,
+      "dense_matches": 25000,
+      "stages": {
+        "capture": {
+          "wall_seconds": 1.6831567000190262,
+          "git_subprocesses": 49,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 4475,
+          "artifact_bytes": 0
+        },
+        "evidence": {
+          "wall_seconds": 0.6312716999964323,
+          "git_subprocesses": 12,
+          "git_grep_subprocesses": 5,
+          "git_grep_seconds": 0.16558599995914847,
+          "helper_commands": 1,
+          "output_bytes": 18242,
+          "artifact_bytes": 0
+        },
+        "validate": {
+          "wall_seconds": 0.4304777999932412,
+          "git_subprocesses": 6,
+          "git_grep_subprocesses": 5,
+          "git_grep_seconds": 0.1560925999947358,
+          "helper_commands": 0,
+          "output_bytes": 0,
+          "artifact_bytes": 0
+        },
+        "publish": {
+          "wall_seconds": 0.2130200999963563,
+          "git_subprocesses": 5,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 175,
+          "artifact_bytes": 12990
+        }
+      },
+      "total": {
+        "wall_seconds": 2.957926300005056,
+        "git_subprocesses": 72,
+        "git_grep_subprocesses": 10,
+        "git_grep_seconds": 0.32167859995388426,
+        "helper_commands": 3,
+        "output_bytes": 22892,
+        "artifact_bytes": 12990
+      },
+      "oracle_seconds": 0.037871799984714016
+    },
+    {
+      "variant": "baseline",
+      "run": 3,
+      "success": true,
+      "scenario": "dense-search",
+      "semantic_digest": "a271312d3c0ac6cea8e82c43436b45613abf7315c7a7a57735d5b6296c93d496",
+      "artifact_digests": {
+        "manifest": "2fea6ba0e38aa9d08973eebae0e9c380b3f3d1cca78bd072a2f531c519e52fd5",
+        "evidence": "c94b5afea77feb76f9a0d592be661f6456c200d0e7c06928120a36d4752f9a0a",
+        "draft": "1cd24e8eb5a8f29edb5cf7db0fb273cdaffe6eca51ea009be0842b1fea045fb2",
+        "result": "1c19c1c6ba7c6393bb5d077921349287aee6465b2c6e3996d968a4119911a4a1",
+        "patches": "86e02b1c69a7117c7ba56b57d7fc005d44ec2e730ab56b912513082b21a293c1",
+        "report": "af9800764b0ed78753f79635dfde4c9c04bee12fd557d6a2de09c308df5857be"
+      },
+      "request_count": 19,
+      "dense_matches": 25000,
+      "stages": {
+        "capture": {
+          "wall_seconds": 1.6274014999798965,
+          "git_subprocesses": 49,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 4475,
+          "artifact_bytes": 0
+        },
+        "evidence": {
+          "wall_seconds": 0.646241899987217,
+          "git_subprocesses": 12,
+          "git_grep_subprocesses": 5,
+          "git_grep_seconds": 0.17034719997900538,
+          "helper_commands": 1,
+          "output_bytes": 18242,
+          "artifact_bytes": 0
+        },
+        "validate": {
+          "wall_seconds": 0.43746429999009706,
+          "git_subprocesses": 6,
+          "git_grep_subprocesses": 5,
+          "git_grep_seconds": 0.1550301999959629,
+          "helper_commands": 0,
+          "output_bytes": 0,
+          "artifact_bytes": 0
+        },
+        "publish": {
+          "wall_seconds": 0.21430630001123063,
+          "git_subprocesses": 5,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 175,
+          "artifact_bytes": 12990
+        }
+      },
+      "total": {
+        "wall_seconds": 2.925413999968441,
+        "git_subprocesses": 72,
+        "git_grep_subprocesses": 10,
+        "git_grep_seconds": 0.3253773999749683,
+        "helper_commands": 3,
+        "output_bytes": 22892,
+        "artifact_bytes": 12990
+      },
+      "oracle_seconds": 0.040135900024324656
+    },
+    {
+      "variant": "current",
+      "run": 3,
+      "success": true,
+      "scenario": "dense-search",
+      "semantic_digest": "a271312d3c0ac6cea8e82c43436b45613abf7315c7a7a57735d5b6296c93d496",
+      "artifact_digests": {
+        "manifest": "2fea6ba0e38aa9d08973eebae0e9c380b3f3d1cca78bd072a2f531c519e52fd5",
+        "evidence": "c94b5afea77feb76f9a0d592be661f6456c200d0e7c06928120a36d4752f9a0a",
+        "draft": "1cd24e8eb5a8f29edb5cf7db0fb273cdaffe6eca51ea009be0842b1fea045fb2",
+        "result": "1c19c1c6ba7c6393bb5d077921349287aee6465b2c6e3996d968a4119911a4a1",
+        "patches": "86e02b1c69a7117c7ba56b57d7fc005d44ec2e730ab56b912513082b21a293c1",
+        "report": "af9800764b0ed78753f79635dfde4c9c04bee12fd557d6a2de09c308df5857be"
+      },
+      "request_count": 19,
+      "dense_matches": 25000,
+      "stages": {
+        "capture": {
+          "wall_seconds": 1.6625331999966875,
+          "git_subprocesses": 49,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 4475,
+          "artifact_bytes": 0
+        },
+        "evidence": {
+          "wall_seconds": 0.6483554000442382,
+          "git_subprocesses": 10,
+          "git_grep_subprocesses": 3,
+          "git_grep_seconds": 0.10125429998151958,
+          "helper_commands": 1,
+          "output_bytes": 18242,
+          "artifact_bytes": 0
+        },
+        "validate": {
+          "wall_seconds": 0.45525279999128543,
+          "git_subprocesses": 6,
+          "git_grep_subprocesses": 5,
+          "git_grep_seconds": 0.15960710003855638,
+          "helper_commands": 0,
+          "output_bytes": 0,
+          "artifact_bytes": 0
+        },
+        "publish": {
+          "wall_seconds": 0.23802499999874271,
+          "git_subprocesses": 5,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 175,
+          "artifact_bytes": 12990
+        }
+      },
+      "total": {
+        "wall_seconds": 3.004166400030954,
+        "git_subprocesses": 70,
+        "git_grep_subprocesses": 8,
+        "git_grep_seconds": 0.26086140002007596,
+        "helper_commands": 3,
+        "output_bytes": 22892,
+        "artifact_bytes": 12990
+      },
+      "oracle_seconds": 0.04302869996172376
+    },
+    {
+      "variant": "current",
+      "run": 4,
+      "success": true,
+      "scenario": "dense-search",
+      "semantic_digest": "a271312d3c0ac6cea8e82c43436b45613abf7315c7a7a57735d5b6296c93d496",
+      "artifact_digests": {
+        "manifest": "2fea6ba0e38aa9d08973eebae0e9c380b3f3d1cca78bd072a2f531c519e52fd5",
+        "evidence": "c94b5afea77feb76f9a0d592be661f6456c200d0e7c06928120a36d4752f9a0a",
+        "draft": "1cd24e8eb5a8f29edb5cf7db0fb273cdaffe6eca51ea009be0842b1fea045fb2",
+        "result": "1c19c1c6ba7c6393bb5d077921349287aee6465b2c6e3996d968a4119911a4a1",
+        "patches": "86e02b1c69a7117c7ba56b57d7fc005d44ec2e730ab56b912513082b21a293c1",
+        "report": "af9800764b0ed78753f79635dfde4c9c04bee12fd557d6a2de09c308df5857be"
+      },
+      "request_count": 19,
+      "dense_matches": 25000,
+      "stages": {
+        "capture": {
+          "wall_seconds": 1.7365781999833416,
+          "git_subprocesses": 49,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 4475,
+          "artifact_bytes": 0
+        },
+        "evidence": {
+          "wall_seconds": 0.6423701000167057,
+          "git_subprocesses": 10,
+          "git_grep_subprocesses": 3,
+          "git_grep_seconds": 0.1066731000028085,
+          "helper_commands": 1,
+          "output_bytes": 18242,
+          "artifact_bytes": 0
+        },
+        "validate": {
+          "wall_seconds": 0.47979189999750815,
+          "git_subprocesses": 6,
+          "git_grep_subprocesses": 5,
+          "git_grep_seconds": 0.17220439997618087,
+          "helper_commands": 0,
+          "output_bytes": 0,
+          "artifact_bytes": 0
+        },
+        "publish": {
+          "wall_seconds": 0.24847359998966567,
+          "git_subprocesses": 5,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 175,
+          "artifact_bytes": 12990
+        }
+      },
+      "total": {
+        "wall_seconds": 3.107213799987221,
+        "git_subprocesses": 70,
+        "git_grep_subprocesses": 8,
+        "git_grep_seconds": 0.27887749997898936,
+        "helper_commands": 3,
+        "output_bytes": 22892,
+        "artifact_bytes": 12990
+      },
+      "oracle_seconds": 0.04271270000026561
+    },
+    {
+      "variant": "baseline",
+      "run": 4,
+      "success": true,
+      "scenario": "dense-search",
+      "semantic_digest": "a271312d3c0ac6cea8e82c43436b45613abf7315c7a7a57735d5b6296c93d496",
+      "artifact_digests": {
+        "manifest": "2fea6ba0e38aa9d08973eebae0e9c380b3f3d1cca78bd072a2f531c519e52fd5",
+        "evidence": "c94b5afea77feb76f9a0d592be661f6456c200d0e7c06928120a36d4752f9a0a",
+        "draft": "1cd24e8eb5a8f29edb5cf7db0fb273cdaffe6eca51ea009be0842b1fea045fb2",
+        "result": "1c19c1c6ba7c6393bb5d077921349287aee6465b2c6e3996d968a4119911a4a1",
+        "patches": "86e02b1c69a7117c7ba56b57d7fc005d44ec2e730ab56b912513082b21a293c1",
+        "report": "af9800764b0ed78753f79635dfde4c9c04bee12fd557d6a2de09c308df5857be"
+      },
+      "request_count": 19,
+      "dense_matches": 25000,
+      "stages": {
+        "capture": {
+          "wall_seconds": 1.9982344999734778,
+          "git_subprocesses": 49,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 4475,
+          "artifact_bytes": 0
+        },
+        "evidence": {
+          "wall_seconds": 0.6625147999729961,
+          "git_subprocesses": 12,
+          "git_grep_subprocesses": 5,
+          "git_grep_seconds": 0.17088540003169328,
+          "helper_commands": 1,
+          "output_bytes": 18242,
+          "artifact_bytes": 0
+        },
+        "validate": {
+          "wall_seconds": 0.4489428999950178,
+          "git_subprocesses": 6,
+          "git_grep_subprocesses": 5,
+          "git_grep_seconds": 0.15997609999612905,
+          "helper_commands": 0,
+          "output_bytes": 0,
+          "artifact_bytes": 0
+        },
+        "publish": {
+          "wall_seconds": 0.21918919999734499,
+          "git_subprocesses": 5,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 175,
+          "artifact_bytes": 12990
+        }
+      },
+      "total": {
+        "wall_seconds": 3.3288813999388367,
+        "git_subprocesses": 72,
+        "git_grep_subprocesses": 10,
+        "git_grep_seconds": 0.33086150002782233,
+        "helper_commands": 3,
+        "output_bytes": 22892,
+        "artifact_bytes": 12990
+      },
+      "oracle_seconds": 0.038731600041501224
+    },
+    {
+      "variant": "baseline",
+      "run": 5,
+      "success": true,
+      "scenario": "dense-search",
+      "semantic_digest": "a271312d3c0ac6cea8e82c43436b45613abf7315c7a7a57735d5b6296c93d496",
+      "artifact_digests": {
+        "manifest": "2fea6ba0e38aa9d08973eebae0e9c380b3f3d1cca78bd072a2f531c519e52fd5",
+        "evidence": "c94b5afea77feb76f9a0d592be661f6456c200d0e7c06928120a36d4752f9a0a",
+        "draft": "1cd24e8eb5a8f29edb5cf7db0fb273cdaffe6eca51ea009be0842b1fea045fb2",
+        "result": "1c19c1c6ba7c6393bb5d077921349287aee6465b2c6e3996d968a4119911a4a1",
+        "patches": "86e02b1c69a7117c7ba56b57d7fc005d44ec2e730ab56b912513082b21a293c1",
+        "report": "af9800764b0ed78753f79635dfde4c9c04bee12fd557d6a2de09c308df5857be"
+      },
+      "request_count": 19,
+      "dense_matches": 25000,
+      "stages": {
+        "capture": {
+          "wall_seconds": 1.7321302999625914,
+          "git_subprocesses": 49,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 4475,
+          "artifact_bytes": 0
+        },
+        "evidence": {
+          "wall_seconds": 0.6781022999784909,
+          "git_subprocesses": 12,
+          "git_grep_subprocesses": 5,
+          "git_grep_seconds": 0.18579449999378994,
+          "helper_commands": 1,
+          "output_bytes": 18242,
+          "artifact_bytes": 0
+        },
+        "validate": {
+          "wall_seconds": 0.6015752000093926,
+          "git_subprocesses": 6,
+          "git_grep_subprocesses": 5,
+          "git_grep_seconds": 0.2683404000417795,
+          "helper_commands": 0,
+          "output_bytes": 0,
+          "artifact_bytes": 0
+        },
+        "publish": {
+          "wall_seconds": 0.2290659999998752,
+          "git_subprocesses": 5,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 175,
+          "artifact_bytes": 12990
+        }
+      },
+      "total": {
+        "wall_seconds": 3.24087379995035,
+        "git_subprocesses": 72,
+        "git_grep_subprocesses": 10,
+        "git_grep_seconds": 0.45413490003556944,
+        "helper_commands": 3,
+        "output_bytes": 22892,
+        "artifact_bytes": 12990
+      },
+      "oracle_seconds": 0.03965960003552027
+    },
+    {
+      "variant": "current",
+      "run": 5,
+      "success": true,
+      "scenario": "dense-search",
+      "semantic_digest": "a271312d3c0ac6cea8e82c43436b45613abf7315c7a7a57735d5b6296c93d496",
+      "artifact_digests": {
+        "manifest": "2fea6ba0e38aa9d08973eebae0e9c380b3f3d1cca78bd072a2f531c519e52fd5",
+        "evidence": "c94b5afea77feb76f9a0d592be661f6456c200d0e7c06928120a36d4752f9a0a",
+        "draft": "1cd24e8eb5a8f29edb5cf7db0fb273cdaffe6eca51ea009be0842b1fea045fb2",
+        "result": "1c19c1c6ba7c6393bb5d077921349287aee6465b2c6e3996d968a4119911a4a1",
+        "patches": "86e02b1c69a7117c7ba56b57d7fc005d44ec2e730ab56b912513082b21a293c1",
+        "report": "af9800764b0ed78753f79635dfde4c9c04bee12fd557d6a2de09c308df5857be"
+      },
+      "request_count": 19,
+      "dense_matches": 25000,
+      "stages": {
+        "capture": {
+          "wall_seconds": 1.9279269000107888,
+          "git_subprocesses": 49,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 4475,
+          "artifact_bytes": 0
+        },
+        "evidence": {
+          "wall_seconds": 0.6615225000132341,
+          "git_subprocesses": 10,
+          "git_grep_subprocesses": 3,
+          "git_grep_seconds": 0.11101870003039949,
+          "helper_commands": 1,
+          "output_bytes": 18242,
+          "artifact_bytes": 0
+        },
+        "validate": {
+          "wall_seconds": 0.46166480000829324,
+          "git_subprocesses": 6,
+          "git_grep_subprocesses": 5,
+          "git_grep_seconds": 0.167261900001904,
+          "helper_commands": 0,
+          "output_bytes": 0,
+          "artifact_bytes": 0
+        },
+        "publish": {
+          "wall_seconds": 0.22049810001044534,
+          "git_subprocesses": 5,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 175,
+          "artifact_bytes": 12990
+        }
+      },
+      "total": {
+        "wall_seconds": 3.2716123000427615,
+        "git_subprocesses": 70,
+        "git_grep_subprocesses": 8,
+        "git_grep_seconds": 0.2782806000323035,
+        "helper_commands": 3,
+        "output_bytes": 22892,
+        "artifact_bytes": 12990
+      },
+      "oracle_seconds": 0.03842369996709749
+    },
+    {
+      "variant": "current",
+      "run": 6,
+      "success": true,
+      "scenario": "dense-search",
+      "semantic_digest": "a271312d3c0ac6cea8e82c43436b45613abf7315c7a7a57735d5b6296c93d496",
+      "artifact_digests": {
+        "manifest": "2fea6ba0e38aa9d08973eebae0e9c380b3f3d1cca78bd072a2f531c519e52fd5",
+        "evidence": "c94b5afea77feb76f9a0d592be661f6456c200d0e7c06928120a36d4752f9a0a",
+        "draft": "1cd24e8eb5a8f29edb5cf7db0fb273cdaffe6eca51ea009be0842b1fea045fb2",
+        "result": "1c19c1c6ba7c6393bb5d077921349287aee6465b2c6e3996d968a4119911a4a1",
+        "patches": "86e02b1c69a7117c7ba56b57d7fc005d44ec2e730ab56b912513082b21a293c1",
+        "report": "af9800764b0ed78753f79635dfde4c9c04bee12fd557d6a2de09c308df5857be"
+      },
+      "request_count": 19,
+      "dense_matches": 25000,
+      "stages": {
+        "capture": {
+          "wall_seconds": 1.7527225999801885,
+          "git_subprocesses": 49,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 4475,
+          "artifact_bytes": 0
+        },
+        "evidence": {
+          "wall_seconds": 0.6618319999834057,
+          "git_subprocesses": 10,
+          "git_grep_subprocesses": 3,
+          "git_grep_seconds": 0.11333500000182539,
+          "helper_commands": 1,
+          "output_bytes": 18242,
+          "artifact_bytes": 0
+        },
+        "validate": {
+          "wall_seconds": 0.4765099000069313,
+          "git_subprocesses": 6,
+          "git_grep_subprocesses": 5,
+          "git_grep_seconds": 0.1673993000003975,
+          "helper_commands": 0,
+          "output_bytes": 0,
+          "artifact_bytes": 0
+        },
+        "publish": {
+          "wall_seconds": 0.24706979998154566,
+          "git_subprocesses": 5,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 175,
+          "artifact_bytes": 12990
+        }
+      },
+      "total": {
+        "wall_seconds": 3.138134299952071,
+        "git_subprocesses": 70,
+        "git_grep_subprocesses": 8,
+        "git_grep_seconds": 0.2807343000022229,
+        "helper_commands": 3,
+        "output_bytes": 22892,
+        "artifact_bytes": 12990
+      },
+      "oracle_seconds": 0.04575970003497787
+    },
+    {
+      "variant": "baseline",
+      "run": 6,
+      "success": true,
+      "scenario": "dense-search",
+      "semantic_digest": "a271312d3c0ac6cea8e82c43436b45613abf7315c7a7a57735d5b6296c93d496",
+      "artifact_digests": {
+        "manifest": "2fea6ba0e38aa9d08973eebae0e9c380b3f3d1cca78bd072a2f531c519e52fd5",
+        "evidence": "c94b5afea77feb76f9a0d592be661f6456c200d0e7c06928120a36d4752f9a0a",
+        "draft": "1cd24e8eb5a8f29edb5cf7db0fb273cdaffe6eca51ea009be0842b1fea045fb2",
+        "result": "1c19c1c6ba7c6393bb5d077921349287aee6465b2c6e3996d968a4119911a4a1",
+        "patches": "86e02b1c69a7117c7ba56b57d7fc005d44ec2e730ab56b912513082b21a293c1",
+        "report": "af9800764b0ed78753f79635dfde4c9c04bee12fd557d6a2de09c308df5857be"
+      },
+      "request_count": 19,
+      "dense_matches": 25000,
+      "stages": {
+        "capture": {
+          "wall_seconds": 1.8000444000062998,
+          "git_subprocesses": 49,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 4475,
+          "artifact_bytes": 0
+        },
+        "evidence": {
+          "wall_seconds": 0.6880998000269756,
+          "git_subprocesses": 12,
+          "git_grep_subprocesses": 5,
+          "git_grep_seconds": 0.17898110000533052,
+          "helper_commands": 1,
+          "output_bytes": 18242,
+          "artifact_bytes": 0
+        },
+        "validate": {
+          "wall_seconds": 0.5008907000010367,
+          "git_subprocesses": 6,
+          "git_grep_subprocesses": 5,
+          "git_grep_seconds": 0.1723448000557255,
+          "helper_commands": 0,
+          "output_bytes": 0,
+          "artifact_bytes": 0
+        },
+        "publish": {
+          "wall_seconds": 0.22569619998103008,
+          "git_subprocesses": 5,
+          "git_grep_subprocesses": 0,
+          "git_grep_seconds": 0.0,
+          "helper_commands": 1,
+          "output_bytes": 175,
+          "artifact_bytes": 12990
+        }
+      },
+      "total": {
+        "wall_seconds": 3.2147311000153422,
+        "git_subprocesses": 72,
+        "git_grep_subprocesses": 10,
+        "git_grep_seconds": 0.351325900061056,
+        "helper_commands": 3,
+        "output_bytes": 22892,
+        "artifact_bytes": 12990
+      },
+      "oracle_seconds": 0.041613199980929494
+    }
+  ]
+}

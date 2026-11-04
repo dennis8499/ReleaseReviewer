@@ -35,6 +35,24 @@ class QualityFixtureTests(unittest.TestCase):
                     self.assertEqual(12, code["checkout"](12))
                 elif case == "group-contract":
                     self.assertEqual({"total": 12}, code["publish_event"](12))
+                elif case == "preexisting":
+                    old = {}
+                    exec(quality.git(repo, "show", "main:app.py"), old)
+                    for hour in (0, 12, 13, 23):
+                        self.assertEqual(old["quote_source"](hour), code["quote_source"](hour))
+                elif case == "new-trigger":
+                    old = {}
+                    exec(quality.git(repo, "show", "main:app.py"), old)
+                    self.assertEqual(12, old["settlement"](12))
+                    with self.assertRaises(ZeroDivisionError):
+                        code["settlement"](12)
+                elif case == "deleted-endpoint":
+                    old = {}
+                    exec(quality.git(repo, "show", "main:app.py"), old)
+                    self.assertEqual(12, old["ROUTES"]["/quote"]()["amount"])
+                    self.assertNotIn("/quote", code["ROUTES"])
+                    peer = Path(fixture["workspace"]) / "quote-consumer"
+                    self.assertIn('client.get("/quote")', quality.git(peer, "show", "HEAD:consumer.py"))
                 if case == "net-zero":
                     self.assertEqual("", quality.git(repo, "diff", "main", "feature/review"))
                 if case == "p0":

@@ -49,6 +49,21 @@ python -X utf8 -B $script step --runtime-root $runtime --request-id $requestId -
 
 ## 唯讀恢復
 
+支援 `features.read_only_batch_view` 時，把最多 100 筆已保存 artifact 的續讀放進同一 UTF-8 JSON 陣列；每筆保留自己的 `id`、pointer 與游標：
+
+```json
+[
+  {"id":"diff-page","op":"view","artifact":"<artifact SHA-256>","pointer":"/operations","offset":0,"page_size":40},
+  {"id":"source-window","op":"view","artifact":"<另一個 artifact SHA-256>","pointer":"/lines","offset":80,"page_size":80}
+]
+```
+
+```powershell
+python -X utf8 -B $script view --runtime-root $runtime --request-id $requestId --requests-file "<views.json>" --offset 0
+```
+
+回應為 `ReleaseReviewViewBatch/v1`，整體含換行不超過 24 KiB。`next_index` 是陣列中尚未回傳的第一筆，下次以同一檔案及該 `--offset` 續跑；比對 `requests_sha256` 確認清單未變。每筆 `result` 內的 `continue`、`fields_continue`、`next_page` 仍要各自讀完。Batch 的 `complete` 只代表清單已回傳，不代表頁面或語意審查完成。把剩餘 batch index 和各頁游標存入 progress 的 `unread_cursor`，同時保存已完成判斷；恢復時只讀待讀項目。舊 helper 繼續使用下方單頁命令。
+
 ```powershell
 python -X utf8 -B $script status --summary --runtime-root $runtime --request-id $requestId
 python -X utf8 -B $script view --runtime-root $runtime --request-id $requestId --artifact $artifact --pointer "/operations" --offset 0 --page-size 100

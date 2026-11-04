@@ -11,7 +11,7 @@ description: Review direct pre-release blockers and new deployment dependencies 
 
 ## 1. 固定版本與證據
 
-從入口 Repo 的 cwd 啟動 session：
+從入口 Repo 的 cwd 先讀一次 `capabilities`，再啟動 session。支援 `runtime_paths` 時核對 session 路徑；明確遠端分支另核對 `git_network` 路徑及設定來源。工作台 runner 的 `--runtime-root` 與 Git 鎖的 `GITLAB_WORKSPACE_RUNTIME_DIR` 分別設定，沿用工作台提供的共用位置；範例見[session 操作](references/session-workflow.md#runtime-預檢)。
 
 ~~~powershell
 python -X utf8 -B "<skill-dir>/scripts/review_session.py" start --workspace "<工作區>" --project "<Repo path>" --base "<基礎分支>" --head "<比較分支>"
@@ -26,11 +26,11 @@ Workbench 提供 `--request-id` 時照原樣攜帶；重試沿用同一 ID，明
 先讀[審查規則及草稿欄位](references/review-rules.md)。只有 scope=group 才讀[Group 契約與功能鏈](references/group-review.md)；遇到新增或可能改變目標的資源時讀[依賴與上板 Checklist](references/resource-checks.md)。
 
 - 覆蓋全部必要變更、最終合併結果、適用指示與必要 merge parents。刪除／改名需查舊呼叫端和最終版本；其他歷史只沿具體線索追查。未知版本、必要 caller／consumer／mapping 缺證據時保留缺口。
-- P0／P1 必須由證據串起本次變更、觸發路徑、最終錯誤行為、上板影響與修正方向。只引用最小必要固定行段；不列既有缺陷、風格問題或單純缺少測試。
+- P0／P1 必須由證據串起本次變更、觸發路徑、最終錯誤行為、上板影響與修正方向。發布前逐項對照入口 base → 最終版本：新 context 的 `baseline_reason` 說明新增的觸發條件，附 base 引用或固定 catalog 可證實的新增路徑。既有行為、新呼叫觸發舊函式或刪除端點時，讀[整合情境](references/review-examples.md)。只引用最小必要行段；既有缺陷、風格問題與單純缺少測試留在本次阻擋之外。
 - 新依賴以入口 base 的整個 Repo 為基準，查首次使用、部署定義、目標及操作權限。已使用資源、未使用設定、等價搬移與其他 Repo 已使用的資源，按既有語意判斷；單次搜尋零命中不足以排除關聯。未知 provider 不推定為 Kafka。
 - 對七類依賴與每個 supporting Repo 明確完成語意判斷或保留缺口。靜態檢查與實際環境確認分開；Checklist 的確認須有核對人、日期及驗證證據，不適用須寫理由。新增資源本身不自動成為程式阻擋。
 
-先使用 capture 產生的 worklist，之後依發現的 caller、consumer、alias 和契約批次讀取／搜尋。逐筆核對 Repo、source、ref、path、SHA 及行號。大型回應依 artifact 的 JSON pointer 和 continuation 續讀；摘要未回傳內容時，先從 offset 0 讀第一頁，再沿各自的字串與後續項目游標續讀。完整證據已保存不代表 reviewer 已讀完。需要完整操作與 JSON 範例時載入[快速續跑](references/fast-session.md)、[續跑細節](references/session-details.md)及[證據操作](references/evidence-workflow.md)。
+先使用 capture 產生的 worklist，之後依發現的 caller、consumer、alias 和契約批次讀取／搜尋。逐筆核對 Repo、source、ref、path、SHA 及行號。大型回應依 artifact 的 JSON pointer 和 continuation 續讀；摘要未回傳內容時，先從 offset 0 讀第一頁，再沿各自的字串與後續項目游標續讀。完整證據已保存不代表 reviewer 已讀完。需要多頁或多個 artifact 時，先讀[快速續跑](references/fast-session.md)，依能力旗標批次續讀並保存各游標；修稿及證據欄位問題再讀[續跑細節](references/session-details.md)及[證據操作](references/evidence-workflow.md)。
 
 ~~~powershell
 python -X utf8 -B "<skill-dir>/scripts/review_session.py" step --runtime-root "<runtime>" --request-id "<id>" --worklist "<context>/review-worklist.json" --response-format auto
@@ -51,4 +51,4 @@ python -X utf8 -B "<skill-dir>/scripts/review_session.py" finish --runtime-root 
 
 預設不執行專案測試或部署驗證；僅在使用者明確要求時執行並記錄。exit 3 表示同一 request 可修正並續跑，exit 2 表示終止錯誤。用 status 恢復工作；修稿途中保留 context，成功、取消、終止或最終放棄時清理 owned context。完整修稿、重試及清理規則見[續跑細節](references/session-details.md)。
 
-完成後回覆報告連結、直接阻擋與尚待核對／補查事項。
+`check` 支援 `summary_preview` 時先核對遮蔽後摘要並更新骨架文字；完整審查不得沿用預設摘要。`publication.io`／exit 3 保留快照，修正指定寫入位置後以同一 ID 重試 `finish`。成品核對後，執行 `status --summary`（舊 helper 用 `status`）驗證收據，再回覆報告連結、直接阻擋與尚待核對／補查事項；人工修改限 Checklist 邊界。

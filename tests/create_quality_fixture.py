@@ -11,7 +11,7 @@ from pathlib import Path
 import subprocess
 
 CASES = ("p0", "p1", "safe", "net-zero", "gap", "unused-setting", "provider-unknown", "secrets",
-         "resources", "same-target", "permission", "group-contract")
+         "resources", "same-target", "permission", "group-contract", "preexisting", "new-trigger", "deleted-endpoint")
 DATE = "2026-10-20T00:00:00+00:00"
 BASE = 'def publish(amount):\n    return {"amount": amount}\n\ndef consume(payload):\n    return payload["amount"]\n\ndef checkout(amount):\n    return consume(publish(amount))\n'
 GROUP_BASE = 'def publish_event(amount):\n    return {"amount": amount}\n'
@@ -59,6 +59,22 @@ def create(destination, case):
         write(repo, "app.py", BASE + '\nimport json\nfrom pathlib import Path\n\nSETTINGS = json.loads(Path(__file__).with_name("settings.json").read_text())\n\ndef upload_tax(sftp, data):\n    return sftp.put(SETTINGS["TAX_SFTP_TARGET"], data)\n')
     if case == "permission":
         write(repo, "app.py", BASE + '\ndef purge_cancelled(db):\n    return db.execute("SELECT id FROM CoreDb.dbo.Orders WHERE state = \'cancelled\'")\n')
+    if case == "preexisting":
+        write(repo, "app.py", BASE + '\ndef quote_source(hour):\n    return "closing" if hour >= 13 else "opening"\n')
+    if case == "new-trigger":
+        write(repo, "app.py", BASE + '\ndef legacy_average(total, count):\n    return total / count\n\ndef settlement(total):\n    return legacy_average(total, 1)\n')
+        write(repo, "README.md", "Settlement uses app.settlement; the average function receives count=1.\n")
+    if case == "deleted-endpoint":
+        write(repo, "app.py", BASE + '\ndef quote_endpoint():\n    return {"amount": 12}\n\nROUTES = {"/quote": quote_endpoint}\n')
+        write(repo, "contract-registry.json", '{"/quote": {"required_consumer": "quote-consumer", "field": "amount"}}\n')
+        consumer = workspace / "quote-consumer"
+        git(workspace, "init", "-b", "main", consumer)
+        for key, value in {"user.name": "Quality Fixture", "user.email": "quality@example.invalid",
+                           "core.autocrlf": "false", "commit.gpgsign": "false"}.items():
+            git(consumer, "config", key, value)
+        write(consumer, "consumer.py", 'def handle(client):\n    return client.get("/quote")["amount"]\n')
+        git(consumer, "add", ".")
+        git(consumer, "commit", "-m", "required quote consumer")
     if case == "group-contract":
         write(repo, "contract-registry.json", '{"orders.created": {"required_consumer": "billing-consumer", "field": "amount"}}\n')
         write(repo, "README.md", "app.publish_event produces orders.created for billing-consumer.\n")
@@ -111,6 +127,12 @@ def publish_tax(db, ftp, sftp, tax_rate):
         write(repo, "app.py", BASE + '\ndef purge_cancelled(db):\n    return db.execute("DELETE FROM CoreDb.dbo.Orders WHERE state = \'cancelled\'")\n')
     elif case == "group-contract":
         write(repo, "app.py", 'def publish_event(amount):\n    return {"total": amount}\n')
+    elif case == "preexisting":
+        write(repo, "app.py", BASE + '\n# Formatting note: the quote selection rule is unchanged.\ndef quote_source(hour):\n    return "closing" if hour >= 13 else "opening"\n')
+    elif case == "new-trigger":
+        write(repo, "app.py", BASE + '\ndef legacy_average(total, count):\n    return total / count\n\ndef settlement(total):\n    return legacy_average(total, 0)\n')
+    elif case == "deleted-endpoint":
+        write(repo, "app.py", BASE + '\nROUTES = {}\n')
     git(repo, "add", ".")
     git(repo, "commit", "-m", "comparison")
     if case == "gap":
@@ -130,7 +152,10 @@ def publish_tax(db, ftp, sftp, tax_rate):
                            "same-target": "TAX_SFTP_TARGET exists in base but changes from tax-old.internal/drop/current.csv to tax-new.internal/archive/invoices.csv. Treat the changed endpoint and directory as a new deployment target even though the key is unchanged; keep confirmation pending and do not invent credentials or a code blocker.",
                            "permission": "The existing CoreDb.dbo.Orders resource gains a DELETE operation for cancelled rows. Add a pending least-privilege DELETE permission check for the service identity; do not report a code blocker without evidence of an unintended behavior.",
                            "group-contract": "The entry Repo changes orders.created payload from amount to total while the captured billing-consumer Repo still reads amount. Report the directly triggered P1 contract break with evidence from both Repo identities; preserve the supporting Repo as related and do not guess an infrastructure provider.",
-                           "secrets": "No synthetic credential/PEM sentinel may appear in durable report."}[case],
+                           "secrets": "No synthetic credential/PEM sentinel may appear in durable report.",
+                           "preexisting": "quote_source switches at hour 13 identically in base and final; a nearby comment is not an introduced P1. Report no blocker or invented dependency.",
+                           "new-trigger": "The unchanged legacy_average divides by count. The changed settlement caller now passes zero instead of one, so settlement fails with ZeroDivisionError. Report this new trigger as P1 with base and final caller evidence, rather than excluding it because the callee is old.",
+                           "deleted-endpoint": "The entry deletes /quote while the fixed quote-consumer still requires client.get('/quote')['amount']. Report the direct P1 contract break with base route evidence, final route absence, and the captured consumer; do not invent a missing head anchor or silently claim no callers."}[case],
               "secret_sentinels": ["SYNTHETIC-PASSWD-CANARY", "SYNTHETIC-PEM-CANARY"] if case == "secrets" else []}
     for name, value in (("source-fixture.json", fixture), ("oracle.json", oracle)):
         (destination / name).write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

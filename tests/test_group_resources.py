@@ -63,9 +63,10 @@ class GroupTests(RepoTest):
         ]
         draft["code_risks"] = [{"id": "R-001", "priority": "P1", "title": "事件欄位改名使未變更消費端失敗", **diff_anchor(manifest, "src/contract.py"),
                                 "blocking_reason": "既有 consumer 必須能處理上版後事件，欄位改名會中斷既有處理流程。",
+                                "baseline_reason": "入口 base 發出 amount，最終版本改為 total；固定 consumer 仍必須讀 amount。",
                                 "trigger": "入口發出 total 事件並由既有 consumer 處理。", "impact": "consumer 讀取 amount 失敗。",
                                 "recommendation": "保留舊欄位或安排相容版本部署。", "scenario_source": "code-derived",
-                                "evidence": [entry, refs["consumer"]]}]
+                                "evidence": [entry, citation(manifest, "base", "src/contract.py", 1, 2), refs["consumer"]]}]
         return draft, refs
 
     def test_three_repo_chain_detects_unchanged_consumer_contract_and_ignores_unrelated(self):

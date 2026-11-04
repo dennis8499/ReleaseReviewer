@@ -18,6 +18,7 @@ import review_session
 SCHEMA = "ReleaseReviewSession/v1"
 LIMIT = 24 * 1024
 VIEW_LIMIT = LIMIT - 1024
+UNSET_VIEW = object()
 TERMINAL = {"published", "failed", "cancelled"}
 
 
@@ -25,13 +26,43 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 
-def resolve_runtime(workspace=None, explicit=None, create=False):
+def runtime_paths(workspace=None, explicit=None):
     value = explicit or os.environ.get("RELEASE_REVIEW_RUNTIME_DIR")
+    source = "--runtime-root" if explicit else "RELEASE_REVIEW_RUNTIME_DIR"
     if not value:
-        if not workspace or (Path(workspace).resolve() / ".git").exists():
-            raise ValueError("Use --runtime-root outside every Git Repo.")
-        value = Path(workspace).resolve() / ".release-review-runtime"
-    return coordination.runtime(value, create=create)
+        source = "workspace-default"
+        if workspace:
+            directory = Path(workspace).resolve()
+            if not any((parent / ".git").exists() for parent in (directory, *directory.parents)):
+                value = directory / ".release-review-runtime"
+    network = coordination.git_network_lease.runtime_root()
+    return {"session": {"path": str(Path(value).expanduser().absolute()) if value else None,
+                        "setting_source": source, "explicit_required": not bool(value)},
+            "git_network": {"path": str(network), "setting_source": (
+                "GITLAB_WORKSPACE_RUNTIME_DIR" if os.environ.get("GITLAB_WORKSPACE_RUNTIME_DIR")
+                else "platform-default")}}
+
+
+def preflight_failure(error, kind, path, setting_source):
+    error.preflight = {"kind": kind, "path": str(path) if path is not None else None, "setting_source": setting_source,
+                       "fetch_started": False, "fetch_attempt_count": 0}
+    error.network_activity = {"fetch_attempt_count": 0, "fetch_success_count": 0,
+                              "requested_ref_count": 0, "synced_ref_count": 0}
+    error.network_log = []
+
+
+def resolve_runtime(workspace=None, explicit=None, create=False):
+    location = runtime_paths(workspace, explicit)["session"]
+    if not location["path"]:
+        error = ValueError("Use --runtime-root outside every Git Repo.")
+        preflight_failure(error, "session-runtime", None, location["setting_source"])
+        raise error
+    try:
+        return coordination.runtime(location["path"], create=create)
+    except (OSError, ValueError) as exc:
+        if create:
+            preflight_failure(exc, "session-runtime", location["path"], location["setting_source"])
+        raise
 
 
 def job_path(root, identifier):
@@ -264,6 +295,14 @@ def preflight(path):
         moved.unlink(missing_ok=True)
 
 
+def checked_preflight(path, kind, setting_source):
+    try:
+        preflight(path)
+    except (OSError, ValueError) as exc:
+        preflight_failure(exc, kind, path, setting_source)
+        raise
+
+
 def repo_index(manifest):
     return [{key: row[key] for key in ("id", "name", "path", "role", "status", "ref") if key in row}
             for row in manifest["repositories"]]
@@ -285,6 +324,8 @@ def receipt_anchors(job, manifest):
         raise ValueError("Unsupported snapshot validation policy.")
     if job.get("risk_causality_policy") != manifest.get("risk_causality_policy"):
         raise ValueError("Risk causality policy differs from this request.")
+    if job.get("risk_baseline_policy") != manifest.get("risk_baseline_policy"):
+        raise ValueError("Risk baseline policy differs from this request.")
     anchors = job.get("snapshot_receipts")
     captured = {item["id"]: item for item in manifest["repositories"] if item["status"] == "captured"}
     if not isinstance(anchors, dict) or set(anchors) != set(captured):
@@ -296,7 +337,7 @@ def receipt_anchors(job, manifest):
     return anchors
 
 
-def diagnostics(draft, manifest):
+def diagnostics(draft, manifest, *, known_bounds=None):
     """Aggregate only draft/metadata checks; no Git and no semantic approval."""
     import review_worklist
     import evidence as ev
@@ -313,6 +354,10 @@ def diagnostics(draft, manifest):
     policy = manifest.get("risk_causality_policy")
     if policy is not None and (policy != review_worklist.RISK_POLICY or draft.get("risk_causality_policy", policy) != policy):
         error("risk_policy", "/risk_causality_policy", "draft and fixed risk causality policy must match")
+    baseline_policy = manifest.get("risk_baseline_policy")
+    if baseline_policy is not None and (baseline_policy != review_worklist.BASELINE_POLICY
+            or draft.get("risk_baseline_policy", baseline_policy) != baseline_policy):
+        error("risk_baseline_policy", "/risk_baseline_policy", "draft and fixed entry-base policy must match")
     if draft.get("report_layout") not in (None, "engineering-review/v1", "engineering-review/v2"):
         error("layout", "/report_layout", "unsupported report layout")
     if not isinstance(draft.get("summary"), str) or not draft["summary"].strip():
@@ -386,6 +431,11 @@ def diagnostics(draft, manifest):
             if (first is not None or last is not None) and not (type(first) is int and type(last) is int and 1 <= first <= last):
                 error("evidence_lines", at, "line_start/line_end must be a valid inclusive integer range")
                 valid = False
+            if valid and last is not None and known_bounds is not None:
+                total = known_bounds.get((repo, source, reference, path))
+                if total is not None and last > total:
+                    error("evidence_lines", at + "/line_end", f"line_end exceeds saved read metadata: {total} lines")
+                    valid = False
             if valid:
                 checked.append(item)
         return checked
@@ -626,6 +676,11 @@ def diagnostics(draft, manifest):
                         error("definition_final_source", f"/{field}/{i}/definition_evidence", "defined configuration needs final entry-version definition evidence")
             evidence = citations(row.get("evidence", []), f"/{field}/{i}/evidence")
             valid_absence = False
+            if field == "code_risks":
+                try:
+                    review_worklist.validate_risk_baseline(row, manifest, evidence)
+                except (ValueError, KeyError, TypeError) as exc:
+                    error("risk_baseline", f"/{field}/{i}/baseline_reason", str(exc))
             if field == "code_risks" and manifest.get("risk_causality_policy") == review_worklist.RISK_POLICY:
                 try:
                     _, absence = review_worklist.validate_risk_links(row, manifest, evidence)
@@ -649,7 +704,12 @@ def diagnostics(draft, manifest):
                                          and isinstance(row.get("repo"), str) and row.get("status") != "not-reviewed"}),
         "dependencies": [row.get("kind") for row in rows["dependency_coverage"] if isinstance(row, dict)
                          and row.get("status") == "not-reviewed"]}
+    import release_report
+    summary = draft.get("summary") if isinstance(draft.get("summary"), str) else ""
+    preview = release_report.redact(summary)[:2048]
     return {"schema": "ReleaseReviewDraftDiagnostics/v1", "evidence_verified": False,
+            "summary_preview": preview,
+            "summary_is_default": review_worklist.default_summary(summary),
             "git_commands": 0, "evidence_validation": "deferred-to-finish",
             "precheck_passed": not errors, "errors": errors, "remaining": remaining}
 
@@ -670,6 +730,7 @@ def check(root, identifier):
     if job["state"] not in ("ready", "reviewing"):
         raise ValueError("Session is not ready for draft checks.")
     manifest = evidence.load_manifest(context, full=False)
+    receipt_anchors(job, manifest)
     try:
         draft = coordination.read_json(context / "review-result-draft.json")
     except (OSError, ValueError) as exc:
@@ -677,7 +738,9 @@ def check(root, identifier):
                 "state": job["state"], "terminal": False, "recoverable": True, "context_retained": True,
                 "evidence_verified": False, "git_commands": 0, "evidence_validation": "deferred-to-finish", "precheck_passed": False,
                 "errors": [{"code": "authoring.invalid-draft-file", "pointer": "/draft_path", "message": coordination.safe_error(exc)}]}
-    return {"request_id": identifier, **diagnostics(draft, manifest)}
+    import review_readonly
+    bounds = review_readonly.known_citation_bounds(context, manifest, draft)
+    return {"request_id": identifier, **diagnostics(draft, manifest, known_bounds=bounds)}
 
 
 def status(root, identifier):
@@ -798,7 +861,7 @@ def installed_payload_identity():
     return version, payload_sha, len(rows)
 
 
-def capabilities(workspace=None, expected_payload_sha256=None):
+def capabilities(workspace=None, expected_payload_sha256=None, *, runtime_root=None):
     """Report helper support using read-only local inspection only."""
     version, payload_sha, files = installed_payload_identity()
     if expected_payload_sha256 is not None:
@@ -806,19 +869,21 @@ def capabilities(workspace=None, expected_payload_sha256=None):
             raise ValueError("--expected-payload-sha256 must be a 64-character lowercase SHA-256.")
         if expected_payload_sha256 != payload_sha:
             raise ValueError("Installed ReleaseReviewer payload hash differs from Workbench binding.")
-    runtime = os.environ.get("RELEASE_REVIEW_RUNTIME_DIR")
-    if not runtime and workspace:
-        runtime = str(Path(workspace).resolve() / ".release-review-runtime")
+    paths = runtime_paths(workspace, runtime_root)
     return {"schema": "ReviewCapabilities/v1", "tool": "release-reviewer",
             "skill_version": version, "prepare_evidence": True,
             "updates_schema": UPDATES_SCHEMA, "shared_cache_schema": "ReviewerSharedCache/v2",
             "payload_sha256": payload_sha, "payload_files": files,
-            "runtime_root": runtime or "", "git_commands": 0, "network_commands": 0,
+            "runtime_root": paths["session"]["path"] or "", "runtime_paths": paths,
+            "git_commands": 0, "network_commands": 0,
             "features": {"request_id": True, "read_only_view": True, "status_summary": True,
                          "read_window": True, "updates_file": True,
                          "durable_review_progress": True, "phase_metrics": True,
                          "literal_search_batch": True, "patch_encoding": True,
-                         "operation_diagnostics": True},
+                          "operation_diagnostics": True, "runtime_paths": True,
+                          "publication_retry": True, "summary_preview": True,
+                          "known_citation_bounds": True, "read_only_batch_view": True,
+                          "base_final_review": True},
             "observability": {"agent_tool_round_trips": None, "model_tokens": None,
                               "http_requests": None, "ssh_requests": None}}
 
@@ -863,10 +928,12 @@ def start(args):
             repo = group_context.choose(repositories, Path(args.workspace).resolve(), args.project)
             if any(root.is_relative_to(item.resolve()) for item in repositories):
                 raise ValueError("Release runtime must be outside every declared Git Repo.")
-            preflight(root)
-            preflight(repo / "review-reports")
+            paths = runtime_paths(args.workspace, args.runtime_root)
+            checked_preflight(root, "session-runtime", paths["session"]["setting_source"])
+            checked_preflight(repo / "review-reports", "report-directory", "reviewed-Repo/review-reports")
             if any(git.remote_target_for_ref(repo, value) for value in (args.base, args.head)):
-                preflight(coordination.git_network_lease.runtime_root())
+                checked_preflight(Path(paths["git_network"]["path"]), "git-network-runtime",
+                                  paths["git_network"]["setting_source"])
             inputs["project"] = str(repo.resolve())
             update(root, identifier, inputs=inputs)
             context = review_session.create_session(runtime_root=root, request_id=identifier)
@@ -890,6 +957,7 @@ def start(args):
                    network_log=manifest["network_log"],
                    fixed_identity=fixed_identity(manifest),
                    risk_causality_policy=manifest["risk_causality_policy"],
+                   risk_baseline_policy=manifest["risk_baseline_policy"],
                    snapshot_receipts={item["id"]: frozen_evidence.receipt_digest(item["validation_receipt"])
                                       for item in manifest["repositories"] if item["status"] == "captured"},
                    metrics={"capture_seconds": time.perf_counter() - began,
@@ -936,7 +1004,7 @@ def start(args):
             failure_metrics["request_owner_lock_wait_seconds"] = owner.wait_seconds
             update(root, identifier, state="cancelled" if active.cancelled() else "failed", phase="terminal",
                    error=coordination.safe_error(exc), finished_at_epoch=time.time(), metrics=failure_metrics,
-                   **{key: getattr(exc, key) for key in ("network_activity", "network_log") if hasattr(exc, key)})
+                   **{key: getattr(exc, key) for key in ("network_activity", "network_log", "preflight") if hasattr(exc, key)})
             if context and context.exists():
                 cleanup_started = time.perf_counter()
                 review_session.cleanup_session(context)
@@ -1059,8 +1127,9 @@ def patch_content(path, raw=None, encoding=None):
             "text": display, "segments": segments}
 
 
-def artifact_view(context, artifact, pointer="", offset=0, page_size=100, string_offset=0):
-    value = review_runtime.load_view(context, artifact)
+def artifact_view(context, artifact, pointer="", offset=0, page_size=100, string_offset=0, *,
+                  byte_limit=VIEW_LIMIT, _value=UNSET_VIEW):
+    value = review_runtime.load_view(context, artifact) if _value is UNSET_VIEW else _value
     if not isinstance(pointer, str) or pointer and not pointer.startswith("/"):
         raise ValueError("view pointer must be a JSON pointer")
     for token in pointer.split("/")[1:]:
@@ -1091,7 +1160,7 @@ def artifact_view(context, artifact, pointer="", offset=0, page_size=100, string
                         "view_complete": offset == 0 and end >= len(value)}
             if response["next_offset"] is not None:
                 response["continue"] = continuation(pointer, start=end)
-            if len(review_runtime.canonical(response)) <= VIEW_LIMIT:
+            if len(review_runtime.canonical(response)) <= byte_limit:
                 return response
             if len(items) > 1:
                 items = items[:max(1, len(items) // 2)]
@@ -1112,7 +1181,7 @@ def artifact_view(context, artifact, pointer="", offset=0, page_size=100, string
                     response["items"][0]["fields_continue"] = continuation(item_pointer, start=len(visible_keys))
                 if offset + 1 < len(value):
                     response["next_page"] = continuation(pointer, start=offset + 1)
-                while len(review_runtime.canonical(response)) > VIEW_LIMIT and response["items"][0]["fields"]:
+                while len(review_runtime.canonical(response)) > byte_limit and response["items"][0]["fields"]:
                     response["items"][0]["fields"] = response["items"][0]["fields"][:
                         len(response["items"][0]["fields"]) // 2]
                     visible = len(response["items"][0]["fields"])
@@ -1120,7 +1189,7 @@ def artifact_view(context, artifact, pointer="", offset=0, page_size=100, string
                         response["items"][0]["fields_continue"] = continuation(item_pointer, start=visible)
                     else:
                         response["items"][0].pop("fields_continue", None)
-                if len(review_runtime.canonical(response)) <= VIEW_LIMIT:
+                if len(review_runtime.canonical(response)) <= byte_limit:
                     return response
                 raise ValueError("oversized item key cannot be represented as a JSON pointer")
             if isinstance(item, list):
@@ -1130,7 +1199,7 @@ def artifact_view(context, artifact, pointer="", offset=0, page_size=100, string
                             "view_complete": False, "continue": continuation(item_pointer)}
                 if offset + 1 < len(value):
                     response["next_page"] = continuation(pointer, start=offset + 1)
-                if len(review_runtime.canonical(response)) <= VIEW_LIMIT:
+                if len(review_runtime.canonical(response)) <= byte_limit:
                     return response
                 raise ValueError("oversized list pointer cannot be represented")
             if isinstance(item, str):
@@ -1145,14 +1214,14 @@ def artifact_view(context, artifact, pointer="", offset=0, page_size=100, string
                     response["continue"] = page["continue"]
                 if offset + 1 < len(value):
                     response["next_page"] = continuation(pointer, start=offset + 1)
-                if len(review_runtime.canonical(response)) <= VIEW_LIMIT:
+                if len(review_runtime.canonical(response)) <= byte_limit:
                     return response
                 raise ValueError("oversized string page cannot be represented")
             response = {"artifact": artifact, "pointer": pointer,
                         "items": [{"index": offset, "value": item}], "total": len(value),
                         "offset": offset, "next_offset": None,
                         "view_complete": offset == 0 and len(value) == 1}
-            if len(review_runtime.canonical(response)) <= VIEW_LIMIT:
+            if len(review_runtime.canonical(response)) <= byte_limit:
                 return response
             raise ValueError("oversized scalar item cannot be paged")
         return {"artifact": artifact, "pointer": pointer, "items": [], "total": len(value),
@@ -1179,7 +1248,7 @@ def artifact_view(context, artifact, pointer="", offset=0, page_size=100, string
         low, high = 0, remaining
         while low < high:
             middle = (low + high + 1) // 2
-            if len(review_runtime.canonical(string_response(middle))) <= VIEW_LIMIT:
+            if len(review_runtime.canonical(string_response(middle))) <= byte_limit:
                 low = middle
             else:
                 high = middle - 1
@@ -1194,7 +1263,7 @@ def artifact_view(context, artifact, pointer="", offset=0, page_size=100, string
             raise ValueError("object field offset exceeds available fields")
         response = {"artifact": artifact, "pointer": pointer, "value": value,
                     "fields": keys[:32]}
-        if offset == 0 and len(review_runtime.canonical(response)) <= VIEW_LIMIT:
+        if offset == 0 and len(review_runtime.canonical(response)) <= byte_limit:
             return response
         fields = keys[offset:offset + page_size]
         while fields:
@@ -1205,7 +1274,7 @@ def artifact_view(context, artifact, pointer="", offset=0, page_size=100, string
                         "view_complete": offset == 0 and end >= len(keys)}
             if response["next_offset"] is not None:
                 response["continue"] = continuation(pointer, start=end)
-            if len(review_runtime.canonical(response)) <= VIEW_LIMIT:
+            if len(review_runtime.canonical(response)) <= byte_limit:
                 return response
             if len(fields) > 1:
                 fields = fields[:max(1, len(fields) // 2)]
@@ -1216,7 +1285,7 @@ def artifact_view(context, artifact, pointer="", offset=0, page_size=100, string
                 "view_complete": offset == 0 and not keys}
     response = {"artifact": artifact, "pointer": pointer, "value": value,
                 "fields": None}
-    if len(review_runtime.canonical(response)) <= VIEW_LIMIT:
+    if len(review_runtime.canonical(response)) <= byte_limit:
         return response
     return response
 
@@ -1609,6 +1678,9 @@ def step(root, identifier, operations=None, *, requests_file=None, worklist=None
                                 content_sha256 = hashlib.sha256(raw).hexdigest()
                             artifact = review_runtime.store_view(context, result)
                             manifest["operations"][op_id] = {"fingerprint": fingerprint, "artifact": artifact}
+                            if kind in ("read", "read-window"):
+                                manifest["operations"][op_id]["read_identity"] = [
+                                    result[name] for name in ("repo", "source", "ref", "path")]
                             if content_sha256 is not None:
                                 content_ids[op_id] = content_sha256
                                 manifest["operations"][op_id]["content_sha256"] = content_sha256
@@ -1762,6 +1834,21 @@ def finish(root, identifier):
                                              "validation_publish_seconds": time.perf_counter() - began,
                                              "publish_verification_seconds": validation_metrics.get("validation_seconds", 0.0)})
             return clean_published(root, identifier, context)
+        except release_report.PublicationIOError as exc:
+            if active.cancelled():
+                update(root, identifier, state="cancelled", phase="terminal", finished_at_epoch=time.time())
+                cleanup_started = time.perf_counter()
+                review_session.cleanup_session(context)
+                add_metric(root, identifier, "cleanup_seconds", time.perf_counter() - cleanup_started)
+                raise coordination.Cancelled("Release review cancelled.") from exc
+            error = {"code": "publication.io", "pointer": "/report_root",
+                     "message": coordination.safe_error(exc), "path": exc.path, "stage": exc.stage}
+            update(root, identifier, state="reviewing", phase="publication-retry", errors=[error],
+                   metrics={**job.get("metrics", {}), **validation_metrics,
+                            "validation_publish_seconds": time.perf_counter() - began})
+            return {"request_id": identifier, "state": "reviewing", "phase": "publication-retry",
+                    "terminal": False, "recoverable": True, "context_retained": True,
+                    "errors": [error], "retry": "finish", "review_outcome": validated_outcome}, 3
         except release_report.DraftValidationError as exc:
             update(root, identifier, state="reviewing", phase="draft-repair", errors=[str(exc)],
                    metrics={**job.get("metrics", {}), **validation_metrics,
@@ -1769,7 +1856,7 @@ def finish(root, identifier):
                                              "publish_verification_seconds": validation_metrics.get("validation_seconds", 0.0)})
             result = check(root, identifier)
             if not result["errors"]:
-                result["errors"] = [{"code": "full_validation", "pointer": "", "message": str(exc)}]
+                result["errors"] = [{"code": exc.code, "pointer": exc.pointer, "message": str(exc)}]
             return {**result, "state": "reviewing", "phase": "draft-repair", "terminal": False,
                     "recoverable": True, "context_retained": True}, 3
         except BaseException as exc:
@@ -1843,7 +1930,7 @@ def main(argv=None):
     code = 0
     try:
         if args.command == "capabilities":
-            result = capabilities(args.workspace, args.expected_payload_sha256)
+            result = capabilities(args.workspace, args.expected_payload_sha256, runtime_root=args.runtime_root)
             context = None
         elif args.command == "start":
             if not all((args.workspace, args.project, args.base, args.head)):
@@ -1865,10 +1952,19 @@ def main(argv=None):
             elif args.command == "cancel":
                 result = cancel(root, args.request_id)
             elif args.command == "view":
-                if not args.artifact:
-                    raise ValueError("view requires --artifact")
-                result = view_page(root, args.request_id, args.artifact, args.pointer,
-                                   args.offset, args.page_size, args.string_offset)
+                if bool(args.artifact) == bool(args.requests_file):
+                    raise ValueError("view requires exactly one of --artifact or --requests-file")
+                if args.requests_file:
+                    import review_readonly
+                    _job, retained = metadata(root, args.request_id)
+                    if not retained.is_dir():
+                        raise ValueError("This request has no retained evidence context.")
+                    result = review_readonly.batch_views(retained, args.request_id, args.requests_file,
+                                                        args.offset, artifact_view)
+                    code = 3 if any("error" in row for row in result["results"]) else 0
+                else:
+                    result = view_page(root, args.request_id, args.artifact, args.pointer,
+                                       args.offset, args.page_size, args.string_offset)
             elif args.command == "status" and args.summary:
                 result = status_summary(root, args.request_id)
             elif args.command == "status":
@@ -1894,7 +1990,8 @@ def main(argv=None):
     except (ValueError, KeyError, TypeError, OSError, RuntimeError) as exc:
         import sys
         error_output = json.dumps({"error": coordination.safe_error(exc), "request_id": args.request_id,
-                                   "terminal": True}, ensure_ascii=False) + "\n"
+                                   "terminal": True,
+                                   **({"preflight": exc.preflight} if hasattr(exc, "preflight") else {})}, ensure_ascii=False) + "\n"
         if args.command not in ("view", "capabilities") and not (args.command == "status" and args.summary):
             try:
                 runtime_value = args.runtime_root or os.environ.get("RELEASE_REVIEW_RUNTIME_DIR")

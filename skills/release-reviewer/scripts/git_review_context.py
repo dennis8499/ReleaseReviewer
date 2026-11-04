@@ -308,6 +308,7 @@ def _build_manifest(args: argparse.Namespace) -> dict:
             "fetches": fetches, "changed_files": changes,
             "network_activity": git.network_activity(), "network_log": git.network_log(), "coverage_policy": "ancestor-noop/v1",
             "risk_causality_policy": review_worklist.RISK_POLICY,
+            "risk_baseline_policy": review_worklist.BASELINE_POLICY,
             "release_changes": release_changes, "merge_preview": preview,
             "merge_commits": merge_commits,
             "context_gaps": sorted(set(gaps)), "context_complete": not gaps,

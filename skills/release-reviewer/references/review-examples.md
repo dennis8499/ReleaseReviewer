@@ -1,5 +1,12 @@
 # 上版審查整合情境
 
+- **基礎版已有行為：** base 與最終版本都在 13 時切換報價來源，本次只在附近新增註解。
+  對照兩版本的條件、呼叫端與結果後，將此疑問記入 progress 的 `excluded_questions`，繼續核對真正的變更；此既有行為不形成此次 P1。
+- **舊函式的新觸發：** `legacy_average(total, count)` 兩版本相同，但結算入口由傳入 1 改為 0。
+  固定 base caller、最終 caller 與除法行為可串成新的失敗條件；在 `baseline_reason` 說明變更並列出直接 P1。函式本體沒有修改不會排除這個新風險。
+- **刪除仍被使用的端點：** base 有 `/quote`，最終移除，固定 consumer 仍呼叫它。
+  保存 base 路由、最終路由表／缺失證據及 consumer 引用；以最終可證實的契約失敗判斷。整檔刪除可沿 `final_absence` 證明，不要求不存在的 head 行號。必要 consumer 未取得時保留缺口，不能用搜尋零命中判為完整。
+
 - **既有定義、首次使用：** `$release-reviewer Repo=BillingApi 基礎分支=main 比較分支=feature/invoice`。
   base 已定義 `BillingDb.dbo.Invoice`，但全 Repo 搜尋與 mapping 查證均無正式程式使用；
   最終預覽首次寫入該表。記錄 first-use、base 搜尋 ID、定義／使用證據並產生待確認 Checklist；

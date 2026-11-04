@@ -1,6 +1,13 @@
 # Change log
 
-## Unreleased
+## 0.12.0 - 2026-11-04
+
+- Expose session/network runtime paths and their setting sources; report preflight location and zero-fetch diagnostics while preserving the shared Git lease.
+- Retain frozen session evidence after a pre-commit report permission/sharing failure and return recoverable `publication.io` diagnostics for an offline `finish` retry.
+- Preview redacted summaries, reject a completed review's default summary, and check known citation bounds from saved reads without Git.
+- Add capability-gated read-only batch views with a total 24 KiB limit and independent request/page continuations.
+- Require a base/final causal explanation and base evidence (or captured new-path evidence) under `entry-base/v1`; retain the historical v3 contract when the policy is absent.
+- Add anonymized preexisting/new-trigger/deleted-endpoint quality fixtures, dedicated CLI profiles with before/after enabled-skill inventory proof, and hash-bound independent-score import with explicit incomplete/failure gates. Live semantic scores remain unmeasured until an independent review is supplied.
 
 ## 0.11.1 - 2026-11-01
 

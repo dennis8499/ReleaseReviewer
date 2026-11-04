@@ -9,6 +9,14 @@ spec.loader.exec_module(packaging)
 
 
 class PackageTests(RepoTest):
+    def test_package_requires_the_read_only_session_module(self):
+        import shutil
+        copied = self.root / "missing-readonly-skill"
+        shutil.copytree(SKILL, copied)
+        (copied / "scripts/review_readonly.py").unlink()
+        with self.assertRaisesRegex(ValueError, "review_readonly"):
+            packaging.build_release(copied, self.root / "incomplete-package")
+
     def test_crlf_text_payload_is_canonical_and_binary_is_exact(self):
         import shutil
         copied = self.root / "crlf-skill"

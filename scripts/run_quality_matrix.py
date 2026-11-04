@@ -16,13 +16,14 @@ import subprocess
 import sys
 import tempfile
 import time
+import quality_isolation
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests"))
 import create_quality_fixture
 
 MODELS = {"gpt-6.1-sol": "high", "gpt-6-astra": "high", "gpt-6-luna": "max"}
-CONDITIONS = ("no-skill", "v0.9.0", "candidate")
+CONDITIONS = ("no-skill", "baseline", "candidate")
 
 
 def digest(path: Path) -> str:
@@ -79,6 +80,16 @@ def _static_report_body(body: str) -> str:
     return body[:start] + body[end + len(end_marker):]
 
 
+def verify_report_receipt(report: str, job: dict) -> bool:
+    expected = job.get("report_static_sha256")
+    if not isinstance(expected, str) or not re.fullmatch(r"[a-f0-9]{64}", expected):
+        return False
+    try:
+        return hashlib.sha256(_static_report_body(report).encode("utf-8")).hexdigest() == expected
+    except ValueError:
+        return False
+
+
 def redact_report_paths(report: str) -> str:
     """Redact local paths in a report and keep its embedded integrity metadata valid."""
     marker = re.search(r"<!-- release-review-report:([A-Za-z0-9+/=]+) -->", report)
@@ -128,10 +139,7 @@ Do not change source files. Do not run tests, deploy, access Git Server, call Gi
 
 
 def codex_command(executable: str, args: list[str]) -> list[str]:
-    if os.name == "nt":
-        return [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/s", "/c",
-                subprocess.list2cmdline([executable, *args])]
-    return [executable, *args]
+    return quality_isolation.command(executable, args)
 
 
 def stop_process_tree(process: subprocess.Popen) -> str | None:
@@ -172,11 +180,17 @@ def completed_job(workspace: Path, reports: list[Path]) -> dict:
     return selected
 
 
+def start_review_process(arguments, workspace, env):
+    return subprocess.Popen(arguments, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            env=env, cwd=workspace, creationflags=(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                            | getattr(subprocess, "CREATE_NO_WINDOW", 0)))
+
+
 def run_sample(*, model: str, effort: str, condition: str, case: str, run_number: int,
                scratch: Path, output: Path, baseline_skill: Path | None, candidate_skill: Path,
-               executable: str, timeout: int) -> dict:
+               executable: str, timeout: int, codex_home: Path | None = None) -> dict:
     sample_id = f"{model}-{condition}-{case}-{run_number:02}"
-    sample_root = scratch / sample_id
+    sample_root = scratch / ("s-" + hashlib.sha256(sample_id.encode("utf-8")).hexdigest()[:10])
     fixture_root = sample_root / "fixture"
     fixture = create_quality_fixture.create(fixture_root, case)
     workspace, project = Path(fixture["workspace"]), Path(fixture["project"])
@@ -184,12 +198,13 @@ def run_sample(*, model: str, effort: str, condition: str, case: str, run_number
     oracle = json.loads(oracle_path.read_text(encoding="utf-8"))
     installed = None
     if condition != "no-skill":
-        source = baseline_skill if condition == "v0.9.0" else candidate_skill
+        source = baseline_skill if condition in ("baseline", "v0.9.0") else candidate_skill
         if source is None:
-            raise ValueError("baseline skill directory required for v0.9.0 samples")
+            raise ValueError("baseline skill directory required for baseline samples")
         installed = workspace / ".agents" / "skills" / "release-reviewer"
         shutil.copytree(source, installed)
     report_dir = project / "review-reports"
+    installed_hash = digest(installed) if installed else None
     report_dir.mkdir(exist_ok=True)
     last_message = workspace / ".quality-matrix-last-message.txt"
     event_log = output / "events" / f"{sample_id}.jsonl"
@@ -199,17 +214,24 @@ def run_sample(*, model: str, effort: str, condition: str, case: str, run_number
     saved_report.parent.mkdir(parents=True, exist_ok=True)
     prompt = prompt_for(condition, workspace, project, report_dir)
     args = ["exec", "--model", model, "--config", f"model_reasoning_effort={effort}",
-            "--approve-for-me", "--ephemeral", "--ignore-user-config", "--skip-git-repo-check",
+            "--approve-for-me", "--ephemeral", "--skip-git-repo-check",
             "--json", "--output-last-message", str(last_message), "--cd", str(workspace), "-"]
-    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "NO_COLOR": "1"}
+    profile = codex_home or sample_root / "codex-home"
     started = time.perf_counter()
+    isolation = {"schema": "ReviewerSkillIsolation/v1", "proven": False}
+    isolation_seconds = process_seconds = 0.0
+    pending_stage = None
+    pending_started = None
     error = None
     return_code = None
     stdout = stderr = ""
     try:
-        process = subprocess.Popen(codex_command(executable, args), stdin=subprocess.PIPE,
-                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
-                                   cwd=workspace, creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+        pending_stage, pending_started = "isolation", time.perf_counter()
+        env, isolation = quality_isolation.prepare_isolation(
+            executable, workspace, profile, installed / "SKILL.md" if installed else None)
+        isolation_seconds += time.perf_counter() - pending_started
+        pending_stage, pending_started = "review", time.perf_counter()
+        process = start_review_process(codex_command(executable, args), workspace, env)
         try:
             stdout_bytes, stderr_bytes = process.communicate(input=prompt.encode("utf-8"), timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -225,12 +247,32 @@ def run_sample(*, model: str, effort: str, condition: str, case: str, run_number
         return_code = process.returncode
         stdout = stdout_bytes.decode("utf-8", errors="replace")
         stderr = stderr_bytes.decode("utf-8", errors="replace")
+        process_seconds = time.perf_counter() - pending_started
+        pending_stage, pending_started = "isolation", time.perf_counter()
+        isolation = quality_isolation.finish_isolation(executable, workspace, profile, env, isolation)
+        isolation_seconds += time.perf_counter() - pending_started
+        pending_stage = None
+        if not isolation["proven"]:
+            raise ValueError("Skill inventory or profile changed during the review.")
+        if installed is not None and digest(installed) != installed_hash:
+            raise ValueError("Installed skill payload changed during the review.")
     except Exception as exc:
+        if pending_stage == "isolation":
+            isolation_seconds += time.perf_counter() - pending_started
+        elif pending_stage == "review":
+            process_seconds += time.perf_counter() - pending_started
         error = f"{type(exc).__name__}: {exc}"
     elapsed = time.perf_counter() - started
     reports = sorted(report_dir.glob("*.md")) if report_dir.exists() else []
-    report_text = reports[-1].read_text(encoding="utf-8", errors="replace") if reports else ""
     job = completed_job(workspace, reports)
+    report_reference = job.get("report_path")
+    selected_report = next((path for path in reports if os.path.normcase(str(path.resolve())) ==
+                            os.path.normcase(str(Path(report_reference).resolve()))), None) if isinstance(report_reference, str) else None
+    selected_report = selected_report or (reports[-1] if reports else None)
+    report_text = selected_report.read_text(encoding="utf-8", errors="replace") if selected_report else ""
+    receipt_verified = verify_report_receipt(report_text, job) if condition != "no-skill" else None
+    if condition != "no-skill" and not receipt_verified:
+        error = (error + "; " if error else "") + "Published report does not match its original request receipt."
     sentinels = oracle.get("secret_sentinels", [])
     raw_session_error = job.get("error") if isinstance(job.get("error"), str) else ""
     raw_cleanup_error = job.get("cleanup_error") if isinstance(job.get("cleanup_error"), str) else ""
@@ -269,6 +311,7 @@ def run_sample(*, model: str, effort: str, condition: str, case: str, run_number
               "job_updated_at": job.get("updated_at"),
               "report_path": (Path("reports") / saved_report.name).as_posix() if reports else None,
               "report_sha256": report_sha256, "report_bytes": report_bytes, "secret_leak": secret_leak,
+              "report_receipt_verified": receipt_verified,
               "job_state": job.get("state"), "cleanup_verified": cleanup_verified,
                "cleanup_error": sanitized_cleanup_error or None, "network_activity": network,
               "network_log": job.get("network_log"), "runtime_metrics": job.get("metrics"),
@@ -278,8 +321,11 @@ def run_sample(*, model: str, effort: str, condition: str, case: str, run_number
               "blocker_count": outcome.get("blocker_count"),
               "pending_count": outcome.get("pending_count"), "gap_count": outcome.get("gap_count"),
               "oracle_expected": oracle["expected"], "semantic_score": None,
-              "global_skill_isolation": "not proven; user CODEX_HOME remains active",
-              "installed_skill_sha256": digest(installed) if installed else None,
+              "skill_isolation": quality_isolation.public_evidence(isolation),
+              "global_skill_isolation": "proven" if isolation.get("proven") else "not proven",
+              "isolation_seconds": isolation_seconds, "review_process_seconds": process_seconds,
+              "installed_skill_sha256": installed_hash,
+              "installed_skill_sha256_after": digest(installed) if installed else None,
               "signals": {key: bool(key in report_text_lower) for key in ("p0", "p1", "checklist", "ftp", "sftp", "kafka")}}
     last_message.unlink(missing_ok=True)
     return result
@@ -290,13 +336,15 @@ def main() -> int:
     parser.add_argument("--baseline-skill-dir", type=Path, required=True)
     parser.add_argument("--candidate-skill-dir", type=Path, default=ROOT / "skills/release-reviewer")
     parser.add_argument("--model", action="append", choices=tuple(MODELS), dest="models")
-    parser.add_argument("--condition", action="append", choices=CONDITIONS, dest="conditions")
+    parser.add_argument("--condition", action="append", choices=(*CONDITIONS, "v0.9.0"), dest="conditions")
     parser.add_argument("--case", action="append", choices=create_quality_fixture.CASES, dest="cases")
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--timeout", type=int, default=900)
     parser.add_argument("--seed", type=int, default=20261029)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--scratch-dir", type=Path)
+    parser.add_argument("--codex-home", type=Path,
+                        help="Dedicated harness-owned Codex profile; authenticate it separately or supply CLI credentials via environment.")
     parser.add_argument("--codex", default=shutil.which("codex.cmd") or shutil.which("codex"))
     args = parser.parse_args()
     if args.runs < 1 or not args.codex:
@@ -305,11 +353,18 @@ def main() -> int:
     candidate = args.candidate_skill_dir.resolve()
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
+    if (output / "quality-matrix.json").exists():
+        parser.error("Use a fresh output directory to preserve previous matrix evidence")
     # Keep the generated fixture path short enough for Windows nested runtime views.
     scratch = (args.scratch_dir or Path(tempfile.mkdtemp(prefix="q-"))).resolve()
+    if any((parent / ".git").exists() for parent in (scratch, *scratch.parents)):
+        parser.error("Quality fixture scratch must stay outside every Git Repo")
     scratch.mkdir(parents=True, exist_ok=True)
     cases, models, conditions = (args.cases or list(create_quality_fixture.CASES),
-                                 args.models or list(MODELS), args.conditions or list(CONDITIONS))
+                                 args.models or list(MODELS),
+                                 ["baseline" if value == "v0.9.0" else value for value in (args.conditions or CONDITIONS)])
+    if len(set(conditions)) != len(conditions):
+        parser.error("Each condition may appear only once")
     matrix = [(model, conditions_item, case, run)
               for case in cases for run in range(1, args.runs + 1)
               for model in models for conditions_item in conditions]
@@ -320,6 +375,8 @@ def main() -> int:
                 "cases": cases, "runs_per_cell": args.runs, "seed": args.seed,
                 "codex_cli": Path(args.codex.replace("\\", "/")).name, "baseline_skill_sha256": digest(baseline),
                 "candidate_skill_sha256": digest(candidate),
+                "baseline_skill_version": (baseline / "VERSION").read_text(encoding="utf-8-sig").strip(),
+                "candidate_skill_version": (candidate / "VERSION").read_text(encoding="utf-8-sig").strip(),
                 "no_skill_isolation_proven": False,
                 "scoring": "blind reports are preserved; semantic_score requires an oracle-backed independent review"}
     samples = []
@@ -328,7 +385,7 @@ def main() -> int:
         sample = run_sample(model=model, effort=MODELS[model], condition=condition, case=case,
                             run_number=number, scratch=scratch, output=output,
                             baseline_skill=baseline, candidate_skill=candidate,
-                            executable=args.codex, timeout=args.timeout)
+                            executable=args.codex, timeout=args.timeout, codex_home=args.codex_home)
         samples.append(sample)
         temporary = result_path.with_name(result_path.name + ".tmp")
         temporary.write_text(json.dumps({**metadata, "samples": samples}, ensure_ascii=False, indent=2) + "\n",
@@ -338,6 +395,9 @@ def main() -> int:
                           "report_created": sample["report_created"], "secret_leak": sample["secret_leak"]},
                          ensure_ascii=False), flush=True)
     metadata["complete"] = True
+    no_skill_samples = [row for row in samples if row["condition"] == "no-skill"]
+    metadata["no_skill_isolation_proven"] = bool(no_skill_samples) and all(
+        quality_isolation.proof_valid(row["skill_isolation"]) for row in no_skill_samples)
     temporary = result_path.with_name(result_path.name + ".tmp")
     temporary.write_text(json.dumps({**metadata, "samples": samples}, ensure_ascii=False, indent=2) + "\n",
                          encoding="utf-8")
@@ -355,7 +415,10 @@ def main() -> int:
     (output / "quality-summary.json").write_text(
         json.dumps({"schema": "ReleaseReviewerBlindQualitySummary/v1", "semantic_scoring_complete": False,
                     "cells": summary}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return 0 if all(row["exit_code"] == 0 and row["report_created"] and not row["secret_leak"] for row in samples) else 2
+    return 0 if all(row["exit_code"] == 0 and row["report_created"] and not row["secret_leak"] and not row["error"]
+                    and quality_isolation.proof_valid(row["skill_isolation"])
+                    and (row["condition"] == "no-skill" or row["report_receipt_verified"] is True)
+                    for row in samples) else 2
 
 
 if __name__ == "__main__":

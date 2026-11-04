@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import errno
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -44,9 +45,29 @@ CHECKLIST_END = "<!-- release-checklist:end -->"
 class DraftValidationError(ValueError):
     """A draft field or citation can be repaired without replacing frozen sources."""
 
+    def __init__(self, message, *, code="full_validation", pointer=""):
+        super().__init__(message)
+        self.code, self.pointer = code, pointer
+
 
 class DraftInputError(DraftValidationError):
     """The author-controlled draft file cannot yet be read as UTF-8 JSON."""
+
+
+class PublicationIOError(OSError):
+    """A destination write failed before a report was committed."""
+
+    def __init__(self, error, path, stage):
+        super().__init__(str(error))
+        self.path, self.stage = str(path), stage
+
+
+def raise_publication_error(error, path, stage):
+    if (isinstance(error, PermissionError)
+            or error.errno in {errno.EACCES, errno.EPERM, errno.EBUSY, errno.ETXTBSY}
+            or getattr(error, "winerror", None) in {5, 32, 33}):
+        raise PublicationIOError(error, path, stage) from error
+    raise error
 
 
 def draft_require(condition, message):
@@ -270,6 +291,12 @@ def _validate_result(draft, manifest, context):
         ev.require(policy == review_worklist.RISK_POLICY, "unsupported risk causality policy")
         draft_require(draft.get("risk_causality_policy", policy) == policy, "草稿與固定風險因果政策不符。")
         result["risk_causality_policy"] = policy
+    baseline_policy = manifest.get("risk_baseline_policy")
+    if baseline_policy is not None:
+        ev.require(baseline_policy == review_worklist.BASELINE_POLICY, "unsupported risk baseline policy")
+        draft_require(draft.get("risk_baseline_policy", baseline_policy) == baseline_policy,
+                      "草稿與固定入口 base 核對政策不符。")
+        result["risk_baseline_policy"] = baseline_policy
     if layout is not None:
         result["report_layout"] = layout
     for field in ("coverage", "code_risks", "config_changes", "db_changes", "external_changes", "dependency_coverage"):
@@ -356,6 +383,9 @@ def _validate_result(draft, manifest, context):
             risk["diff_roots"], risk["final_absence"] = review_worklist.validate_risk_links(
                 item, manifest, risk["evidence"], require=draft_require)
             risk["diff_reason"] = item["diff_reason"]
+        baseline_reason = review_worklist.validate_risk_baseline(item, manifest, risk["evidence"], require=draft_require)
+        if baseline_reason is not None:
+            risk["baseline_reason"] = baseline_reason
         draft_require(any(e["repo"] == "entry" and e["path"] in reviewed for e in risk["evidence"]),
                    "程式風險至少須引用一個已審查的變更路徑。")
         draft_require(bool(risk.get("final_absence")) or any(e["repo"] == "entry" and (e["source"], e["ref"]) == final_pair for e in risk["evidence"]),
@@ -451,6 +481,9 @@ def _validate_result(draft, manifest, context):
     complete = manifest["context_complete"] and all(v["status"] == "reviewed" for v in covered.values())
     complete = complete and not unresolved and result["chain_complete"] and resource_complete and parents_complete
     result["review_complete"] = complete
+    if complete and review_worklist.default_summary(result["summary"]):
+        raise DraftValidationError("完整審查須更新預設摘要，說明本次固定版本的結論。",
+                                   code="summary.placeholder", pointer="/summary")
     result["status"] = "靜態檢查完成" if complete else "檢查未完成"
     if complete and not expected:
         result["status"] = "沒有差異"
@@ -672,6 +705,7 @@ def _render_legacy(result, *, sectioned=False):
                   "**實際結果**", "", risk_prose(risk["actual"]), "",
                   "**證據**", "", *paragraphs(technical["explanation"]), *citations(risk["evidence"], repo_names),
                   *(["Diff 起點：" + "、".join(risk["diff_roots"]) + "；" + risk["diff_reason"], ""] if risk.get("diff_roots") else []),
+                  *(["Base → 最終版本：" + risk["baseline_reason"], ""] if risk.get("baseline_reason") else []),
                   *[line for proof in risk.get("final_absence", [])
                     for line in ("最終版本不存在：" + code_span(proof["path"]) + "（" + proof["source"] + " " + proof["ref"][:8] + "）", "")],
                   "**建議改善方式**", "", *paragraphs(risk["recommendation"], technical["engineering_fix"])]
@@ -828,7 +862,10 @@ def publish_report(context, draft_path, *, retain_on_validation_error=False,
         ev.require(not destination.is_relative_to(context), "報告不能寫入稍後會清理的 context。")
         if manifest.get("snapshot_policy") is not None:
             ev.require(Path(manifest["repo"]).is_dir(), "受審 Repo 目錄不存在，無法寫入報告。")
-            destination.mkdir(exist_ok=True)
+            try:
+                destination.mkdir(exist_ok=True)
+            except OSError as exc:
+                raise_publication_error(exc, destination, "create-directory")
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         stem = f"release-review-{stamp}-{manifest['base_sha'][:8]}-{manifest['head_sha'][:8]}"
         body = render_markdown(result)
@@ -843,7 +880,10 @@ def publish_report(context, draft_path, *, retain_on_validation_error=False,
         markdown = body + f"\n<!-- release-review-report:{marker} -->\n"
         temporary = destination / (".release-report-" + uuid.uuid4().hex + ".tmp")
         try:
-            temporary.write_text(markdown, encoding="utf-8", newline="\n")
+            try:
+                temporary.write_text(markdown, encoding="utf-8", newline="\n")
+            except OSError as exc:
+                raise_publication_error(exc, temporary, "write-temporary")
             for number in range(1000):
                 suffix = "" if number == 0 else f"-{number:02}"
                 md = destination / f"{stem}{suffix}.md"
@@ -869,20 +909,27 @@ def publish_report(context, draft_path, *, retain_on_validation_error=False,
                     os.link(temporary, md)
                 except FileExistsError:
                     continue
-                except OSError:
+                except OSError as exc:
                     if os.name != "nt":
-                        raise
+                        raise_publication_error(exc, md, "link-report")
                     # Managed Windows volumes can deny hard links. A same-directory
                     # rename keeps report publication atomic and refuses an existing target.
                     try:
                         os.rename(temporary, md)
                     except FileExistsError:
                         continue
+                    except OSError as exc:
+                        raise_publication_error(exc, md, "rename-report")
                 if on_published:
                     on_published(md)
                 return md
         finally:
-            temporary.unlink(missing_ok=True)
+            pending_error = sys.exc_info()[0] is not None
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                if not pending_error:
+                    raise
         raise ValueError("找不到可使用的新報告檔名。")
     finally:
         if cleanup_context and not retain_context:

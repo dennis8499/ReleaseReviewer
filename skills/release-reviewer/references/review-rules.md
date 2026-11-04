@@ -152,6 +152,7 @@ Context／Draft／Report 維持 v3。缺少 `coverage_policy` 的舊 v3 context 
 - 編號從 R-001 連續排列，依 P0、P1 排序。
 - trigger 描述能實際觸發問題的輸入或操作；impact 描述使用者、資料或服務受到的影響。
 - scenario_source 為 code-derived 或 reproduced；後者必須在 tests_executed 記錄實際執行及結果。
+- 新 context 的 `risk_baseline_policy=entry-base/v1` 要求每項風險填 `baseline_reason`：對照入口 base 與最終版本，說明哪個新輸入、呼叫、契約或操作讓失敗成為本次變更的結果。evidence 應含入口 `base` 引用；只有已選 Diff 的新增路徑確實不在固定 base catalog、且引用其最終內容時，才可用該缺失結構支撐新增判斷。merge-base 只支援歷史追溯，不能取代入口 base。無此政策的歷史 v3 context 維持原契約。這些結構欄位不取代 reviewer 的語意核對。
 - evidence 為上述固定證據陣列，不可只引用舊版而未確認最終行為。
 - v2 問題證據的非空文字檔須附 line_start／line_end（含設定／私鑰），保留所有來源的安全程式片段；設定／私鑰內容仍依原有規則省略。只有二進位及空檔可無行號並保留明確說明。歷史未指定行號的一般文字證據標「未指定行號範圍，未擷取程式片段」。此要求不套用至覆蓋或依賴證據。
 - 跨 Repo 風險仍須引用入口 Repo 的已審查變更及最終版本；關聯證據補充影響，不可將無關 Repo 的既有問題列為本次風險。
@@ -164,6 +165,7 @@ Context／Draft／Report 維持 v3。缺少 `coverage_policy` 的舊 v3 context 
 {
   "id":"R-001", "priority":"P1", "title":"新匯出流程可讀取其他租戶的資料",
   "blocking_reason":"正式匯出端點可能跨租戶洩漏客戶資料，上版前必須修正。",
+  "baseline_reason":"入口 base 只允許背景工作擁有者下載；最終版本新增僅依 job_id 查詢的路徑，使不同租戶可讀取該工作。",
   "impact":"使用者可能取得不屬於自己公司的匯出內容。",
   "expected":"下載端點只交付登入租戶擁有的工作，拒絕其他租戶的工作編號。",
   "actual":"端點只依 job_id 取回檔案，未比對 tenant_id，可能交付其他公司的內容。",

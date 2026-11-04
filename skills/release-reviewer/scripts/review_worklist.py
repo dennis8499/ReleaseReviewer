@@ -9,6 +9,36 @@ import merge_parent_coverage
 import coverage_policy
 
 RISK_POLICY = "diff-causality/v1"
+BASELINE_POLICY = "entry-base/v1"
+DEFAULT_SUMMARY = "尚未完成本次審查。"
+
+
+def default_summary(value):
+    return isinstance(value, str) and value.strip().rstrip("。.!！") == DEFAULT_SUMMARY.rstrip("。")
+
+
+def validate_risk_baseline(item, manifest, evidence, *, require=ev.require):
+    """Require an explicit base/final judgment; source structure cannot prove a bug."""
+    policy = manifest.get("risk_baseline_policy")
+    if policy is None:
+        return None  # Historical v3 contexts retain their authored contract.
+    ev.require(policy == BASELINE_POLICY, "unsupported risk baseline policy")
+    reason = item.get("baseline_reason")
+    require(isinstance(reason, str) and bool(reason.strip()),
+            "baseline_reason 須說明入口 base 與最終版本的差異，以及新增的觸發條件。")
+    base = manifest["base_sha"]
+    has_base = any(c.get("repo") == "entry" and c.get("source") == "base" and c.get("ref") == base
+                   for c in evidence)
+    entries = manifest["repositories"][0]["snapshot"]["sources"][base]["entries"]
+    base_paths = {entry["path"] for entry in entries}
+    preview = manifest.get("merge_preview") or {}
+    final_ref = preview["tree_sha"] if preview.get("status") == "clean" else manifest["head_sha"]
+    roots = [root for root in manifest.get("diff_roots", []) if root["id"] in item.get("diff_roots", [])]
+    new_path = any(root["path"] not in base_paths and any(
+        c.get("repo") == "entry" and c.get("path") == root["path"] and c.get("ref") == final_ref
+        for c in evidence) for root in roots)
+    require(has_base or new_path, "程式風險須附入口 base 證據，或固定 catalog 可證實的新增路徑。")
+    return reason.strip()
 
 
 def comparison_scopes(manifest):
@@ -147,8 +177,9 @@ def prepare(manifest):
     worklist = {"schema": "ReleaseReviewWorklist/v1", "requests": requests,
                 "metadata_only": metadata, "required_coverage": coverage,
                 "merge_parent_views": parent_views, "diff_roots": manifest.get("diff_roots", [])}
-    draft = {"schema": "ReleaseReviewDraft/v3", "report_layout": "engineering-review/v2", "summary": "尚未完成本次審查。",
+    draft = {"schema": "ReleaseReviewDraft/v3", "report_layout": "engineering-review/v2", "summary": DEFAULT_SUMMARY,
              **({"risk_causality_policy": manifest["risk_causality_policy"]} if manifest.get("risk_causality_policy") else {}),
+             **({"risk_baseline_policy": manifest["risk_baseline_policy"]} if manifest.get("risk_baseline_policy") else {}),
              "merge_parent_review": merge_parent_coverage.unfinished(manifest.get("required_merge_views", [])),
              "coverage": coverage, "code_risks": [], "config_changes": [], "db_changes": [],
              "external_changes": [], "functional_chain": [], "chain_gaps": [],

@@ -84,6 +84,7 @@ def main():
         second = {
             "id": "R-002", "priority": "P1", "title": "新增發票流程讀取未定義設定而失敗",
             "blocking_reason": "本次新增的正式發票準備流程必然讀取不存在的必要鍵，流程無法完成。",
+            "baseline_reason": "入口 base 未走此設定載入路徑；最終版本新增發票入口並直接索引未定義鍵。",
             "trigger": "發票準備流程讀取檔案內的必要逾時設定。",
             "impact": "設定檔沒有該鍵，讀取時發生例外，發票準備流程中斷。",
             "expected": "發票準備流程可取得必要逾時設定，或依明確的預設行為完成。",
@@ -95,6 +96,7 @@ def main():
                                   "engineering_fix": "補上必要設定或提供符合產品需求的預設值。"},
             "scenario_source": "reproduced",
             "evidence": [citation(manifest, "merge-preview", "src/service.py", 5, 11),
+                         citation(manifest, "base", "src/service.py", 1, 4),
                          citation(manifest, "merge-preview", "src/settings.json", 1),
                          citation(manifest, "merge-preview", "src/application.py", 10, 12)]}
         draft["code_risks"] = [first, second]

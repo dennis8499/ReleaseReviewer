@@ -2,3 +2,6 @@ __pycache__/
 *.py[cod]
 dist/
 .tmp/
+
+# Historical benchmark summaries stay tracked; raw event streams are local outputs.
+/docs/benchmarks/**/events/

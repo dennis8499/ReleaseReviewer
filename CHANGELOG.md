@@ -1,5 +1,9 @@
 # Change log
 
+## 0.12.2 - 2026-11-15
+
+- Output Style 改為使用者明確要求或選取時才載入；保留 Release Report 固定章節、Checklist、證據與產生時判斷。
+
 ## 0.12.0 - 2026-11-04
 
 - Expose session/network runtime paths and their setting sources; report preflight location and zero-fetch diagnostics while preserving the shared Git lease.

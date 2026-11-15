@@ -1,12 +1,12 @@
 # Release Reviewer｜上版檢查
 
-Standalone Codex Skill **0.12.1** for fixed-branch pre-release review. It reports P0/P1 blockers, functional-chain breaks and deployment dependencies in one Traditional Chinese report with a human-editable checklist. The staged helper features ship with explicit limits: the optional supporting snapshot cache, end-to-end timing, Agent tool-call counts and the three-model semantic matrix remain gated or unmeasured. See [0.12.1 release notes](docs/releases/v0.12.0.md).
+Standalone Codex Skill **0.12.2** for fixed-branch pre-release review. It reports P0/P1 blockers, functional-chain breaks and deployment dependencies in one Traditional Chinese report with a human-editable checklist. The staged helper features ship with explicit limits: the optional supporting snapshot cache, end-to-end timing, Agent tool-call counts and the three-model semantic matrix remain gated or unmeasured. See [0.12.2 release notes](docs/releases/v0.12.2.md).
 
 ## 安裝與使用
 
 需要 Python 3.10+、Git 及可使用本機 Skills 的 Codex。Git 須支援 merge-tree --write-tree 與 --merge-base；缺少乾淨預覽時保留缺口，不改用直接比較。
 
-將 skills/release-reviewer 複製到 Codex Skills 目錄，或從 [v0.12.0 Release](https://github.com/dennis8499/ReleaseReviewer/releases/tag/v0.12.0) 下載並解壓 release-reviewer-0.12.1.zip；本機也可執行 `python scripts/package_release.py` 產生 dist/release-reviewer-0.12.1.zip。CODEX_HOME 有設定時使用其 skills 子目錄，否則使用使用者的 .codex/skills。
+將 skills/release-reviewer 複製到 Codex Skills 目錄，或從 [v0.12.2 Release](https://github.com/dennis8499/ReleaseReviewer/releases/tag/v0.12.2) 下載並解壓 release-reviewer-0.12.2.zip；本機也可執行 `python scripts/package_release.py` 產生 dist/release-reviewer-0.12.2.zip。CODEX_HOME 有設定時使用其 skills 子目錄，否則使用使用者的 .codex/skills。
 
 ~~~text
 $release-reviewer Repo=OrderService 基礎分支=origin/main 比較分支=origin/feature/payment
@@ -25,7 +25,11 @@ $release-reviewer Repo=C:\projects\OrderService 基礎分支=main 比較分支=f
 
 祖先豁免另需 capture 封存的 `ancestor_path` commit 證據，由發布器驗證 hash 與 parent 連線；草稿不能自行宣告祖先關係。
 
-## 0.12.0 更新
+## 0.12.2 更新
+
+只有使用者明確要求或選取 Output Style 時，才載入該 Skill 與本次必要參考來調整行文密度；Release Report 的固定章節、Checklist、證據與產生時判斷維持原契約。
+
+## 0.12.0 更新（歷史）
 
 本版加入雙 runtime 診斷、發布寫入續跑、摘要及引用前檢、唯讀批次續讀、base／最終版本核對與獨立語意評分工具。完整行為、重試命令與驗收限制見[實作及驗收說明](docs/review-reliability.md)。三模型實際語意評分仍未完成，不宣稱品質或端到端速度提升。
 

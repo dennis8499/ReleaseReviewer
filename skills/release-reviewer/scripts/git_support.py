@@ -469,60 +469,6 @@ def has_git_marker(path: Path) -> bool:
     return marker.is_dir() or marker.is_file()
 
 
-def discover_repositories(workspace: Path, workspace_file: Path | None) -> list[Path]:
-    roots = workspace_roots(workspace, workspace_file)
-    repositories: set[Path] = set()
-    for root in roots:
-        if not root.exists():
-            continue
-        if has_git_marker(root):
-            repositories.add(root)
-            continue
-        for current, directories, _files in os.walk(root, topdown=True, followlinks=False):
-            current_path = Path(current)
-            directories[:] = [name for name in directories if name not in SKIP_DIRECTORIES]
-            if has_git_marker(current_path):
-                repositories.add(normalize_path(current_path))
-                directories[:] = []
-    return sorted(repositories, key=lambda item: str(item).casefold())
-
-
-def choose_repository(
-    workspace: Path,
-    workspace_file: Path | None,
-    project: str | None,
-) -> tuple[Path, list[Path]]:
-    repositories = discover_repositories(workspace, workspace_file)
-    if project:
-        requested = Path(project).expanduser()
-        candidates: list[Path] = []
-        relative_target = workspace / requested
-        if requested.is_absolute() or relative_target.exists():
-            target = normalize_path(requested if requested.is_absolute() else workspace / requested)
-            candidates = [repo for repo in repositories if repo == target]
-        if not candidates:
-            needle = project.casefold().rstrip("\\/")
-            candidates = [
-                repo
-                for repo in repositories
-                if repo.name.casefold() == needle or str(repo).casefold() == needle
-            ]
-        if len(candidates) != 1:
-            available = ", ".join(str(repo) for repo in repositories) or "（找不到 Git repository）"
-            raise ReviewContextError(
-                f"專案名稱「{project}」無法唯一定位 repository。候選：{available}",
-                hint="請從候選清單擇一，以完整路徑或資料夾名稱重新指定專案名稱。",
-            )
-        return candidates[0], repositories
-    if len(repositories) != 1:
-        available = ", ".join(str(repo) for repo in repositories) or "（找不到 Git repository）"
-        raise ReviewContextError(
-            f"未提供專案名稱，工作區必須恰好有一個 repository；候選：{available}",
-            hint="請指定專案名稱或 repository 路徑；若找不到 repository，請確認工作區資料夾是否正確。",
-        )
-    return repositories[0], repositories
-
-
 def remote_names(repo: Path) -> list[str]:
     output = str(run_git(repo, ["remote"]))
     return [line.strip() for line in output.splitlines() if line.strip()]
@@ -678,23 +624,6 @@ def fetch_inputs(repo: Path, refs: Iterable[str], enabled: bool) -> list[dict[st
     return actions
 
 
-def ref_source_description(repo: Path, ref: str) -> str:
-    target = remote_target_for_ref(repo, ref)
-    if target:
-        return f"指定遠端分支 {target.remote}/{target.branch}"
-    if ref.startswith("refs/heads/"):
-        return "本機分支"
-    if ref.startswith("refs/tags/"):
-        return "指定 tag"
-    if local_branch_exists(repo, ref):
-        return "本機分支"
-    if ref == "HEAD":
-        return "HEAD"
-    if re.fullmatch(r"[0-9a-fA-F]{4,64}", ref):
-        return "commit SHA"
-    return "本機分支或短 tag"
-
-
 def parse_name_status(raw: str) -> list[dict[str, str | None]]:
     parts = raw.split("\0")
     if parts and parts[-1] == "":
@@ -810,47 +739,6 @@ def collect_changes(
         change["binary"] = additions == "-" or deletions == "-"
         change.update(raw_records.get((change["old_path"], path), {}))
     return changes
-
-
-def collect_submodule_paths(
-    repo: Path,
-    left: str,
-    right: str,
-    *,
-    env: Mapping[str, str] | None = None,
-) -> set[str]:
-    """Return changed paths that are gitlinks on either side of a diff."""
-    raw = str(
-        run_git(
-            repo,
-            ["diff", *DIFF_FLAGS, "--raw", "--no-abbrev", "-z", left, right, "--"],
-            env=env,
-        )
-    )
-    parts = raw.split("\0")
-    paths: set[str] = set()
-    index = 0
-    while index < len(parts):
-        metadata = parts[index]
-        index += 1
-        if not metadata:
-            continue
-        fields = metadata.removeprefix(":").split()
-        if len(fields) < 5:
-            raise ReviewContextError("Git 回傳的 raw diff 資料不完整。")
-        old_mode, new_mode, _old_sha, _new_sha, status = fields[:5]
-        path_count = 2 if status.startswith(("R", "C")) else 1
-        if index + path_count > len(parts):
-            raise ReviewContextError("Git 回傳的 raw diff 路徑資料不完整。")
-        changed_paths = [path for path in parts[index : index + path_count] if path]
-        index += path_count
-        if old_mode == "160000" or new_mode == "160000":
-            paths.update(changed_paths)
-    return paths
-
-
-def commit_subject(repo: Path, commit: str) -> str:
-    return str(run_git(repo, ["show", "-s", "--format=%s", commit])).strip()
 
 
 def merge_commit_records(repo: Path, left: str, right: str) -> list[dict[str, Any]]:

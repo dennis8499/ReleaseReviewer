@@ -101,15 +101,6 @@ def batch_blobs(run, items, object_format):
     return result
 
 
-def shared_reads(value):
-    contents, reads = {}, []
-    for item in value["reads"]:
-        identifier = item["sha256"]
-        contents.setdefault(identifier, {"lines": item["lines"]})
-        reads.append({**{key: content for key, content in item.items() if key != "lines"}, "content_id": identifier})
-    return {"schema": "MergeReviewEvidenceBatch/v1", "reads": reads, "contents": contents}
-
-
 def _extended_windows_path(path):
     """Keep artifact views on the same shared Windows path policy as runtime files."""
     return extended_windows_path(path)

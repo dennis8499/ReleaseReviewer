@@ -608,12 +608,6 @@ def static_body(body):
     return body[:start] + body[end + len(CHECKLIST_END):]
 
 
-def short_citations(items):
-    return "；".join(cell(e["repo"] + "/" + e["path"] +
-                    (f":{e['line_start']}-{e['line_end']}" if "line_start" in e else ""))
-                    for e in items)
-
-
 def render_checklist(result):
     lines = [CHECKLIST_START, "### 人工核對紀錄", ""]
     for dependency in result["config_changes"] + result["db_changes"] + result["external_changes"]:

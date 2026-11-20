@@ -1,0 +1,9 @@
+{
+  "candidate": "b9be2fe9e6931936ae850a4fa5b3e4b4c34bfa6a",
+  "dependencies": {},
+  "previousTag": "v0.12.3",
+  "repository": "ReleaseReviewer",
+  "runId": "20261120T142735Z-0f8866ff",
+  "schema": "workspace-release/v1",
+  "targetVersion": "0.12.4"
+}

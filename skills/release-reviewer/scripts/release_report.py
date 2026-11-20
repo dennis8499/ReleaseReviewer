@@ -630,20 +630,41 @@ def render_markdown(result):
     # The v2 layout is rendered from the same validated content. Comparison and
     # next-step prose move as complete sections; the editable checklist stays open.
     sections = _render_legacy(result, sectioned=True)
-    prefix = sections["prefix"]
     identity = result["identity"]
-    intro = [f"# 上版檢查: {identity['project']}", "", "## 審查結論", "", *prefix,
+    p0 = sum(risk["priority"] == "P0" for risk in result["code_risks"])
+    p1 = len(result["code_risks"]) - p0
+    if result["merge_status"] == "conflicts":
+        action = "提交分支的開發人員先處理合併衝突，再審查可合併的版本。"
+    elif result["code_risks"]:
+        first = result["code_risks"][0]
+        action = f"負責這項變更的開發人員先處理 [{first['id']}](#{first['id']})，再核對原問題情境的結果。"
+    elif result["gap_count"]:
+        action = "審查負責人先補查[範圍與限制](#範圍與限制)所列證據。"
+    elif result["pending_count"]:
+        action = "維運或部署負責人先完成[人工核對紀錄](#人工核對紀錄)，並附上實際驗證結果。"
+    else:
+        action = result["next_steps"][0] if result["next_steps"] else "本次沒有另外列出的處理事項。"
+    intro = [f"# 上版檢查: {identity['project']}", "", "## 審查結論", "",
+             f"**上版建議｜{ASSESSMENTS[result['release_assessment']]}**", "",
+             f"- 審查完整性｜{result['status']}，必要證據缺口 {result['gap_count']} 項。",
+             f"- 部署環境｜{result['environment_status']}（{result['pending_count']} 項）。",
+             f"- 已確認阻擋｜共 {result['blocker_count']} 項，含合併衝突 {int(result['merge_status'] == 'conflicts')} 項。"
+             f"問題數量：P0 {p0}／P1 {p1}。",
+             f"- 下一步｜{action}", "", result["summary"], "",
              f"- 入口 Repo：{code_span(identity['project'])}",
              f"- 合併方向：{code_span(identity['head_input'])}（{code_span(identity['head_sha'][:8])}） → "
              f"{code_span(identity['base_input'])}（{code_span(identity['base_sha'][:8])}）", "",
              "## 問題總攬", "",
-             "| 項目 | 等級 | 說明 |", "| --- | --- | --- |"]
+             "| 項目 | 等級 | 問題 | 什麼情況下發生 | 會看到的影響 | 確認方式 |",
+             "| --- | --- | --- | --- | --- | --- |"]
     if result["merge_status"] == "conflicts":
-        intro.append("| [M-001](#M-001) | 阻擋 | 合併衝突 |")
+        intro.append("| [M-001](#M-001) | 阻擋 | 合併衝突 | 整合這兩個固定分支時 | 無法取得可直接上版的版本 | 已執行合併預檢 |")
     for risk in result["code_risks"]:
-        intro.append(f"| [{risk['id']}](#{risk['id']}) | {risk['priority']} | {cell(risk['title'])} |")
+        confirmed = "依程式推導" if risk["scenario_source"] == "code-derived" else "已實際重現"
+        intro.append(f"| [{risk['id']}](#{risk['id']}) | {risk['priority']} | {cell(risk['title'])} | "
+                     f"{cell(risk_prose(risk['scenario']))} | {cell(risk_prose(risk['impact']))} | {confirmed} |")
     if not result["blocker_count"]:
-        intro.append("| — | — | 已檢查範圍未發現已確認的直接上版阻擋。 |")
+        intro.append("| — | — | 已檢查範圍未發現已確認的直接上版阻擋。 | — | — | — |")
     intro += ["", "## 問題詳情（工程師參考）", "", *sections.get("問題", []),
               "## 範圍與限制", "", *sections.get("範圍與限制", []),
               "### 下一步", "", *sections.get("下一步", []),
@@ -794,7 +815,7 @@ def _render_legacy(result, *, sectioned=False):
               *[f"- {c['kind']}：{'本次不適用' if c['status'] == 'not-applicable' else c['status']}；{c['reason']}" for c in result["dependency_coverage"]]]
     lines += ["", "</details>", ""]
     if sectioned:
-        return {"prefix": lines[:comparison_at], "比較資訊": lines[comparison_at+1:problems_at],
+        return {"比較資訊": lines[comparison_at+1:problems_at],
                 "問題": lines[problems_at+1:scope_at], "範圍與限制": lines[scope_at+1:next_at],
                 "下一步": lines[next_at+1:technical_at], "技術審查紀錄": lines[technical_at+1:]}
     return "\n".join(line for index, line in enumerate(lines)

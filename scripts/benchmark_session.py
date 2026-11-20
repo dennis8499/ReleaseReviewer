@@ -53,8 +53,64 @@ def expand_response(value, context):
     return value
 
 
+def read_paging_fixture(invoke, context, common, response, round_number, revision):
+    """Read the synthetic file bodies through the CLI and verify transport coverage."""
+    expected = {digest(row["result"]["lines"]) for row in response["operations"] if "lines" in row["result"]}
+    paging = response.get("paging")
+    if not paging:
+        observed = set()
+        for index, row in enumerate(response["operations"]):
+            lines = row["result"].get("lines")
+            if lines is None:
+                continue
+            page = invoke(f"view-{round_number}-{index}", ["view", *common, "--artifact", row["artifact"],
+                          "--pointer", "/lines", "--page-size", "1000"])
+            if page.get("continue") or page["items"] != lines:
+                raise ValueError("Single-page baseline did not return all fixture lines.")
+            observed.add(digest(page["items"]))
+    else:
+        observed, parts, calls = set(), {}, 0
+        while paging["pending_count"]:
+            confirmations, offset = [], 0
+            while offset is not None:
+                batch = invoke(f"view-{round_number}-{calls}", ["view", *common, "--requests-file",
+                               paging["paging_requests_file"], "--offset", str(offset)])
+                calls += 1
+                offset = batch["next_index"]
+                if not batch["paging_acknowledgements"]:
+                    raise ValueError("Paging fixture did not return a confirmable page.")
+                confirmations.extend(batch["paging_acknowledgements"])
+                for row in batch["results"]:
+                    page = row["result"]
+                    value = page.get("value")
+                    if isinstance(value, dict) and "lines" in value:
+                        observed.add(digest(value["lines"]))
+                    if page["pointer"] == "/lines" and "items" in page:
+                        parts.setdefault(page["artifact"], {})[page["offset"]] = page["items"]
+                if len(confirmations) >= 50:
+                    break
+            updates = context / "benchmark-paging-update.json"
+            updates.write_text(json.dumps({"schema": "ReleaseReviewUpdates/v1", "request_id": common[-1],
+                                           "expected_revision": revision, "update_id": f"paging-{revision}",
+                                           "paging_acknowledgements": confirmations}), encoding="utf-8")
+            saved = invoke(f"confirm-{revision}", ["step", *common, "--updates-file", updates,
+                           "--response-format", "auto"], context)
+            revision = saved["draft_update"]["revision"]
+            paging = saved["paging"]
+        for chunks in parts.values():
+            lines = []
+            for offset, items in sorted(chunks.items()):
+                if offset != len(lines):
+                    raise ValueError("Managed paging left a gap between fixture lines.")
+                lines.extend(items)
+            observed.add(digest(lines))
+    if expected != observed:
+        raise ValueError("Viewed file bodies differ from the fixed fixture.")
+    return revision
+
+
 def worker(skill, scenario, auto):
-    base = Path(tempfile.mkdtemp(prefix="release-review-session-bench-")).resolve()
+    base = Path(tempfile.mkdtemp(prefix="rrs-")).resolve()
     result = {"success": False, "scenario": scenario, "stages": {}, "model_tokens": None,
               "agent_seconds": None, "http_requests": None, "ssh_requests": None,
               "expected_review_complete": True, "cleanup_error": None}
@@ -62,7 +118,7 @@ def worker(skill, scenario, auto):
     try:
         repo = support.fixture(base)
         for number in range(24):
-            support.write(repo, f"bench/file-{number:02}.py", (f"value_{number} = {number}\n" * 24))
+            support.write(repo, f"bench/file-{number:02}.py", f"value_{number} = {number}\n" * (128 if scenario == "paging" else 24))
         support.git(repo, "add", ".")
         support.git(repo, "commit", "-m", "session benchmark inputs")
         if scenario == "no-change":
@@ -107,16 +163,20 @@ def worker(skill, scenario, auto):
             output = json.loads(completed.stdout.decode("utf-8"))
             if output.get("schema") == "ReleaseReviewEvidenceSummary/v1":
                 context = context or Path(output["context_dir"])
-                return expand_response(output, context)
+                expanded = expand_response(output, context)
+                if "paging" in output:
+                    expanded["paging"] = output["paging"]
+                return expanded
             return output
 
+        workflow_started = time.perf_counter()
         start = invoke("start", ["start", "--workspace", base, "--project", repo, "--base", "main", "--head", "feature"])
         context, runtime, identifier = Path(start["context_dir"]), start["runtime_root"], start["request_id"]
         result["network_activity"] = start["network_activity"]
         manifest = json.loads((context / "manifest.json").read_text(encoding="utf-8"))
         peer_id = next((row["id"] for row in manifest["repositories"] if row["role"] == "supporting"), None)
         common = ["--runtime-root", runtime, "--request-id", identifier]
-        evidence_rows = []
+        evidence_rows, paging_revision = [], 0
         for round_number in range(2):
             operations = []
             for n in range(24):
@@ -141,6 +201,8 @@ def worker(skill, scenario, auto):
             result["stages"]["step-" + str(round_number)]["search_activity"] = response.get("search_activity")
             if not response["complete"]:
                 raise ValueError("step did not complete")
+            if scenario == "paging":
+                paging_revision = read_paging_fixture(invoke, context, common, response, round_number, paging_revision)
             if scenario == "group" and round_number == 1:
                 peer_row = next((row for row in response["operations"] if row["id"] == "peer-search"), None)
                 peer_search_id = (peer_row or {}).get("result", {}).get("search_id")
@@ -171,7 +233,8 @@ def worker(skill, scenario, auto):
                       blocker_count=blocker_count, pending_count=pending_count, gap_count=gap_count,
                       report_published=finish.get("publication_complete"), cleanup_pending=finish.get("cleanup_pending", False),
                       runtime_metrics=finish.get("metrics"), repair_seconds=0.0,
-                      total_seconds=sum(stage["wall_seconds"] for stage in result["stages"].values()))
+                      total_seconds=(time.perf_counter() - workflow_started if scenario == "paging" else
+                                     sum(stage["wall_seconds"] for stage in result["stages"].values())))
         result["success"] = bool(check.get("precheck_passed") is True
                                   and finish.get("publication_complete") is True
                                   and finish.get("review_complete") is True
@@ -192,7 +255,9 @@ def worker(skill, scenario, auto):
 
 
 def helper_target_ratio(scenario):
-    """Helper-only session runs may regress by at most five percent."""
+    """Return the native CLI time threshold for the selected fixture."""
+    if scenario == "paging":
+        return 0.85
     if scenario not in {"repository", "group", "no-change"}:
         raise ValueError(f"unknown benchmark scenario: {scenario}")
     return 1.05
@@ -216,7 +281,7 @@ def main():
     parser.add_argument("--candidate-skill-dir", type=Path,
                         help="Use an unpacked release payload instead of the source checkout.")
     parser.add_argument("--runs", type=int, default=5)
-    parser.add_argument("--scenario", action="append", choices=("repository", "group", "no-change"))
+    parser.add_argument("--scenario", action="append", choices=("repository", "group", "no-change", "paging"))
     parser.add_argument("--output", type=Path)
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--skill", type=Path, help=argparse.SUPPRESS)
@@ -272,6 +337,9 @@ def main():
                 report[variant] = {"total_seconds": statistics.median(item["total_seconds"] for item in runs),
                                    "step_seconds": statistics.median(sum(item["stages"][f"step-{i}"]["wall_seconds"] for i in range(2)) for item in runs),
                                    "step_git_commands": statistics.median(sum(item["stages"][f"step-{i}"]["git_commands"] for i in range(2)) for item in runs)}
+                if scenario == "paging":
+                    report[variant].update(view_calls=statistics.median(sum(name.startswith("view-") for name in item["stages"]) for item in runs),
+                                           helper_calls=statistics.median(len(item["stages"]) for item in runs))
             report["total_ratio"] = report["candidate"]["total_seconds"] / report["baseline"]["total_seconds"]
             report["step_ratio"] = report["candidate"]["step_seconds"] / report["baseline"]["step_seconds"]
             stage_names = sorted(set.intersection(*(set(item["stages"]) for item in items)))
@@ -281,6 +349,10 @@ def main():
                           for stage in stage_names}
                 for variant in ("baseline", "candidate")}
             report["target_met"] = report["total_ratio"] <= report["helper_target_ratio"]
+            if scenario == "paging":
+                before, after = report["baseline"], report["candidate"]
+                report["view_ratio"] = after["view_calls"] / before["view_calls"]
+                report["target_met"] &= report["view_ratio"] <= 0.70 and after["helper_calls"] <= before["helper_calls"]
             report["success"] = bool(valid and equivalent and report["target_met"])
         report["pair_count"] = args.runs
         summary[scenario] = report
@@ -292,7 +364,9 @@ def main():
             report["payload_changed_during_run"] = True
     value = {"schema": "ReleaseReviewSessionBenchmark/v1", "complete": True,
              "scope": "Synthetic helper CLI only; not an agent or semantic-quality measurement.",
-             "method": "Alternating independent processes; start, two 24-read steps with searches, check and finish; no-change uses identical base/head; all samples retained.",
+             "method": ("Alternating independent processes; start, two 24-read steps with searches, check and finish. "
+                        "Paging compares one view per source with managed batches and includes checkpoint calls. "
+                        "All samples retained."),
              "environment": environment,
              "summary": summary, "samples": samples}
     text = json.dumps(value, ensure_ascii=False, indent=2) + "\n"

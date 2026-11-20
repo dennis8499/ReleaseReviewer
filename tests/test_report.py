@@ -53,6 +53,18 @@ class ReportTests(RepoTest):
         self.assertEqual([md], list((self.repo / "review-reports").glob("release-review-*.md")))
         self.assertEqual(list(md.parent.glob("*.json")), [])
 
+    def test_reader_summary_exposes_scenario_impact_and_separate_deployment_status(self):
+        context, manifest, draft = self.valid_draft()
+        draft["report_layout"] = "engineering-review/v2"
+        result = release_report.validate_result(draft, manifest, context)
+        body = release_report.render_markdown(result)
+        summary = body.split("## 問題詳情", 1)[0]
+        for fact in ("上版建議｜存在已確認阻擋", "審查完整性｜靜態檢查完成", "部署環境｜待人工核對",
+                     "下一步｜負責這項變更的開發人員", "依程式推導", "什麼情況下發生",
+                     draft["code_risks"][0]["scenario"], draft["code_risks"][0]["impact"]):
+            self.assertIn(fact, summary)
+        self.assertLess(body.index(release_report.CHECKLIST_START), body.index("<details>"))
+
     def test_reference_layout_keeps_authored_results_and_deduplicates_merged_prose(self):
         context, manifest, draft = self.valid_draft()
         draft["report_layout"] = "engineering-review/v2"

@@ -49,6 +49,13 @@ python -X utf8 -B $script step --runtime-root $runtime --request-id $requestId -
 
 ## 唯讀恢復
 
+`managed_paging` 可用時，`step --response-format auto` 的大型回應及 `status --summary` 會提供 `paging.paging_requests_file`、待讀數與已確認數。把固定檔交給唯讀 `view --requests-file`，有 `next_index` 時沿同一檔加 `--offset` 批次續讀。讀完後，把對應 ID 合併寫入 `ReleaseReviewUpdates/v1` 頂層的 `paging_acknowledgements`（每次最多 100 筆），並可同時提交草稿判斷。用當前 revision 執行 `step --updates-file ... --response-format auto`，再用回傳的新續頁檔處理子頁面。回應遺失時重取原頁面，或以相同 update ID 重送原更新檔。確認只代表頁面已讀。
+
+```powershell
+python -X utf8 -B $script view --runtime-root $runtime --request-id $requestId --requests-file $pagingFile
+python -X utf8 -B $script step --runtime-root $runtime --request-id $requestId --updates-file $updatesFile --response-format auto
+```
+
 支援 `features.read_only_batch_view` 時，把最多 100 筆已保存 artifact 的續讀放進同一 UTF-8 JSON 陣列；每筆保留自己的 `id`、pointer 與游標：
 
 ```json
@@ -70,3 +77,7 @@ python -X utf8 -B $script view --runtime-root $runtime --request-id $requestId -
 ```
 
 摘要的 `continue` 先從起點取得未回傳的第一頁。第一頁若另有大型欄位的 `continue`、`fields_continue` 或後續 `next_page`，分別讀取每個游標，直到涵蓋內容與所有兄弟項目。`view` 和 `status --summary` 是唯讀查詢，不跑 Git、不寫 artifact 或 manifest。舊 helper 沒宣告的功能不要使用；依 `capabilities.features` 逐項選用，新舊 helper 不相容時保留原 request 並回報具體欄位。
+
+## 修稿
+
+用同一個 `check` 的欄位錯誤、`expected_ref` 與 `diff_root_candidates` 合併修正。選差異起點前逐一核對引用與風險的因果關係。收到 `repair_stalled` 且可用證據未變時，保留該項待補證據及草稿，交代誰能提供什麼資料。取得新證據後從原 request 接續。其餘獨立項目可繼續審查。

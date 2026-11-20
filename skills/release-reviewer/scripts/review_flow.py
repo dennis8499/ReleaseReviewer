@@ -12,6 +12,7 @@ import time
 import uuid
 
 import review_coordinator as coordination
+import review_paging
 import review_runtime
 import review_session
 
@@ -220,7 +221,8 @@ def apply_updates_file(context, identifier, updates_file):
             raise ValueError(f"/updates_file is not readable UTF-8 JSON: {coordination.safe_error(exc)}") from exc
         if not isinstance(document, dict) or document.get("schema") != UPDATES_SCHEMA:
             raise ValueError("/schema must be ReleaseReviewUpdates/v1.")
-        allowed = {"schema", "request_id", "expected_revision", "update_id", "draft_updates", "progress"}
+        allowed = {"schema", "request_id", "expected_revision", "update_id", "draft_updates", "progress",
+                   "paging_acknowledgements"}
         if document.keys() - allowed:
             raise ValueError("/updates_file contains unknown fields: " + ", ".join(sorted(document.keys() - allowed)))
         if document.get("request_id") != identifier:
@@ -267,14 +269,22 @@ def apply_updates_file(context, identifier, updates_file):
             except ValueError as exc:
                 raise ValueError(str(exc).replace("/draft_updates/*", f"/draft_updates/{index}")) from exc
         progress = validate_progress_update(state["progress"], document.get("progress", {}))
+        paging_artifact = state.get("paging_artifact")
+        if pending:
+            paging_artifact = pending.get("paging_artifact", paging_artifact)
+        elif "paging_acknowledgements" in document:
+            paging = review_paging.load(context, identifier, paging_artifact)
+            paging_artifact = review_paging.acknowledge(context, paging, document["paging_acknowledgements"], artifact_view)
         if not pending:
             state["pending_update"] = {"update_id": update_id, "digest": update_digest,
-                                        "draft_updates": patches, "progress": progress}
+                                        "draft_updates": patches, "progress": progress,
+                                        **({"paging_artifact": paging_artifact} if paging_artifact else {})}
             coordination.atomic(state_path, state)
         atomic_draft(draft_path, draft)
         next_state = {"schema": PROGRESS_SCHEMA, "request_id": identifier,
                       "revision": state["revision"] + 1, "progress": progress,
-                      "applied_updates": {**applied, update_id: update_digest}}
+                      "applied_updates": {**applied, update_id: update_digest},
+                      **({"paging_artifact": paging_artifact} if paging_artifact else {})}
         coordination.atomic(state_path, next_state)
         return {"update_id": update_id, "revision": next_state["revision"],
                 "applied": True, "replayed": False}
@@ -301,6 +311,39 @@ def checked_preflight(path, kind, setting_source):
     except (OSError, ValueError) as exc:
         preflight_failure(exc, kind, path, setting_source)
         raise
+
+
+def launch_preflight(args):
+    """Inspect a fresh bound launch without creating a runtime or running Git."""
+    caps = capabilities(args.workspace, args.expected_payload_sha256, runtime_root=args.runtime_root)
+    paths = caps["runtime_paths"]
+    for name in ("workspace", "project", "base", "head"):
+        if not getattr(args, name):
+            raise ValueError("preflight requires workspace, project, base and head")
+    for name in ("workspace", "project"):
+        if not coordination.plain(Path(getattr(args, name))).is_dir():
+            raise ValueError(f"Release review {name} directory does not exist.")
+    if args.workspace_file and not coordination.plain(Path(args.workspace_file)).is_file():
+        raise ValueError("Release review workspace file does not exist.")
+    location = paths["session"]
+    try:
+        if not location["path"]:
+            raise ValueError("Use --runtime-root outside every Git Repo.")
+        root = coordination.plain(Path(location["path"]))
+        if root.exists() and not root.is_dir():
+            raise ValueError("Review runtime path must name a directory.")
+        if any((parent / ".git").exists() for parent in (root, *root.parents)):
+            raise ValueError("Review runtime must be outside every Git Repo.")
+        marker = root / ".release-reviewer-runtime.json"
+        if marker.exists():
+            coordination.runtime(root)
+        elif root.exists() and any(entry.name != ".ownership.lock" for entry in root.iterdir()):
+            raise ValueError(f"Review runtime is not owned: {root}")
+    except (ValueError, OSError) as exc:
+        preflight_failure(exc, "session-runtime", location["path"], location["setting_source"])
+        raise
+    return {"schema": "ReleaseReviewPreflight/v1", "valid": True, "runtime_paths": paths,
+            "git_commands": 0, "network_commands": 0}
 
 
 def repo_index(manifest):
@@ -344,8 +387,8 @@ def diagnostics(draft, manifest, *, known_bounds=None):
     import chain_review
     import coverage_policy
     errors = []
-    def error(code, pointer, message):
-        errors.append({"code": code, "pointer": pointer, "message": message})
+    def error(code, pointer, message, **details):
+        errors.append({"code": code, "pointer": pointer, "message": message, **details})
     if not isinstance(draft, dict):
         error("draft_type", "", "draft must be an object")
         draft = {}
@@ -410,7 +453,14 @@ def diagnostics(draft, manifest, *, known_bounds=None):
                 error("evidence_source", at + "/source", "unknown fixed source")
                 valid = False
             if not isinstance(reference, str) or not ev.SHA.fullmatch(reference):
-                error("evidence_ref", at + "/ref", "full fixed SHA is required")
+                expected = None
+                if valid and catalog[repo]["status"] == "captured":
+                    if source == "supporting" and repo != "entry":
+                        expected = catalog[repo].get("ref")
+                    elif source in refs and repo == "entry":
+                        expected = refs[source]
+                error("evidence_ref", at + "/ref", "full fixed SHA is required",
+                      **({"expected_ref": expected} if expected else {}))
                 valid = False
             if not ev.safe_path(path):
                 error("evidence_path", at + "/path", "safe Repo-relative path is required")
@@ -686,7 +736,11 @@ def diagnostics(draft, manifest, *, known_bounds=None):
                     _, absence = review_worklist.validate_risk_links(row, manifest, evidence)
                     valid_absence = bool(absence)
                 except (ValueError, KeyError, TypeError) as exc:
-                    error("risk_causality", f"/{field}/{i}", str(exc))
+                    candidates = review_worklist.risk_root_candidates(manifest, evidence)
+                    error("risk_causality", f"/{field}/{i}", str(exc),
+                          diff_root_candidates=candidates,
+                          repair=("核對候選與問題的因果關係，再一次修正引用和差異起點。"
+                                  if candidates else "補讀並引用相符的入口 Repo 固定變更後再驗證。"))
             if not final_evidence(evidence) and not valid_absence:
                 error("risk_final_source" if field == "code_risks" else "extension_final_source", f"/{field}/{i}/evidence",
                       "item needs final entry-version behavior, use, target or definition evidence")
@@ -711,7 +765,8 @@ def diagnostics(draft, manifest, *, known_bounds=None):
             "summary_preview": preview,
             "summary_is_default": review_worklist.default_summary(summary),
             "git_commands": 0, "evidence_validation": "deferred-to-finish",
-            "precheck_passed": not errors, "errors": errors, "remaining": remaining}
+            "precheck_passed": not errors, "errors": errors, "remaining": remaining,
+            **({"repair_key": coordination.digest(errors)} if errors else {})}
 
 
 def check(root, identifier):
@@ -785,6 +840,11 @@ def status_summary(root, identifier):
               "publication": {"complete": job.get("state") == "published",
                               "report_path": job.get("report_path"),
                               "review_outcome": published_outcome(job) if job.get("state") == "published" else None}}
+    metrics = job.get("metrics", {})
+    result["timings"] = {name: metrics[name] for name in
+                         ("capture_seconds", "read_search_seconds", "draft_update_seconds",
+                          "draft_check_seconds", "draft_check_count", "draft_check_rejected_count",
+                          "validation_publish_seconds", "cleanup_seconds") if name in metrics}
     if context.exists() and job["state"] in ("ready", "reviewing", "validating"):
         manifest = ev.load_manifest(context, full=False)
         worklist = coordination.read_json(context / "review-worklist.json")
@@ -816,6 +876,9 @@ def status_summary(root, identifier):
                 "excluded_questions": [item[:256] for item in excluded[-8:]],
                 "excluded_questions_truncated": len(excluded) > 8 or any(len(item) > 256 for item in excluded[-8:]),
                 "next_action": saved_progress.get("next_action", "")[:512]}
+            if state.get("paging_artifact"):
+                artifact = state["paging_artifact"]
+                result["paging"] = review_paging.description(context, artifact, review_paging.load(context, identifier, artifact))
         else:
             result["review_progress"] = None
         result["draft_remaining"] = {name: len(values) if isinstance(values, list) else None
@@ -883,7 +946,8 @@ def capabilities(workspace=None, expected_payload_sha256=None, *, runtime_root=N
                           "operation_diagnostics": True, "runtime_paths": True,
                           "publication_retry": True, "summary_preview": True,
                           "known_citation_bounds": True, "read_only_batch_view": True,
-                          "base_final_review": True},
+                          "base_final_review": True, "launch_preflight": True,
+                          "read_only_inspection": True, "managed_paging": True},
             "observability": {"agent_tool_round_trips": None, "model_tokens": None,
                               "http_requests": None, "ssh_requests": None}}
 
@@ -1129,12 +1193,8 @@ def patch_content(path, raw=None, encoding=None):
 
 def artifact_view(context, artifact, pointer="", offset=0, page_size=100, string_offset=0, *,
                   byte_limit=VIEW_LIMIT, _value=UNSET_VIEW):
-    value = review_runtime.load_view(context, artifact) if _value is UNSET_VIEW else _value
-    if not isinstance(pointer, str) or pointer and not pointer.startswith("/"):
-        raise ValueError("view pointer must be a JSON pointer")
-    for token in pointer.split("/")[1:]:
-        token = token.replace("~1", "/").replace("~0", "~")
-        value = value[int(token)] if isinstance(value, list) else value[token]
+    root_value = review_runtime.load_view(context, artifact) if _value is UNSET_VIEW else _value
+    value = review_paging.value_at(root_value, pointer)
     if type(offset) is not int or offset < 0 or type(page_size) is not int or not 1 <= page_size <= 1000:
         raise ValueError("invalid view page")
     def child_pointer(parent, child):
@@ -1203,7 +1263,8 @@ def artifact_view(context, artifact, pointer="", offset=0, page_size=100, string
                     return response
                 raise ValueError("oversized list pointer cannot be represented")
             if isinstance(item, str):
-                page = artifact_view(context, artifact, item_pointer, string_offset=string_offset)
+                page = artifact_view(context, artifact, item_pointer, string_offset=string_offset,
+                                     byte_limit=byte_limit - 768, _value=root_value)
                 response = {"artifact": artifact, "pointer": pointer,
                             "items": [{"index": offset, "text": page["text"],
                                        "string_offset": page["string_offset"],
@@ -1290,9 +1351,9 @@ def artifact_view(context, artifact, pointer="", offset=0, page_size=100, string
     return response
 
 
-def compact(value, context):
+def compact(value, context, *, force=False):
     inline = {**value, "outcome_available": True}
-    if len(review_runtime.canonical(inline)) < LIMIT:
+    if not force and len(review_runtime.canonical(inline)) < LIMIT:
         return inline
     artifact = review_runtime.store_view(context, value)
     preferred = ("operations", "results", "matches", "reads", "files", "contents")
@@ -1315,7 +1376,9 @@ def compact(value, context):
                     "offset": 0, "page_size": 100}
     summary = {"schema": "ReleaseReviewEvidenceSummary/v1", "artifact": artifact,
             "evidence_complete": True, "view_complete": False,
-            **{key: value[key] for key in ("request_id", "runtime_root", "context_dir", "draft_path", "state", "complete", "next_index", "error") if key in value},
+            **{key: value[key] for key in ("request_id", "runtime_root", "context_dir", "draft_path", "state", "complete",
+                                          "next_index", "error", "precheck_passed", "repair_key", "repair_stalled")
+               if key in value},
             "fields": list(value)[:48], "continue": next_request}
     if isinstance(value, dict) and len(value) > len(summary["fields"]):
         summary["fields_continue"] = {"op": "view", "artifact": artifact, "pointer": "",
@@ -1476,7 +1539,8 @@ def shared_step(outcome, content_ids):
     return {**outcome, "schema": "ReleaseReviewStep/v2", "operations": operations, "contents": contents}
 
 
-def step(root, identifier, operations=None, *, requests_file=None, worklist=None, updates_file=None, response_format="legacy"):
+def step(root, identifier, operations=None, *, requests_file=None, worklist=None, updates_file=None,
+         response_format="legacy", managed_paging=False):
     import evidence as ev
     import frozen_evidence
     path = job_path(root, identifier)
@@ -1488,6 +1552,7 @@ def step(root, identifier, operations=None, *, requests_file=None, worklist=None
         active = coordination.Coordination(root, identifier)
         results, checked, changed, content_ids = [], set(), False, {}
         began = time.perf_counter()
+        draft_update_seconds = 0.0
         try:
             with coordination.measure_lock_wait() as lock_metrics, active.activate(), review_runtime.writer(context):
                 manifest = ev.load_manifest(context, full=False)
@@ -1518,7 +1583,9 @@ def step(root, identifier, operations=None, *, requests_file=None, worklist=None
                     return input_failure("invalid response format")
                 if updates_file is not None:
                     try:
+                        draft_started = time.perf_counter()
                         updates_result = apply_updates_file(context, identifier, updates_file)
+                        draft_update_seconds = time.perf_counter() - draft_started
                     except (OSError, ValueError) as exc:
                         message = coordination.safe_error(exc)
                         match = re.match(r"(/[^: ]+)", message)
@@ -1705,6 +1772,7 @@ def step(root, identifier, operations=None, *, requests_file=None, worklist=None
             update(root, identifier, state="reviewing", phase="review", last_step={key: outcome[key] for key in ("complete", "next_index")},
                    errors=[],
                    metrics={**job.get("metrics", {}),
+                            "draft_update_seconds": job.get("metrics", {}).get("draft_update_seconds", 0) + draft_update_seconds,
                             "read_search_seconds": job.get("metrics", {}).get("read_search_seconds", 0) + time.perf_counter() - began,
                             "step_operation_requests": job.get("metrics", {}).get("step_operation_requests", 0) + len(operations),
                             "step_operations": job.get("metrics", {}).get("step_operations", 0) + sum(not item.get("reused", False) for item in results),
@@ -1727,7 +1795,23 @@ def step(root, identifier, operations=None, *, requests_file=None, worklist=None
             if response_format == "auto":
                 shared = shared_step(result, content_ids)
                 if len(review_runtime.canonical(shared)) < len(review_runtime.canonical(result)):
-                    return shared
+                    result = shared
+            if managed_paging:
+                large = len(review_runtime.canonical(result)) + 1024 >= LIMIT
+                state = read_progress(context, identifier) or empty_progress(identifier)
+                artifact = state.get("paging_artifact")
+                if large and result["operations"]:
+                    paging = review_paging.load(context, identifier, artifact)
+                    review_paging.seed(context, paging, result)
+                    artifact = review_runtime.store_view(context, paging)
+                    if artifact != state.get("paging_artifact"):
+                        state["paging_artifact"] = artifact
+                        coordination.atomic(progress_path(context), state)
+                if artifact:
+                    description = review_paging.description(context, artifact, review_paging.load(context, identifier, artifact))
+                    if large:
+                        result = compact(result, context, force=True)
+                    result["paging"] = description
             return result
         except BaseException as exc:
             update(root, identifier, state="cancelled" if active.cancelled() else "failed", phase="terminal",
@@ -1899,7 +1983,7 @@ def cancel(root, identifier):
 
 def parser():
     value = argparse.ArgumentParser(description=__doc__)
-    value.add_argument("command", choices=("start", "step", "check", "finish", "status", "view", "capabilities", "cancel"))
+    value.add_argument("command", choices=("start", "step", "check", "finish", "status", "view", "capabilities", "preflight", "cancel"))
     for name in ("workspace", "workspace-file", "runtime-root", "request-id", "project", "base", "head"):
         value.add_argument("--" + name)
     value.add_argument("--requests-file", type=Path)
@@ -1927,11 +2011,16 @@ def main(argv=None):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
     args = parser().parse_args(argv)
+    read_only = args.command in ("view", "capabilities", "preflight") or args.command == "status" and args.summary
     code = 0
+    began = time.perf_counter()
+    draft_check = None
     try:
         if args.command == "capabilities":
             result = capabilities(args.workspace, args.expected_payload_sha256, runtime_root=args.runtime_root)
             context = None
+        elif args.command == "preflight":
+            result, context = launch_preflight(args), None
         elif args.command == "start":
             if not all((args.workspace, args.project, args.base, args.head)):
                 raise ValueError("start requires workspace, project, base and head")
@@ -1942,11 +2031,16 @@ def main(argv=None):
             if args.command == "step":
                 result = step(root, args.request_id, requests_file=args.requests_file,
                               worklist=args.worklist, updates_file=args.updates_file,
-                              response_format=args.response_format)
+                              response_format=args.response_format, managed_paging=args.response_format == "auto")
                 code = 0 if result["complete"] else 3
             elif args.command == "check":
                 result = check(root, args.request_id)
                 code = 0 if result.get("check_passed", result["precheck_passed"]) else 3
+                repair_key = result.get("repair_key")
+                previous = coordination.read_json(job_path(root, args.request_id)).get("last_draft_check", {})
+                if repair_key and repair_key == previous.get("repair_key"):
+                    result["repair_stalled"] = True
+                draft_check = {"repair_key": repair_key, "passed": result["precheck_passed"]}
             elif args.command == "finish":
                 result, code = finish(root, args.request_id)
             elif args.command == "cancel":
@@ -1959,9 +2053,13 @@ def main(argv=None):
                     _job, retained = metadata(root, args.request_id)
                     if not retained.is_dir():
                         raise ValueError("This request has no retained evidence context.")
-                    result = review_readonly.batch_views(retained, args.request_id, args.requests_file,
-                                                        args.offset, artifact_view)
-                    code = 3 if any("error" in row for row in result["results"]) else 0
+                    paging_state = review_paging.from_file(retained, args.request_id, args.requests_file)
+                    if paging_state is None:
+                        result = review_readonly.batch_views(retained, args.request_id, args.requests_file,
+                                                            args.offset, artifact_view)
+                    else:
+                        result = review_paging.view(retained, args.request_id, paging_state, artifact_view, args.offset)
+                    code = 3 if "error" in result or any("error" in row for row in result["results"]) else 0
                 else:
                     result = view_page(root, args.request_id, args.artifact, args.pointer,
                                        args.offset, args.page_size, args.string_offset)
@@ -1970,7 +2068,6 @@ def main(argv=None):
             elif args.command == "status":
                 result = status(root, args.request_id)
             _, context = metadata(root, args.request_id) if args.command != "view" else (None, None)
-        read_only = args.command == "view" or args.command == "status" and args.summary or args.command == "capabilities"
         if context and context.exists() and not read_only:
             result = compact(result, context)
         output = json.dumps(result, ensure_ascii=False, separators=(",", ":")) + "\n"
@@ -1981,10 +2078,15 @@ def main(argv=None):
                 job_file = job_path(Path(runtime_value), identifier)
                 if job_file.is_file():
                     job = coordination.read_json(job_file)
-                    update(Path(runtime_value), identifier, metrics={**job.get("metrics", {}),
-                           "cli_stdout_bytes": job.get("metrics", {}).get("cli_stdout_bytes", 0)
-                           + len(output.encode("utf-8")),
-                           "agent_tool_round_trips": None, "model_tokens": None})
+                    metrics = job.get("metrics", {})
+                    metrics.update(cli_stdout_bytes=metrics.get("cli_stdout_bytes", 0) + len(output.encode("utf-8")),
+                                   agent_tool_round_trips=None, model_tokens=None)
+                    if draft_check is not None:
+                        metrics.update(draft_check_seconds=metrics.get("draft_check_seconds", 0) + time.perf_counter() - began,
+                                       draft_check_count=metrics.get("draft_check_count", 0) + 1,
+                                       draft_check_rejected_count=metrics.get("draft_check_rejected_count", 0) + int(code != 0))
+                    update(Path(runtime_value), identifier, metrics=metrics,
+                           **({"last_draft_check": draft_check} if draft_check is not None else {}))
         print(output, end="")
         return code
     except (ValueError, KeyError, TypeError, OSError, RuntimeError) as exc:
@@ -1992,7 +2094,7 @@ def main(argv=None):
         error_output = json.dumps({"error": coordination.safe_error(exc), "request_id": args.request_id,
                                    "terminal": True,
                                    **({"preflight": exc.preflight} if hasattr(exc, "preflight") else {})}, ensure_ascii=False) + "\n"
-        if args.command not in ("view", "capabilities") and not (args.command == "status" and args.summary):
+        if not read_only:
             try:
                 runtime_value = args.runtime_root or os.environ.get("RELEASE_REVIEW_RUNTIME_DIR")
                 if runtime_value and args.request_id and job_path(Path(runtime_value), args.request_id).is_file():

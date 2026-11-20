@@ -82,16 +82,23 @@ def validate_diff_roots(item, manifest, evidence, *, require=ev.require):
     return identifiers
 
 
+def risk_root_candidates(manifest, evidence):
+    positions = {(item["path"], item["ref"]) for item in evidence if item["repo"] == "entry"}
+    return [root for root in manifest.get("diff_roots", [])
+            if (root.get("old_path") or root["path"], root["before"]["ref"]) in positions
+            or (root["path"], root["after"]["ref"]) in positions]
+
+
 def validate_risk_links(item, manifest, evidence, *, require=ev.require):
     """Check structural Diff links and fixed-source absence; never infer a bug."""
     identifiers = validate_diff_roots(item, manifest, evidence, require=require)
     roots = [root for root in manifest["diff_roots"] if root["id"] in identifiers]
+
     def before_path(root):
         return root.get("old_path") or root["path"]
-    require(any(citation.get("repo") == "entry" and any(
-        (citation.get("path"), citation.get("ref")) in {
-            (before_path(root), root["before"]["ref"]), (root["path"], root["after"]["ref"])}
-        for root in roots) for citation in evidence), "程式風險須引用所選 Diff 起點的新舊版本位置。")
+
+    require(any(root["id"] in identifiers for root in risk_root_candidates(manifest, evidence)),
+            "程式風險須引用所選 Diff 起點的新舊版本位置。")
     absence = item.get("final_absence", [])
     require(isinstance(absence, list), "final_absence 必須是陣列。")
     preview = manifest.get("merge_preview") or {}

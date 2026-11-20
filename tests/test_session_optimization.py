@@ -1,5 +1,7 @@
 import copy
+from contextlib import redirect_stdout
 import hashlib
+import io
 import json
 import os
 import unittest
@@ -9,6 +11,7 @@ from support import *
 import frozen_evidence
 import review_coordinator as coordination
 import review_flow as flow
+import review_paging
 import review_runtime
 
 
@@ -403,6 +406,94 @@ class SessionOptimizationTests(RepoTest):
         self.assertEqual(0, result["git_commands"])
         self.assertEqual(0, result["network_commands"])
 
+    def test_bound_preflight_inspects_the_runtime_without_writes_or_git(self):
+        runtime = self.root / "release-runtime"
+        args = flow.parser().parse_args(["preflight", "--workspace", str(self.root), "--project", str(self.repo),
+                                         "--base", "main", "--head", "feature", "--runtime-root", str(runtime)])
+        with patch.object(evidence, "command", side_effect=AssertionError("preflight ran Git")):
+            result = flow.launch_preflight(args)
+        self.assertTrue(result["valid"])
+        self.assertEqual(0, result["network_commands"])
+        self.assertFalse(runtime.exists())
+        runtime.mkdir()
+        (runtime / "foreign-file").write_text("owner", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "not owned"):
+            flow.launch_preflight(args)
+        self.assertEqual(["foreign-file"], [file.name for file in runtime.iterdir()])
+
+    def test_managed_paging_resumes_without_losing_nested_text_or_reacknowledging_pages(self):
+        path = "src/large.py"
+        lines = ["# " + "A" * 31_000, "# tail"] + [f"# {i:03} " + "B" * 180 for i in range(240)]
+        write(self.repo, path, "\n".join(lines) + "\n")
+        git(self.repo, "add", path)
+        git(self.repo, "commit", "-m", "add large review fixture")
+        started = self.start()
+        root, identifier, context = (Path(started["runtime_root"]), started["request_id"], Path(started["context_dir"]))
+        args = ["--runtime-root", str(root), "--request-id", identifier]
+        ops = [{"id": "large", "op": "read", "source": "head", "path": path}]
+        step = flow.step(root, identifier, ops, response_format="auto", managed_paging=True)
+        self.assertGreater(step["paging"]["pending_count"], 0)
+        self.assertEqual(step["paging"], flow.status_summary(root, identifier)["paging"])
+        text_pieces, tail, seen = {}, [], set()
+        update_file = context / "confirm.json"
+        for revision in range(32):
+            progress = flow.status_summary(root, identifier)
+            if not progress["paging"]["pending_count"]:
+                break
+            before = flow.progress_path(context).read_bytes()
+            view_file = progress["paging"]["paging_requests_file"]
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(0, flow.main(["view", *args, "--requests-file", view_file]))
+            batch = json.loads(output.getvalue())
+            self.assertLessEqual(len(output.getvalue().encode("utf-8")), flow.LIMIT)
+            self.assertEqual(before, flow.progress_path(context).read_bytes())
+            acknowledgements = batch["paging_acknowledgements"]
+            self.assertTrue(acknowledgements)
+            self.assertTrue(seen.isdisjoint(acknowledgements))
+            seen.update(acknowledgements)
+            for row in batch["results"]:
+                page = row["result"]
+                if page["pointer"] == "/lines":
+                    for item in page.get("items", []):
+                        if "line" in item:
+                            tail.append(item)
+                elif page["pointer"] == "/lines/0/text":
+                    text_pieces[page["string_offset"]] = page["text"]
+            document = {"schema": "ReleaseReviewUpdates/v1", "request_id": identifier,
+                        "expected_revision": revision, "update_id": "page-" + str(revision),
+                        "paging_acknowledgements": acknowledgements}
+            update_file.write_text(json.dumps(document), encoding="utf-8")
+            saved = flow.step(root, identifier, [], updates_file=update_file, managed_paging=True)
+            self.assertTrue(saved["draft_update"]["applied"])
+            replay = flow.step(root, identifier, [], updates_file=update_file, managed_paging=True)
+            self.assertTrue(replay["draft_update"]["replayed"])
+            self.assertEqual(saved["paging"], replay["paging"])
+        else:
+            self.fail("paging did not converge")
+        self.assertEqual(lines[0], "".join(text_pieces[key] for key in sorted(text_pieces)))
+        self.assertEqual([{"line": n, "text": text} for n, text in enumerate(lines[1:], 2)], tail)
+        self.assertEqual(0, flow.step(root, identifier, ops, response_format="auto", managed_paging=True)["paging"]["pending_count"])
+        self.assertGreater(flow.status_summary(root, identifier)["draft_remaining"]["changes"], 0)
+        flow.cancel(root, identifier)
+
+    def test_managed_patch_keeps_segments_and_only_skips_identical_display_text(self):
+        context = self.root / "transport"
+        context.mkdir()
+        identifier = "a" * 32
+        segments = [{"text": "a" * 15_000, "index": 0}, {"text": "b" * 15_000, "index": 1}]
+        full = "".join(segment["text"] for segment in segments)
+        for display, expect_text in ((full, False), (full + "!", True)):
+            patch_view = {"raw_sha256": "b" * 64, "text": display, "segments": segments}
+            artifact = review_runtime.store_view(context, patch_view)
+            state = review_paging.load(context, identifier, None)
+            review_paging.seed(context, state, {"operations": [{"id": "patch", "artifact": artifact, "result": patch_view}]})
+            page = review_paging.view(context, identifier, state, flow.artifact_view)
+            saved = review_paging.acknowledge(context, state, page["paging_acknowledgements"], flow.artifact_view)
+            pointers = {item["pointer"] for item in review_paging.load(context, identifier, saved)["pending"]}
+            self.assertIn("/segments", pointers)
+            self.assertEqual(expect_text, "/text" in pointers)
+
     def test_updates_file_revision_replay_and_readonly_queries(self):
         started = self.start()
         root, identifier, context = (Path(started["runtime_root"]), started["request_id"],
@@ -625,6 +716,46 @@ class SessionOptimizationTests(RepoTest):
         broken["code_risks"][0]["final_absence"][0]["path"] = "src/service.py"
         with self.assertRaises(release_report.DraftValidationError):
             release_report.validate_result(broken, manifest, context)
+
+    def test_check_gives_matching_roots_and_full_ref_for_one_combined_repair(self):
+        started = self.start()
+        context = Path(started["context_dir"])
+        manifest = json.loads((context / "manifest.json").read_text(encoding="utf-8"))
+        root, identifier = Path(started["runtime_root"]), started["request_id"]
+        args = ["check", "--runtime-root", str(root), "--request-id", identifier]
+
+        def checked(expected_code):
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(expected_code, flow.main(args))
+            return json.loads(output.getvalue())
+
+        draft = draft_for(manifest)
+        risk = risk_item(manifest)
+        draft["code_risks"] = [risk]
+        expected_ref = risk["evidence"][1]["ref"]
+        risk["evidence"][1]["ref"] = expected_ref[:8]
+        risk["diff_roots"] = ["DIFF-999999"]
+        save_draft(context, draft)
+        first = checked(3)
+        errors = {error["code"]: error for error in first["errors"]}
+        self.assertEqual(expected_ref, errors["evidence_ref"]["expected_ref"])
+        candidates = errors["risk_causality"]["diff_root_candidates"]
+        self.assertTrue(candidates)
+        self.assertEqual({"src/service.py"}, {match["path"] for match in candidates})
+        repeated = checked(3)
+        self.assertEqual(first["repair_key"], repeated["repair_key"])
+        self.assertTrue(repeated["repair_stalled"])
+        risk["evidence"][1]["ref"] = expected_ref
+        risk["diff_roots"] = [candidates[0]["id"]]
+        save_draft(context, draft)
+        second = checked(0)
+        self.assertTrue(second["precheck_passed"], second["errors"])
+        self.assertNotIn("repair_key", second)
+        timings = flow.status_summary(root, identifier)["timings"]
+        self.assertEqual(3, timings["draft_check_count"])
+        self.assertEqual(2, timings["draft_check_rejected_count"])
+        flow.cancel(root, identifier)
 
     def test_legacy_risks_without_new_causality_fields_remain_compatible(self):
         context, manifest = self.capture()

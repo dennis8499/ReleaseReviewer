@@ -1,6 +1,10 @@
 # 上版檢查報告風格
 
-報告是入口 Repo/review-reports 內的一份繁體中文 Markdown。首行為 `**產生時判斷**｜靜態檢查狀態。結論摘要`，接續 P0／P1 程式問題數量，以及阻擋、合併衝突、待確認、缺口數；合併衝突計入阻擋，不列為程式問題等級。二級章節依序為：
+首頁以未讀原始碼的業務或維運讀者為對象。用 `scenario` 描述遇到問題的操作或資料，`impact` 寫讀者會看到的結果，`next_steps` 載明誰要處理及如何驗證。摘要描述主要變更，審查完整性與上版判斷由報告模板呈現。證據來源、SHA 和程式術語留在相應工程詳情。
+
+例「同一股票在兩個帳戶都持有時，報表可能把兩邊損益全列在第一個帳戶名下。報表開發用兩組不同帳戶的資料核對損益歸屬。」程式推導的情境填 `code-derived`，實際執行並重現才填 `reproduced`。
+
+報告是入口 Repo/review-reports 內的一份繁體中文 Markdown。新版在「審查結論」呈現上版建議、審查完整性、部署環境、阻擋數及下一步。合併衝突計入阻擋，程式問題按 P0／P1 計數。舊版沿用原結論格式。以下是報告內容與工程欄位。
 
 1. `比較資訊`：Repo、本機路徑、基礎／比較分支的輸入、實際 ref、短 SHA 表格，合併方向、差異起點、最終受審來源與版本、快照擷取時間及適用版本。
 2. `問題`：保留 R-*／M-001 編號，程式風險標題為 `### R-001｜[P1] 問題名稱`。每項固定六個粗體區塊，各自另起段落：`問題描述`、`重現原因`、`預期結果`、`實際結果`、`證據`、`建議改善方式`。問題描述交代影響、邊界與上版阻擋依據；重現原因交代操作、技術觸發條件，推導情境只標一次「依程式推導，未實際重現。」。預期及實際結果由審查者依證據填寫。證據包括技術說明、Repo／路徑／行號、來源、完整固定 SHA、內容 SHA-256 與安全程式碼區塊；設定值與認證內容省略。建議提供處理方向及工程修正；同一區塊內的相同段落只列一次。
@@ -13,6 +17,6 @@
 進度與最終回答採結果先行，簡單答覆一至三句；最後給唯一報告連結與重要阻擋／缺口。只有使用者明確要求或選取 output-style，才載入該 Skill 與本次必要參考來調整行文密度；固定章節、Checklist、證據及產生時判斷仍依本契約。
 # Engineering v2 layout in 0.8.0
 
-New `engineering-review/v2` drafts render directly as `# 上版檢查: {Repo}` followed by exactly five H2 sections: 審查結論、問題總攬、問題詳情（工程師參考）、範圍與限制、技術審查紀錄（工程師參考）. The conclusion includes the entry Repo, base/head branch names, eight-character SHAs and merge direction. The overview links confirmed blockers to their details. Keep the existing six bold risk blocks, fixed evidence and sensitive-content handling.
+New `engineering-review/v2` drafts render as `# 上版檢查: {Repo}` with five H2 sections. The order is 審查結論、問題總攬、問題詳情（工程師參考）、範圍與限制、技術審查紀錄（工程師參考）. The conclusion includes the entry Repo, base/head branch names, eight-character SHAs and merge direction. The overview links blockers to their details and shows the user-facing scenario, impact and evidence basis. Keep the six risk blocks, fixed evidence and sensitive-content handling.
 
 Place detailed comparison data and complete SHAs in the technical section. Keep next steps, necessary gaps, new deployment dependencies and the editable Checklist open under 範圍與限制; retain the collapsible technical evidence. Layout v1 and drafts without a layout retain the historical sections documented below. The helper renders the final layout, so publication needs no manual section rewriting.

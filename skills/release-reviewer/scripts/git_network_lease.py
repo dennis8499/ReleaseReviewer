@@ -197,6 +197,15 @@ def run(command, *, input=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
     it is assigned to a kill-on-close Job before that handshake, closing the
     spawn/child-assignment race for Git and all of its descendants.
     """
+    if os.name == "nt":
+        import windows_local_lease as windows
+        try:
+            result = windows.run(runtime_root().resolve() / "git-network.lock", command, input=input, stdout=stdout,
+                                 stderr=stderr, check=check, env=env, timeout=timeout)
+        except windows.WindowsLeaseError as error:
+            raise LeaseError(f"Git network coordination failed: {error}") from error
+        if result is not None:
+            return result
     lease = DirectoryLease(timeout=timeout).acquire()
     process = None
     job = None

@@ -8,7 +8,7 @@ import hashlib
 from pathlib import Path
 import re
 from zipfile import ZipFile, ZipInfo, ZIP_DEFLATED
-TEXT_SUFFIXES = {".md", ".py", ".yaml", ".yml", ".json", ".txt", ".toml"}
+TEXT_SUFFIXES = {".md", ".py", ".yaml", ".yml", ".json", ".txt", ".toml", ".cs", ".ps1"}
 
 
 def canonical_bytes(path: Path) -> bytes:
@@ -29,7 +29,9 @@ def build_release(skill: Path, destination: Path) -> Path:
                 "scripts/review_worklist.py", "references/evidence-workflow.md",
                 "scripts/frozen_evidence.py",
                 "scripts/coverage_policy.py",
-                "scripts/git_network_lease.py", "scripts/review_runtime.py", "scripts/merge_parent_coverage.py",
+                "scripts/git_network_lease.py", "scripts/windows_local_lease.py", "scripts/windows-local-lease.ps1",
+                "scripts/windows-local-lease.cs", "scripts/windows-lease-process.cs", "scripts/repair-workflow-lease-native.cs",
+                "scripts/review_runtime.py", "scripts/merge_parent_coverage.py",
                 "references/group-review.md", "references/resource-checks.md")
     for relative in required:
         if not (skill / relative).is_file():

@@ -12,10 +12,11 @@ import uuid
 
 
 class WindowsLeaseError(OSError):
-    def __init__(self, code, native_code=None):
+    def __init__(self, code, native_code=None, *, message=None):
         self.code = code
         self.native_code = native_code
-        super().__init__(code if native_code is None else f"{code} (Win32 {native_code})")
+        message = message or code
+        super().__init__(message if native_code is None else f"{message} (Win32 {native_code})")
 
 
 LAUNCHER = Path(__file__).with_name("windows-local-lease.ps1")
@@ -142,7 +143,8 @@ def acquire(directory, timeout, cancelled):
                 raise
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise WindowsLeaseError("Git admission timed out; existing lease is preserved.") from error
+                raise WindowsLeaseError("queue-timeout", error.native_code,
+                                        message=f"Git admission timed out ({error.code}).") from error
             time.sleep(min(0.05, remaining))
 
 
@@ -159,7 +161,11 @@ def release(lease):
 
 
 def run(directory, command, *, input, stdout, stderr, check, env, timeout, cancelled=None, observer=None):
-    lease = acquire(directory, timeout, cancelled)
+    try:
+        lease = acquire(directory, timeout, cancelled)
+    except WindowsLeaseError as error:
+        error.phase = "admission"
+        raise
     if lease is None:
         return None  # Startup failed before the first claim.
     try:
@@ -223,4 +229,8 @@ def run(directory, command, *, input, stdout, stderr, check, env, timeout, cance
                 result.check_returncode()
             return result
     finally:
-        release(lease)
+        try:
+            release(lease)
+        except WindowsLeaseError as error:
+            error.phase = "cleanup"
+            raise

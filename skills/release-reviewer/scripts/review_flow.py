@@ -840,6 +840,12 @@ def status_summary(root, identifier):
               "publication": {"complete": job.get("state") == "published",
                               "report_path": job.get("report_path"),
                               "review_outcome": published_outcome(job) if job.get("state") == "published" else None}}
+    if job.get("git_coordination"):
+        result["git_coordination"] = job["git_coordination"]
+    if (job.get("network_log") or {}).get("private_ref_cleanup_pending"):
+        result["private_ref_cleanup_pending"] = True
+    if (job.get("network_log") or {}).get("repository_private_ref_cleanup_pending"):
+        result["repository_private_ref_cleanup_pending"] = True
     metrics = job.get("metrics", {})
     result["timings"] = {name: metrics[name] for name in
                          ("capture_seconds", "read_search_seconds", "draft_update_seconds",
@@ -947,7 +953,7 @@ def capabilities(workspace=None, expected_payload_sha256=None, *, runtime_root=N
                           "publication_retry": True, "summary_preview": True,
                           "known_citation_bounds": True, "read_only_batch_view": True,
                           "base_final_review": True, "launch_preflight": True,
-                          "read_only_inspection": True, "managed_paging": True},
+                          "read_only_inspection": True, "managed_paging": True, "private_ref_cleanup_retry": True},
             "observability": {"agent_tool_round_trips": None, "model_tokens": None,
                               "http_requests": None, "ssh_requests": None}}
 
@@ -980,9 +986,10 @@ def start(args):
             return status(root, identifier)
         job = {"schema": SCHEMA, "tool": "release-reviewer", "request_id": identifier, "runtime_root": str(root),
                "state": "running", "phase": "preflight", "started_at": now(), "updated_at": now(),
-               "inputs": inputs, "input_digest": fingerprint, "pid": os.getpid()}
+               "inputs": inputs, "input_digest": fingerprint, "pid": os.getpid(), "private_ref_journal": None}
         coordination.atomic(path, job)
         context = None
+        manifest = None
         active = coordination.Coordination(root, identifier, lambda phase, fields: update(root, identifier, phase=phase, **fields),
                                           args.refresh, args.auth_scope)
         began = time.perf_counter()
@@ -1066,9 +1073,13 @@ def start(args):
             if lock_metrics is not None:
                 failure_metrics["manifest_lock_wait_seconds"] = lock_metrics["local_lock_wait_seconds"]
             failure_metrics["request_owner_lock_wait_seconds"] = owner.wait_seconds
+            diagnostics = {key: getattr(exc, key) for key in ("network_activity", "network_log", "preflight", "git_coordination")
+                           if hasattr(exc, key)}
+            if manifest is not None and manifest["network_log"].get("private_ref_cleanup_pending"):
+                diagnostics.update(network_log=manifest["network_log"], network_activity=manifest["network_activity"])
             update(root, identifier, state="cancelled" if active.cancelled() else "failed", phase="terminal",
                    error=coordination.safe_error(exc), finished_at_epoch=time.time(), metrics=failure_metrics,
-                   **{key: getattr(exc, key) for key in ("network_activity", "network_log", "preflight") if hasattr(exc, key)})
+                   **diagnostics)
             if context and context.exists():
                 cleanup_started = time.perf_counter()
                 review_session.cleanup_session(context)
@@ -1962,14 +1973,33 @@ def finish(root, identifier):
 
 
 def cancel(root, identifier):
+    from review_sync_refs import recover_request
+    from git_support import ReviewContextError
+
     job, context = metadata(root, identifier)
-    if job["state"] in TERMINAL:
-        return status(root, identifier)
-    coordination.atomic(root / "jobs" / (identifier + ".cancel"), {"requested_at": now()})
+    if job["state"] not in TERMINAL:
+        coordination.atomic(root / "jobs" / (identifier + ".cancel"), {"requested_at": now()})
     lock = coordination.FileLock(job_path(root, identifier).with_suffix(".owner.lock"))
     if lock.acquire(blocking=False):
         try:
             job, context = metadata(root, identifier)
+            project = Path(job.get("inputs", {}).get("project") or "")
+            registered = "private_ref_journal" in job
+            journal = job.get("private_ref_journal")
+            if registered or (project.is_absolute() and project.is_dir()):
+                log = dict(job.get("network_log") or {})
+                try:
+                    cleaned = registered and journal is None
+                    if not cleaned and project.is_absolute():
+                        cleaned = recover_request(project, identifier, journal=journal)
+                except (OSError, ValueError, ReviewContextError):
+                    cleaned = False
+                if bool(log.get("private_ref_cleanup_pending")) != (not cleaned):
+                    if cleaned:
+                        log.pop("private_ref_cleanup_pending", None)
+                    else:
+                        log["private_ref_cleanup_pending"] = True
+                    update(root, identifier, network_log=log)
             if job["state"] not in TERMINAL:
                 if context.exists():
                     cleanup_started = time.perf_counter()
@@ -2093,6 +2123,7 @@ def main(argv=None):
         import sys
         error_output = json.dumps({"error": coordination.safe_error(exc), "request_id": args.request_id,
                                    "terminal": True,
+                                   **({"git_coordination": exc.git_coordination} if hasattr(exc, "git_coordination") else {}),
                                    **({"preflight": exc.preflight} if hasattr(exc, "preflight") else {})}, ensure_ascii=False) + "\n"
         if not read_only:
             try:

@@ -168,10 +168,10 @@ class Coordination:
         if self.cancelled():
             raise Cancelled("Release review cancelled.")
 
-    def phase(self, value):
+    def phase(self, value, **fields):
         self.check()
         if self.notify:
-            self.notify(value, {})
+            self.notify(value, fields)
 
     @contextmanager
     def activate(self):

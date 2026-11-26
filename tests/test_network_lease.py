@@ -66,6 +66,23 @@ class NetworkLeaseTests(unittest.TestCase):
             self.assertEqual(code, result.returncode)
             self.assertFalse((self.root / "git-network.lock").exists())
 
+    @unittest.skipUnless(os.name == "nt", "Windows admission uses the native broker")
+    def test_windows_admission_reports_sharing_violation_without_an_existing_owner(self):
+        import windows_local_lease as windows
+
+        def broker(request, **_):
+            if request["action"] == "probe":
+                return {"birth": "fixture"}
+            raise windows.WindowsLeaseError("windows-io", 32)
+
+        with mock.patch.object(windows, "broker_request", side_effect=broker):
+            with self.assertRaises(network.LeaseError) as raised:
+                network.run([sys.executable, "-c", "raise SystemExit(7)"], timeout=0.02)
+        self.assertEqual({"phase": "admission", "code": "queue-timeout", "cause_code": "windows-io",
+                          "native_code": 32, "lock_path": str(self.root / "git-network.lock")},
+                         raised.exception.git_coordination)
+        self.assertFalse((self.root / "git-network.lock").exists())
+
     def test_timeout_terminates_the_supervisor_and_descendant_tree(self):
         child = "import subprocess,sys,time; subprocess.Popen([sys.executable,'-c','import time; time.sleep(20)']); time.sleep(20)"
         with self.assertRaises(subprocess.TimeoutExpired):

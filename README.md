@@ -1,12 +1,12 @@
 # Release Reviewer｜上版檢查
 
-Standalone Codex Skill **0.12.5** for fixed-branch pre-release review. It reports P0/P1 blockers, functional-chain breaks and deployment dependencies in one Traditional Chinese report with a human-editable checklist. On Windows, Git operations recover a shared lock after they can verify that its owner and process tree have ended. See the [0.12.5 release notes](docs/releases/v0.12.5.md).
+Standalone Codex Skill for fixed-branch pre-release review. Version **0.12.9** records the exact Git journal for each request before fetch and verifies the runtime, repository, original SHA and ref type during recovery. It reports P0/P1 blockers, functional-chain breaks and deployment dependencies in one Traditional Chinese report with a human-editable checklist. See the [0.12.9 release notes](docs/releases/v0.12.9.md).
 
 ## 安裝與使用
 
 需要 Python 3.10+、Git 及可使用本機 Skills 的 Codex。Git 須支援 merge-tree --write-tree 與 --merge-base；缺少乾淨預覽時保留缺口，不改用直接比較。
 
-將 skills/release-reviewer 複製到 Codex Skills 目錄，或從 [v0.12.5 Release](https://github.com/dennis8499/ReleaseReviewer/releases/tag/v0.12.5) 下載並解壓 release-reviewer-0.12.5.zip。本機也可執行 `python scripts/package_release.py` 打包。CODEX_HOME 有設定時使用其 skills 子目錄，否則使用使用者的 .codex/skills。
+將 skills/release-reviewer 複製到 Codex Skills 目錄，或從 [v0.12.9 Release](https://github.com/dennis8499/ReleaseReviewer/releases/tag/v0.12.9) 下載並解壓 release-reviewer-0.12.9.zip。本機也可執行 `python scripts/package_release.py` 打包。CODEX_HOME 有設定時使用其 skills 子目錄，否則使用使用者的 .codex/skills。
 
 ~~~text
 $release-reviewer Repo=OrderService 基礎分支=origin/main 比較分支=origin/feature/payment

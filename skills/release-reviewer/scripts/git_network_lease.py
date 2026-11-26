@@ -23,7 +23,10 @@ SCHEMA = "GitLabWorkspaceLease/v1"
 
 
 class LeaseError(OSError):
-    pass
+    def __init__(self, message, *, git_coordination=None):
+        super().__init__(message)
+        if git_coordination is not None:
+            self.git_coordination = git_coordination
 
 
 def extended_windows_path(path):
@@ -117,7 +120,9 @@ class DirectoryLease:
                 self.path.mkdir()
             except FileExistsError:
                 if time.monotonic() >= deadline:
-                    raise LeaseError(f"Git admission timed out; existing lease is preserved: {self.path}")
+                    raise LeaseError(f"Git admission timed out; existing lease is preserved: {self.path}",
+                                     git_coordination={"phase": "admission", "code": "queue-timeout",
+                                                       "lock_path": str(self.path)})
                 time.sleep(min(0.1 + random.random() * 0.025, max(0, deadline - time.monotonic())))
                 continue
             self.acquired = True
@@ -199,11 +204,19 @@ def run(command, *, input=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
     """
     if os.name == "nt":
         import windows_local_lease as windows
+        directory = runtime_root().resolve() / "git-network.lock"
         try:
-            result = windows.run(runtime_root().resolve() / "git-network.lock", command, input=input, stdout=stdout,
+            result = windows.run(directory, command, input=input, stdout=stdout,
                                  stderr=stderr, check=check, env=env, timeout=timeout)
         except windows.WindowsLeaseError as error:
-            raise LeaseError(f"Git network coordination failed: {error}") from error
+            detail = {"phase": getattr(error, "phase", "fetch"), "code": error.code,
+                      "lock_path": str(directory)}
+            if error.native_code is not None:
+                detail["native_code"] = error.native_code
+            cause_code = getattr(error.__cause__, "code", None)
+            if cause_code:
+                detail["cause_code"] = cause_code
+            raise LeaseError(f"Git network coordination failed: {error}", git_coordination=detail) from error
         if result is not None:
             return result
     lease = DirectoryLease(timeout=timeout).acquire()

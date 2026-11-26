@@ -180,6 +180,8 @@ def build_manifest(args: argparse.Namespace) -> dict:
 
 
 def _build_manifest(args: argparse.Namespace) -> dict:
+    import review_coordinator as coordination
+    from review_sync_refs import PrivateRefs
     capture_started_at = datetime.now(timezone.utc).isoformat()
     timeout = args.git_timeout
     if not math.isfinite(timeout) or timeout <= 0:
@@ -187,6 +189,8 @@ def _build_manifest(args: argparse.Namespace) -> dict:
     token = git.GIT_TIMEOUT_SECONDS.set(timeout)
     session = None
     succeeded = False
+    journal = None
+    pinned: dict[tuple[str, str], tuple[str, str | None]] = {}
     try:
         raw_workspace = Path(args.workspace).expanduser().absolute()
         if raw_workspace.exists() and group_context.is_link(raw_workspace):
@@ -223,9 +227,23 @@ def _build_manifest(args: argparse.Namespace) -> dict:
             session, git.workspace_roots(workspace, workspace_file), repositories)
         catalog_gaps.extend(preflight_sources(session, catalog))
         before = worktree_fingerprint(repo)
-        fetches = git.fetch_inputs(repo, [args.base, args.head], True)
+        if any(git.remote_target_for_ref(repo, value) for value in (args.base, args.head)):
+            active = coordination.ACTIVE.get()
+            journal = PrivateRefs(repo, active.identifier if active else None)
+            if active:
+                active.phase(git.CAPTURE_PHASE.get(), private_ref_journal={
+                    "id": journal.identifier, "scope_sha256": journal.scope_sha256})
+            if not journal.recover():
+                git.NETWORK_LOG.get()["repository_private_ref_cleanup_pending"] = True
+        fetches = git.fetch_inputs(repo, [args.base, args.head], True, pinned=pinned, journal=journal)
         git.capture_phase("ref-pinning")
-        base, head = git.verified_commit(repo, base_ref), git.verified_commit(repo, head_ref)
+        def pinned_commit(raw, reference):
+            target = git.remote_target_for_ref(repo, raw)
+            if target:
+                return pinned[(target.remote, target.branch)][1]
+            return git.verified_commit(repo, reference)
+
+        base, head = pinned_commit(args.base, base_ref), pinned_commit(args.head, head_ref)
         for label, sha, raw in (("基礎版本", base, args.base), ("比較版本", head, args.head)):
             if not sha:
                 raise git.ReviewContextError(f"找不到{label}：{raw}；不會改用其他同名版本。")
@@ -326,14 +344,23 @@ def _build_manifest(args: argparse.Namespace) -> dict:
         manifest["required_merge_views"] = merge_parent_coverage.required(
             release_changes if preview["status"] == "clean" else changes, merge_commits,
             {entry["path"] for entry in catalog[0]["snapshot"]["sources"][preview["tree_sha"] if preview["status"] == "clean" else head]["entries"] if entry["kind"] == "blob"})
+        if journal:
+            if not journal.close():
+                git.NETWORK_LOG.get()["private_ref_cleanup_pending"] = True
+            journal = None
+            manifest["network_log"] = git.network_log()
         review_runtime.save_manifest(session, manifest)
         review_worklist.write_worklist(session, manifest)
         succeeded = True
         return manifest
     finally:
-        git.GIT_TIMEOUT_SECONDS.reset(token)
-        if session and not succeeded:
-            review_session.cleanup_session(session)
+        try:
+            if journal and not journal.close():
+                git.NETWORK_LOG.get()["private_ref_cleanup_pending"] = True
+        finally:
+            git.GIT_TIMEOUT_SECONDS.reset(token)
+            if session and not succeeded:
+                review_session.cleanup_session(session)
 
 
 def parse_args(argv=None):

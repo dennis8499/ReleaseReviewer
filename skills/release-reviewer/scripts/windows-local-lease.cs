@@ -203,15 +203,32 @@ public static partial class WindowsLocalLease
 
     private static WorkflowLeaseDirectory OpenOwner(string directory)
     {
-        try { return WorkflowLeaseDirectory.Open(directory, true); }
+        try { return WorkflowLeaseDirectory.Open(directory, false); }
         catch (FileNotFoundException) { return null; }
     }
 
-    private static void Retire(WorkflowLeaseDirectory held, string nonce)
+    private static WorkflowLeaseDirectory OpenForRename(WorkflowLeaseDirectory observed, string nonce)
     {
-        string identity = held.Identity;
-        string retired = held.Retire(".lease-retired-" + nonce + "-" + Guid.NewGuid().ToString("N"));
-        held.Dispose();
+        // Opening the containing directory for DELETE can block metadata
+        // replacement on Windows Server. Close the read handle before asking
+        // for DELETE, then check the same directory and owner under the guard.
+        observed.Dispose();
+        var held = WorkflowLeaseDirectory.Open(observed.PathName, true);
+        try
+        {
+            if (held.Identity != observed.Identity || StringValue(ReadOwner(held), "nonce") != nonce)
+                throw new LeaseFailure("owner-changed");
+            return held;
+        }
+        catch { held.Dispose(); throw; }
+    }
+
+    private static void Retire(WorkflowLeaseDirectory observed, string nonce)
+    {
+        string identity = observed.Identity;
+        string retired;
+        using (var held = OpenForRename(observed, nonce))
+            retired = held.Retire(".lease-retired-" + nonce + "-" + Guid.NewGuid().ToString("N"));
         try
         {
             using (var verified = WorkflowLeaseDirectory.Open(retired, false))
@@ -234,10 +251,10 @@ public static partial class WindowsLocalLease
         if (CreateDirectoryW(Prefix + staged, IntPtr.Zero) == 0) throw Win32Error();
         try
         {
-            using (var held = WorkflowLeaseDirectory.Open(staged, true))
+            using (var observed = WorkflowLeaseDirectory.Open(staged, false))
             {
                 var info = new Dictionary<string, object> {
-                    {"version", 2}, {"birth", identity}, {"directoryId", held.Identity}, {"jobs", new string[0]},
+                    {"version", 2}, {"birth", identity}, {"directoryId", observed.Identity}, {"jobs", new string[0]},
                     {"settled", false}, {"releaseRequested", false}
                 };
                 var owner = new Dictionary<string, object> {
@@ -245,13 +262,17 @@ public static partial class WindowsLocalLease
                     {"createdAt", DateTime.UtcNow.ToString("o")}, {"childPid", null}, {"lifecycle", info}
                 };
                 WriteOwner(staged, owner);
-                try { held.Retire(Path.GetFileName(directory)); }
+                try
+                {
+                    using (var held = OpenForRename(observed, nonce))
+                        held.Retire(Path.GetFileName(directory));
+                }
                 catch (Win32Exception error)
                 {
                     if (error.NativeErrorCode == 183 || error.NativeErrorCode == 80) throw new LeaseFailure("busy");
                     throw;
                 }
-                return held.Identity;
+                return observed.Identity;
             }
         }
         finally

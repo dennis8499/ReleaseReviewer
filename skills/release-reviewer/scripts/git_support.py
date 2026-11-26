@@ -25,6 +25,7 @@ import math
 
 
 import os
+from uuid import uuid4
 
 
 import re
@@ -209,7 +210,8 @@ def record_capture_stage(name, seconds):
 def capture_diagnostic(exc: Exception) -> dict[str, Any]:
     return {"phase": getattr(exc, "phase", CAPTURE_PHASE.get()),
             "network_activity": getattr(exc, "network_activity", network_activity()),
-            "network_log": getattr(exc, "network_log", network_log())}
+            "network_log": getattr(exc, "network_log", network_log()),
+            **({"git_coordination": exc.git_coordination} if hasattr(exc, "git_coordination") else {})}
 
 
 def run_git(
@@ -269,13 +271,7 @@ def run_git(
     return (completed.stdout or b"").decode("utf-8", errors="replace")
 
 
-def run_git_capture(
-    repo: Path,
-    args: Sequence[str],
-    *,
-    env: Mapping[str, str] | None = None,
-) -> tuple[int, str, str]:
-    """Run Git without raising so callers can provide a useful diagnostic."""
+def local_git_environment(env: Mapping[str, str] | None = None) -> dict[str, str]:
     command_env = os.environ.copy()
     if env:
         command_env.update(env)
@@ -284,20 +280,37 @@ def run_git_capture(
     command_env["GIT_NO_LAZY_FETCH"] = "1"
     command_env["GIT_NO_REPLACE_OBJECTS"] = "1"
     command_env["GIT_ALLOW_PROTOCOL"] = ""
+    return command_env
+
+
+def run_git_capture(
+    repo: Path,
+    args: Sequence[str],
+    *,
+    env: Mapping[str, str] | None = None,
+    supervised: bool = False,
+    timeout: float | None = None,
+) -> tuple[int, str, str]:
+    """Run Git without raising so callers can provide a useful diagnostic."""
+    command_env = local_git_environment(env)
+    budget = min(GIT_TIMEOUT_SECONDS.get(), timeout) if timeout is not None else GIT_TIMEOUT_SECONDS.get()
+    if supervised:
+        budget = min(3.0, budget)
     started = time.perf_counter()
     try:
-        completed = subprocess.run(
+        runner = git_network_lease.run if supervised else subprocess.run
+        completed = runner(
             ["git", "-C", str(repo), *args],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
             env=command_env,
-            timeout=GIT_TIMEOUT_SECONDS.get(),
+            timeout=budget,
         )
     except subprocess.TimeoutExpired as exc:
         _record_capture_git(args, time.perf_counter() - started, 0)
         message = (
-            f"Git 指令逾時（{GIT_TIMEOUT_SECONDS.get():g} 秒）："
+            f"Git 指令逾時（{budget:g} 秒）："
             f"git {' '.join(args)}"
         )
         return 124, "", message
@@ -561,7 +574,9 @@ def remote_target_for_ref(repo: Path, ref: str) -> RemoteTarget | None:
     return None
 
 
-def fetch_inputs(repo: Path, refs: Iterable[str], enabled: bool) -> list[dict[str, str]]:
+def fetch_inputs(repo: Path, refs: Iterable[str], enabled: bool, *,
+                 pinned: dict[tuple[str, str], tuple[str, str | None]] | None = None,
+                 journal=None) -> list[dict[str, str]]:
     actions: list[dict[str, str]] = []
     seen: set[tuple[str, str]] = set()
     grouped: dict[str, list[RemoteTarget]] = {}
@@ -586,9 +601,23 @@ def fetch_inputs(repo: Path, refs: Iterable[str], enabled: bool) -> list[dict[st
             f"遠端 ref「{target.input_ref}」需要連線確認，不能搭配 --no-fetch。",
             hint="若要離線審查，請改用明確本機分支。",
         )
+    namespace = (journal.namespace if journal else f"refs/release-reviewer-sync/{uuid4().hex}") if pinned is not None and grouped else None
+    ref_index = 0
     for remote, targets in grouped.items():
+        refspecs = [f"refs/heads/{t.branch}:refs/remotes/{remote}/{t.branch}" for t in targets]
+        private_refs = []
+        if namespace is not None:
+            assert pinned is not None
+            for item in targets:
+                ref = f"{namespace}/{ref_index}"
+                ref_index += 1
+                refspecs.append(f"refs/heads/{item.branch}:{ref}")
+                private_refs.append((item, ref))
+                pinned[(remote, item.branch)] = (ref, None)
         try:
             capture_phase("fetch")
+            if journal:
+                journal.begin(ref for _, ref in private_refs)
             event = {"reason": "explicit-remote-branches", "phase": "fetch", "remote": remote,
                      "requested_refs": [item.input_ref for item in targets],
                      "fetch_attempt_count": 1, "fetch_success_count": 0}
@@ -608,9 +637,23 @@ def fetch_inputs(repo: Path, refs: Iterable[str], enabled: bool) -> list[dict[st
                     "--no-write-fetch-head",
                     "--jobs=1",
                     remote,
-                    *[f"refs/heads/{t.branch}:refs/remotes/{remote}/{t.branch}" for t in targets],
+                    *refspecs,
                 ],
             )
+            if journal:
+                journal.settled()
+            missing = []
+            for item, ref in private_refs:
+                sha = verified_commit(repo, ref)
+                if sha:
+                    assert pinned is not None
+                    pinned[(remote, item.branch)] = (ref, sha)
+                else:
+                    missing.append(item.input_ref)
+            if missing:
+                raise ReviewContextError(f"找不到本次同步的固定版本：{', '.join(missing)}。")
+            if journal:
+                journal.pin({ref: pinned[(remote, item.branch)][1] for item, ref in private_refs})
             if activity is not None:
                 activity["fetch_success_count"] += 1
                 activity["synced_ref_count"] += len(targets)
